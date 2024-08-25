@@ -1,0 +1,11 @@
+edition = "2021"
+
+wrap_comments = true
+fn_single_line = true
+
+reorder_imports = true
+reorder_modules = true
+
+group_imports = "StdExternalCrate"
+imports_layout = "HorizontalVertical"
+imports_granularity = "Module"

@@ -9,8 +9,9 @@
 .. toctree::
    :hidden:
    :maxdepth: 2
-   :caption: Contents:
+   :caption: 指导手册:
 
+   chapter0/index
    rust-basics.rst
    llvm-basics.rst
    parser.rst
@@ -34,6 +35,10 @@
    
    Rust 版本为 2024 年课程新加入的实验，如果在实验过程中遇到问题，请及时与助教联系。
 
+.. important::
+
+   在开始实验前，请先仔细阅读本页面中的内容，**尤其是关于如何解决问题的部分**，这将有助于你更好地完成实验。
+
 为什么使用 Rust ？
 ---------------------
 
@@ -42,7 +47,7 @@
 你可能会问，既然 C++ 已经是一门非常成熟的系统编程语言，为什么还要尝试使用 Rust 来实现编译器呢？答案是多方面的：
 
 #. Rust 相比于 C++ 拥有更好的基础设施，通过 Cargo 可以方便地管理依赖、测试和构建项目，而不需要手动编写 Makefile 或者 CMakeLists.txt。
-#. Rust 的类型系统相比 C++ 更加强大，有许多问题可以在编译期就被检测出来。
+#. Rust 的类型检查更为严格，有许多问题可以在编译期就被检测出来。
 #. 在正确使用的情况下，Rust 能够更方便地写出内存安全的代码，避免了许多 C++ 中常见的内存错误。
 
 当然，还是如本文档开头所述，Rust 语言的学习曲线可能会比较陡峭，对于你来说，课程项目的得分可能仍然是非常重要的，所以请根据自己的实际情况选择合适的语言。
@@ -53,14 +58,40 @@
 #. Rust 编译器是你的朋友，而不是敌人，Rust 编译器会帮助你检测出许多潜在的错误，所以请不要忽略编译器的警告信息，尽量保持代码的可读性和可维护性。
 #. 当你遇到 Rust 编译器报错时，不要惊慌，尝试仔细阅读错误信息，理解错误的原因，重新思考你的代码逻辑或者阅读有关的资料，很多时候错误信息会帮助你找到代码中的问题。
 
+如何解决问题？
+---------------------
+在实现编译器的过程中，你可能会遇到各种各样的问题，对于这些问题，你可以依次尝试以下几种方法尝试解决：
+
+#. 先尝试自己解决。仔细想想，问题出在哪里？是不是自己操作有误？是不是代码有问题？是不是对某个概念理解不正确？
+#. **RTFM (Read The Friendly Manual) 先查文档！** 本文档以及本文档给出的参考资料中提及了许多常见问题以及解决方法，请仔细阅读。大部分问题都可以通过这些资料解决。
+#. **STFW (Search The Fantastic Web) 善用搜索引擎！** 请至少尝试使用 Bing 或者 Google 搜索一下你的问题，再决定是否向助教求助。
+
+   .. tip::
+
+      在大部分情况下，Baidu/CSDN 远不如 Google/Bing/StackOverflow 等搜索引擎和平台给出的英文解决方案全面。
+
+#. **Ask ChatGPT!** 现在是大模型时代！ChatGPT 比任何人都聪明，作为一个工科生，你应该至少有一个 ChatGPT 或者类似的工具，如果没有，请尽快找到一个。ChatGPT 将会在你的编程生涯中成为你一大利器，一定要善用 ChatGPT。
+
+   .. warning::
+
+      尽管大模型是个好工具，但是他们在专业知识上很有可能出错，请不要完全相信大模型的回答，特别是涉及到环境配置的指令，请自行验证后再执行。
+
+#. 向他人求助。如果以上方法都无法解决你的问题，那么请向同学或者助教求助。
+
+   .. important::
+
+      请注意，助教也有自己的作息时间，不要期望他们能够立刻回复你的问题，尽量提前预留足够的时间来解决问题。
+
 参考资料
 ---------------------
 
 - `Rust 程序设计语言 <https://kaisery.github.io/trpl-zh-cn/>`_
 - `Rust 语言圣经 <https://course.rs/about-book.html>`_
+- `Rust By Example <https://doc.rust-lang.org/rust-by-example/index.html>`_
 - 虎书（Modern Compiler Implementation in C）
 - 龙书（Compilers: Principles, Techniques, and Tools）
 - `The LALRPOP book <https://lalrpop.github.io/lalrpop/>`_
+- `A thoughtful introduction to the pest parser <https://pest.rs/book/>`_
 - `LLVM Programmer's Manual <https://llvm.org/docs/ProgrammersManual.html>`_
 - `RISC-V ISA Specifications <https://riscv.org/technical/specifications/>`_
 - `ARM Assembly Basics <https://azeria-labs.com/writing-arm-assembly-part-1/>`_
