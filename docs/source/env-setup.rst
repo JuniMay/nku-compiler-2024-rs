@@ -6,16 +6,18 @@
    :maxdepth: 4
 
 
-.. warning::
+.. attention::
     由于本实验指导手册面向 Rust 版本的编译器实现，所以许多工具、配置与 C++ 版本实验指导存在不同。
 
 系统环境配置
 ---------------------
 
 .. note::
-    由于最终编译器的测试涉及交叉编译工具链，建议在 Linux 环境下进行实验。当然你仍然可以尝试手动构建工具链。
+
+    根据上机大作业的总体要求，你需要在 Linux 环境下完成实验。
 
 .. note::
+
     建议将配置过程中所遇到的问题和解决方法写到实验报告中。
 
 Windows 系统
@@ -31,7 +33,7 @@ Linux 发行版进行实验（建议使用 WSL2）。WSL 对系统有一定的�
 `5651 <https://github.com/microsoft/WSL/issues/5651>`_ 这两个错误。你可能需要升级 WSL
 kernel，并借助官方工具将 Windows 升级至最新版本。
 
-此外，VSCode 有插件可以帮助你在 Windows 平台上进行开发。
+此外，VSCode 有插件可以帮助你在 Windows 平台上连接 WSL2 进行开发。
 
 macOS 系统
 ^^^^^^^^^^^^^^^^^^^^^
@@ -70,13 +72,40 @@ rustup 镜像，参考 `tuna 源的 rustup 帮助文档 <https://mirrors.tuna.ts
 
 你应该会看到一个类似于 ``rustc 1.80.0 (051478957 2024-07-21)`` 的输出。
 
-对于 Rust 开发环境，推荐使用 VSCode + rust-analyzer 或者 JetBrains 的 RustRover IDE。对于 Cargo 
-这个包管理和构建工具的使用，可以参考 `The Cargo Book <https://doc.rust-lang.org/cargo/>`_ 。
+对于 Cargo 这个包管理和构建工具的使用，可以参考 `The Cargo Book <https://doc.rust-lang.org/cargo/>`_ 。
+
+对于 Rust 开发环境，推荐使用 VSCode + rust-analyzer 或者 JetBrains 的 RustRover IDE。
+
+- VSCode: 你可能已经安装并在其他项目中使用过 VSCode 了，VSCode 可以很方便地通过安装插件来支持 Rust 开发。而且完全能够满足我们的实验需求。
+- RustRover: RustRover 是 JetBrains 为 Rust 开发提供的 IDE，功能非常强大，提供了一些 Rust 语言的特性支持，但是比较庞大，而且需要额外安装。
+
+.. note::
+    如果你使用的是 Windows + WSL2，推荐使用 VSCode + rust-analyzer。这一组合已经经过助教测试，足够满足实验需求。不过 RustRover 也支持连接 WSL2，你可以自行尝试。
+
+    如果你已经使用过 PyCharm，你可能会对 RustRover 更加熟悉，因为他们都是 JetBrains 的产品。
+
+选择 VSCode 作为 IDE
+^^^^^^^^^^^^^^^^^^^^^
+你需要一个已经安装好的 VSCode，然后在 VSCode 中安装 rust-analyzer 扩展。可以参考 VSCode 官方提供的教程 `Getting Started with Rust <https://code.visualstudio.com/docs/languages/rust>`_ 。
+
+.. note::
+    如果你使用的是 Windows + WSL2，需要在主机 Windows 系统上安装 VSCode，然后在 WSL2 中安装 Rust 工具链（见后文）。之后在 WSL2 终端中通过 ``code .`` 命令调起 VSCode 进行开发。注意，你实际上需要将 rust-analyzer 扩展安装到 WSL2 的 VSCode Server 中。详情可以参考 `Developing in WSL <https://code.visualstudio.com/docs/remote/wsl>`_ 。
+
+选择 RustRover 作为 IDE
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+请于 `JetBrains 官网 <https://www.jetbrains.com/rust/>`_ 下载 RustRover，参考 `RustRover 官方文档 <https://www.jetbrains.com/help/rust/getting-started.html>`_ 进行安装。
+
+.. note::
+    有关 RustRover 连接 WSL2 的配置，请参考 `Connect to a project running on WSL2 <https://www.jetbrains.com/help/rust/remote-development-starting-page.html#run_in_wsl_ij>`_ 。
 
 工具链配置
 ---------------------
 
 我们的编译器构建最终要编译到 RISC-V 或者 ARM 汇编代码。对于大部分同学，你的电脑可能都是 x86_64 架构的，所以你需要安装交叉编译工具链。
+
+.. note::
+
+    对于 Windows + WSL2 用户，请在 WSL2 的 Linux 中安装工具链，而不是在 Windows 系统中安装。
 
 .. note::
 
@@ -88,7 +117,9 @@ rustup 镜像，参考 `tuna 源的 rustup 帮助文档 <https://mirrors.tuna.ts
 
     sudo apt install build-essential
     sudo apt install llvm
+    sudo apt install clang
     sudo apt install qemu-user
+    sudo apt install gdb-multiarch
 
 ARM 工具链
 ^^^^^^^^^^^^^^^^^^^^^
@@ -107,12 +138,15 @@ ARM 工具链
 RISC-V 工具链
 ^^^^^^^^^^^^^^^^^^^^^
 
-对于 RISC-V 交叉编译工具链，你可以使用如下命令安装：
+对于 RISC-V 交叉编译工具链，最简单的配置方式就是使用包管理器安装：
 
 .. code-block:: bash
 
     sudo apt install riscv64-linux-gnu-gcc
 
+.. note::
+
+    你也可以尝试手动构建 `RISC-V GNU Compiler Toolchain <https://github.com/riscv-collab/riscv-gnu-toolchain>`_
 
 .. tip::
 
@@ -120,4 +154,5 @@ RISC-V 工具链
 
 .. important::
 
-    如果你在环境配置的过程中遇到任何问题，请及时联系助教。同时我们建议你在实验报告中记录下配置过程中遇到的问题和解决方法。
+    如果你在环境配置的过程中遇到任何问题，请及时联系助教（但是在提问前请确认你已经阅读了 :doc:`intro` 中“如何解决问题”这一节）。
+    同时我们建议你在实验报告中记录下配置过程中遇到的问题和解决方法。
