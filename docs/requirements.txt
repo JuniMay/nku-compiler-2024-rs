@@ -1,4 +1,5 @@
 furo
+sphinx-comments
 sphinxcontrib-applehelp
 sphinxcontrib-devhelp
 sphinxcontrib-htmlhelp
