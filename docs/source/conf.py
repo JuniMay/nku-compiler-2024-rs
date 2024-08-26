@@ -28,18 +28,8 @@ author = "Junyi Mei, Dawei Guo"
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    "sphinx_comments",
+    # "sphinx_comments",
 ]
-
-comments_config = {
-    "utterances": {
-        "repo": "JuniMay/nku-compiler-2024-rs",
-        "issue-term": "pathname",
-        "label": "comment",
-        "theme": "github-light",
-        "crossorigin": "anonymous",
-    }
-}
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
