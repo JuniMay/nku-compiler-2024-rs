@@ -27,6 +27,32 @@ pub enum TyData {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Ty(UniqueArenaPtr<TyData>);
 
+pub struct DisplayTy<'ctx> {
+    ctx: &'ctx Context,
+    ty: Ty,
+}
+
+impl<'ctx> std::fmt::Display for DisplayTy<'ctx> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self.ty.try_deref(self.ctx).unwrap() {
+            TyData::Void => write!(f, "void"),
+            TyData::Int1 => write!(f, "i1"),
+            TyData::Int8 => write!(f, "i8"),
+            TyData::Int32 => write!(f, "i32"),
+            TyData::Ptr => write!(f, "ptr"),
+            TyData::Array { elem, len } => write!(
+                f,
+                "[{} x {}]",
+                len,
+                DisplayTy {
+                    ctx: self.ctx,
+                    ty: *elem
+                }
+            ),
+        }
+    }
+}
+
 impl Ty {
     /// Fetch a type representing `void`.
     pub fn void(ctx: &mut Context) -> Self { ctx.alloc(TyData::Void) }
@@ -67,6 +93,9 @@ impl Ty {
             _ => None,
         }
     }
+
+    /// Get the displayable type.
+    pub fn display(self, ctx: &Context) -> DisplayTy { DisplayTy { ctx, ty: self } }
 }
 
 impl ArenaPtr for Ty {
@@ -89,4 +118,48 @@ impl Arena<Ty> for Context {
     fn try_deref(&self, ptr: Ty) -> Option<&TyData> { self.tys.try_deref(ptr.0) }
 
     fn try_deref_mut(&mut self, ptr: Ty) -> Option<&mut TyData> { self.tys.try_deref_mut(ptr.0) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ty() {
+        let mut ctx = Context::new(8);
+        let void = Ty::void(&mut ctx);
+        let i1 = Ty::i1(&mut ctx);
+        let i8 = Ty::i8(&mut ctx);
+        let i32 = Ty::i32(&mut ctx);
+        let ptr = Ty::ptr(&mut ctx);
+        let arr = Ty::array(&mut ctx, i32, 10);
+
+        assert_eq!(void.bitwidth(&ctx), 0);
+        assert_eq!(i1.bitwidth(&ctx), 1);
+        assert_eq!(i8.bitwidth(&ctx), 8);
+        assert_eq!(i32.bitwidth(&ctx), 32);
+        assert_eq!(ptr.bitwidth(&ctx), 64);
+        assert_eq!(arr.bitwidth(&ctx), 320);
+
+        assert_eq!(i32.as_array(&ctx), None);
+        assert_eq!(arr.as_array(&ctx), Some((i32, 10)));
+    }
+
+    #[test]
+    fn test_display_ty() {
+        let mut ctx = Context::new(8);
+        let void = Ty::void(&mut ctx);
+        let i1 = Ty::i1(&mut ctx);
+        let i8 = Ty::i8(&mut ctx);
+        let i32 = Ty::i32(&mut ctx);
+        let ptr = Ty::ptr(&mut ctx);
+        let arr = Ty::array(&mut ctx, i32, 10);
+
+        assert_eq!(void.display(&ctx).to_string(), "void");
+        assert_eq!(i1.display(&ctx).to_string(), "i1");
+        assert_eq!(i8.display(&ctx).to_string(), "i8");
+        assert_eq!(i32.display(&ctx).to_string(), "i32");
+        assert_eq!(ptr.display(&ctx).to_string(), "ptr");
+        assert_eq!(arr.display(&ctx).to_string(), "[10 x i32]");
+    }
 }

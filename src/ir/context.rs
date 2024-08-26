@@ -25,3 +25,16 @@ pub struct Context {
     /// Target information.
     pub(super) target: TargetInfo,
 }
+
+impl Context {
+    pub fn new(ptr_size: u32) -> Self {
+        Self {
+            tys: UniqueArena::default(),
+            blocks: GenericArena::default(),
+            insts: GenericArena::default(),
+            funcs: GenericArena::default(),
+            values: GenericArena::default(),
+            target: TargetInfo { ptr_size },
+        }
+    }
+}

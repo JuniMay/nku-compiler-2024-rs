@@ -1,5 +1,6 @@
 mod block;
 mod context;
+mod def_use;
 mod func;
 mod inst;
 mod ty;
