@@ -149,10 +149,18 @@ impl<T: Usable> Default for OperandList<T> {
 }
 
 impl<T: Usable> OperandList<T> {
+    /// Get the next index for operand creation.
+    fn next_idx(&self) -> usize {
+        match self.first_vacant {
+            Some(vacant) => vacant,
+            None => self.operands.len(),
+        }
+    }
+
     /// Create and insert an operand into the list and return its index in the
     /// operand list. The index grows monotonically, if there is no deletion
     /// between two insertions.
-    fn insert(&mut self, ctx: &mut Context, used: T, user: Inst) -> usize {
+    fn insert(&mut self, operand: Operand<T>) -> usize {
         match self.first_vacant {
             Some(idx) => {
                 // There is a vacant slot, use it and update the first vacant.
@@ -161,7 +169,6 @@ impl<T: Usable> OperandList<T> {
                     OperandEntry::Vacant { next_vacant } => next_vacant,
                     _ => unreachable!(),
                 };
-                let operand = Operand::new(ctx, used, user, idx);
                 self.operands[idx] = OperandEntry::Occupied { operand };
                 self.first_vacant = next_vacant;
                 self.len += 1; // Maintain the length.
@@ -170,7 +177,6 @@ impl<T: Usable> OperandList<T> {
             None => {
                 // There is no vacant slot, push the operand to the end.
                 let idx = self.operands.len();
-                let operand = Operand::new(ctx, used, user, idx);
                 self.operands.push(OperandEntry::Occupied { operand });
                 self.len += 1; // Maintain the length.
                 idx
@@ -183,7 +189,7 @@ impl<T: Usable> OperandList<T> {
     /// # Panics
     ///
     /// - Panics if there is no operand at the given index.
-    fn remove(&mut self, ctx: &mut Context, idx: usize) {
+    fn remove(&mut self, idx: usize) -> Operand<T> {
         let entry = std::mem::replace(
             &mut self.operands[idx],
             OperandEntry::Vacant {
@@ -195,7 +201,7 @@ impl<T: Usable> OperandList<T> {
             OperandEntry::Occupied { operand } => {
                 self.first_vacant = Some(idx);
                 self.len -= 1; // Maintain the length.
-                operand.drop(ctx);
+                operand
             }
             _ => panic!("invalid operand index"),
         }
@@ -325,11 +331,24 @@ impl Inst {
         inst
     }
 
+    /// Create a new `store` instruction.
+    pub fn store(ctx: &mut Context, val: Value, ptr: Value) -> Self {
+        let void = Ty::void(ctx);
+        let inst = Self::new(ctx, InstKind::Store, void);
+        inst.add_operand(ctx, val);
+        inst.add_operand(ctx, ptr);
+        inst
+    }
+
+    // TODO: Implement constructors for other instructions.
+
     fn add_operand(self, ctx: &mut Context, operand: Value) {
+        let next_idx = self.try_deref_mut(ctx).unwrap().operands.next_idx();
+        let operand = Operand::new(ctx, operand, self, next_idx);
         self.try_deref_mut(ctx)
             .unwrap_or_else(|| unreachable!())
             .operands
-            .insert(ctx, operand, self);
+            .insert(operand);
     }
 
     /// Get the operand at the given index.
@@ -337,8 +356,12 @@ impl Inst {
     /// # Panics
     ///
     /// - Panics if the index is out of bounds.
-    pub fn operand(self, ctx: &Context, index: usize) -> Value {
-        self.try_deref(ctx).expect("invalid pointer").operands[index].used()
+    pub fn operand(self, ctx: &Context, idx: usize) -> Value {
+        self.try_deref(ctx)
+            .expect("invalid pointer")
+            .operands
+            .get(idx)
+            .used()
     }
 
     /// Iterate over operands
@@ -361,6 +384,8 @@ impl Inst {
     /// - Panics if the block is not in the incoming list.
     /// - Panics if the block does not exist in the phi node.
     pub fn incoming(self, ctx: &Context, block: Block) -> Value {
+        assert!(self.is_phi(ctx), "not a phi node");
+
         self.try_deref(ctx)
             .expect("invalid pointer")
             .phi_node
@@ -375,6 +400,8 @@ impl Inst {
     ///
     /// - Panics if the instruction is not a phi node.
     pub fn incoming_iter(self, ctx: &Context) -> impl Iterator<Item = (Block, Value)> + '_ {
+        assert!(self.is_phi(ctx), "not a phi node");
+
         self.try_deref(ctx)
             .unwrap()
             .phi_node
@@ -388,24 +415,33 @@ impl Inst {
     ///
     /// - Panics if the instruction is not a phi node.
     pub fn insert_incoming(self, ctx: &mut Context, block: Block, value: Value) {
-        let num_operands = self.try_deref(ctx).unwrap().operands.len();
-        let operand = Operand::new(ctx, value, self, num_operands);
+        assert!(self.is_phi(ctx), "not a phi node");
+
+        let next_idx = self.try_deref_mut(ctx).unwrap().operands.next_idx();
+        let operand = Operand::new(ctx, value, self, next_idx);
 
         // Add the operand into the operand list.
-        self.try_deref_mut(ctx)
+        let idx = self
+            .try_deref_mut(ctx)
             .expect("invalid pointer")
             .operands
-            .insert(ctx, value, self);
+            .insert(operand);
 
         // Create the mapping from the predecessor block to the operand index.
         self.try_deref_mut(ctx)
             .expect("invalid pointer")
             .phi_node
-            .insert(block, num_operands);
+            .insert(block, idx);
     }
 
     /// Remove an incoming value from the phi node.
+    ///
+    /// # Panics
+    ///
+    /// - Panics if the instruction is not a phi node.
     pub fn remove_incoming(self, ctx: &mut Context, block: Block) {
+        assert!(self.is_phi(ctx), "not a phi node");
+
         // Get the index of the incoming value.
         let idx = self
             .try_deref_mut(ctx)
@@ -415,10 +451,13 @@ impl Inst {
             .expect("block not in the incoming list");
 
         // Remove it from the operand list.
-        self.try_deref_mut(ctx)
+        let operand = self
+            .try_deref_mut(ctx)
             .expect("invalid pointer")
             .operands
-            .remove(ctx, idx);
+            .remove(idx);
+
+        operand.drop(ctx);
     }
 
     /// Get the successor at the given index.
@@ -427,12 +466,16 @@ impl Inst {
     ///
     /// - Panics if the index is out of bounds (or the instruction is not a
     ///   branch instruction).
-    pub fn successor(&self, ctx: &Context, index: usize) -> Block {
-        self.try_deref(ctx).unwrap().successors[index].used()
+    pub fn successor(self, ctx: &Context, idx: usize) -> Block {
+        self.try_deref(ctx)
+            .expect("invalid pointer")
+            .successors
+            .get(idx)
+            .used()
     }
 
     /// Iterate over successors
-    pub fn successor_iter(&self, ctx: &Context) -> impl Iterator<Item = Block> + '_ {
+    pub fn successor_iter(self, ctx: &Context) -> impl Iterator<Item = Block> + '_ {
         self.try_deref(ctx)
             .unwrap()
             .successors
@@ -451,6 +494,14 @@ impl Inst {
     /// Get the kind of the instruction.
     pub fn kind(self, ctx: &Context) -> &InstKind {
         &self.try_deref(ctx).expect("invalid pointer").kind
+    }
+
+    /// Check if this is a phi node.
+    pub fn is_phi(self, ctx: &Context) -> bool {
+        matches!(
+            self.try_deref(ctx).expect("invalid pointer").kind,
+            InstKind::Phi
+        )
     }
 }
 
