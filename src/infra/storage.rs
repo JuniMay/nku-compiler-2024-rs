@@ -42,6 +42,17 @@ pub trait ArenaPtr: Copy + Eq + Hash {
     fn try_deref_mut(self, arena: &mut Self::Arena) -> Option<&mut Self::Data> {
         arena.try_deref_mut(self)
     }
+
+    /// Convenient method to dereference the pointer.
+    fn deref(self, arena: &Self::Arena) -> &Self::Data {
+        self.try_deref(arena).expect("invalid pointer dereferenced")
+    }
+
+    /// Convenient method to mutably dereference the pointer.
+    fn deref_mut(self, arena: &mut Self::Arena) -> &mut Self::Data {
+        self.try_deref_mut(arena)
+            .expect("invalid pointer dereferenced")
+    }
 }
 
 /// A trait for an arena that can store data and allocate pointers.

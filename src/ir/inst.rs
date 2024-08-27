@@ -340,10 +340,22 @@ impl Inst {
         inst
     }
 
+    /// Create a new `getelementptr` instruction.
+    pub fn getelementptr(ctx: &mut Context, bound_ty: Ty, ptr: Value, indices: Vec<Value>) -> Self {
+        let ptr_ty = Ty::ptr(ctx);
+        let inst = Self::new(ctx, InstKind::GetElementPtr { bound_ty }, ptr_ty);
+        inst.add_operand(ctx, ptr);
+        for idx in indices {
+            inst.add_operand(ctx, idx);
+        }
+        inst
+    }
+
     // TODO: Implement constructors for other instructions.
 
+    /// Create an operand and add it to the operand list.
     fn add_operand(self, ctx: &mut Context, operand: Value) {
-        let next_idx = self.try_deref_mut(ctx).unwrap().operands.next_idx();
+        let next_idx = self.deref_mut(ctx).operands.next_idx();
         let operand = Operand::new(ctx, operand, self, next_idx);
         self.try_deref_mut(ctx)
             .unwrap_or_else(|| unreachable!())
@@ -357,11 +369,7 @@ impl Inst {
     ///
     /// - Panics if the index is out of bounds.
     pub fn operand(self, ctx: &Context, idx: usize) -> Value {
-        self.try_deref(ctx)
-            .expect("invalid pointer")
-            .operands
-            .get(idx)
-            .used()
+        self.deref(ctx).operands.get(idx).used()
     }
 
     /// Iterate over operands
@@ -370,11 +378,7 @@ impl Inst {
     ///
     /// - Panics if the instruction is a phi node.
     pub fn operand_iter(self, ctx: &Context) -> impl Iterator<Item = Value> + '_ {
-        self.try_deref(ctx)
-            .unwrap()
-            .operands
-            .iter()
-            .map(|op| op.used())
+        self.deref(ctx).operands.iter().map(|op| op.used())
     }
 
     /// Get the incoming value from the given block.
@@ -386,8 +390,7 @@ impl Inst {
     pub fn incoming(self, ctx: &Context, block: Block) -> Value {
         assert!(self.is_phi(ctx), "not a phi node");
 
-        self.try_deref(ctx)
-            .expect("invalid pointer")
+        self.deref(ctx)
             .phi_node
             .get(&block)
             .map(|&idx| self.operand(ctx, idx))
@@ -402,8 +405,7 @@ impl Inst {
     pub fn incoming_iter(self, ctx: &Context) -> impl Iterator<Item = (Block, Value)> + '_ {
         assert!(self.is_phi(ctx), "not a phi node");
 
-        self.try_deref(ctx)
-            .unwrap()
+        self.deref(ctx)
             .phi_node
             .iter()
             .map(move |(&block, &idx)| (block, self.operand(ctx, idx)))
@@ -417,21 +419,14 @@ impl Inst {
     pub fn insert_incoming(self, ctx: &mut Context, block: Block, value: Value) {
         assert!(self.is_phi(ctx), "not a phi node");
 
-        let next_idx = self.try_deref_mut(ctx).unwrap().operands.next_idx();
+        let next_idx = self.deref_mut(ctx).operands.next_idx();
         let operand = Operand::new(ctx, value, self, next_idx);
 
         // Add the operand into the operand list.
-        let idx = self
-            .try_deref_mut(ctx)
-            .expect("invalid pointer")
-            .operands
-            .insert(operand);
+        let idx = self.deref_mut(ctx).operands.insert(operand);
 
         // Create the mapping from the predecessor block to the operand index.
-        self.try_deref_mut(ctx)
-            .expect("invalid pointer")
-            .phi_node
-            .insert(block, idx);
+        self.deref_mut(ctx).phi_node.insert(block, idx);
     }
 
     /// Remove an incoming value from the phi node.
@@ -444,18 +439,13 @@ impl Inst {
 
         // Get the index of the incoming value.
         let idx = self
-            .try_deref_mut(ctx)
-            .expect("invalid pointer")
+            .deref_mut(ctx)
             .phi_node
             .remove(&block)
             .expect("block not in the incoming list");
 
         // Remove it from the operand list.
-        let operand = self
-            .try_deref_mut(ctx)
-            .expect("invalid pointer")
-            .operands
-            .remove(idx);
+        let operand = self.deref_mut(ctx).operands.remove(idx);
 
         operand.drop(ctx);
     }
@@ -467,42 +457,25 @@ impl Inst {
     /// - Panics if the index is out of bounds (or the instruction is not a
     ///   branch instruction).
     pub fn successor(self, ctx: &Context, idx: usize) -> Block {
-        self.try_deref(ctx)
-            .expect("invalid pointer")
-            .successors
-            .get(idx)
-            .used()
+        self.deref(ctx).successors.get(idx).used()
     }
 
     /// Iterate over successors
     pub fn successor_iter(self, ctx: &Context) -> impl Iterator<Item = Block> + '_ {
-        self.try_deref(ctx)
-            .unwrap()
-            .successors
-            .iter()
-            .map(|op| op.used())
+        self.deref(ctx).successors.iter().map(|op| op.used())
     }
 
     /// Get a displayable instance of the instruction.
     pub fn display(self, ctx: &Context) -> DisplayInst { DisplayInst { ctx, inst: self } }
 
     /// Get the result of the instruction.
-    pub fn result(self, ctx: &Context) -> Option<Value> {
-        self.try_deref(ctx).expect("invalid pointer").result
-    }
+    pub fn result(self, ctx: &Context) -> Option<Value> { self.deref(ctx).result }
 
     /// Get the kind of the instruction.
-    pub fn kind(self, ctx: &Context) -> &InstKind {
-        &self.try_deref(ctx).expect("invalid pointer").kind
-    }
+    pub fn kind(self, ctx: &Context) -> &InstKind { &self.deref(ctx).kind }
 
     /// Check if this is a phi node.
-    pub fn is_phi(self, ctx: &Context) -> bool {
-        matches!(
-            self.try_deref(ctx).expect("invalid pointer").kind,
-            InstKind::Phi
-        )
-    }
+    pub fn is_phi(self, ctx: &Context) -> bool { matches!(self.deref(ctx).kind, InstKind::Phi) }
 }
 
 impl ArenaPtr for Inst {
@@ -531,27 +504,17 @@ impl LinkedListNode for Inst {
     type Container = Block;
     type Ctx = Context;
 
-    fn next(self, ctx: &Self::Ctx) -> Option<Self> {
-        self.try_deref(ctx).expect("invalid pointer").next
-    }
+    fn next(self, ctx: &Self::Ctx) -> Option<Self> { self.deref(ctx).next }
 
-    fn prev(self, ctx: &Self::Ctx) -> Option<Self> {
-        self.try_deref(ctx).expect("invalid pointer").prev
-    }
+    fn prev(self, ctx: &Self::Ctx) -> Option<Self> { self.deref(ctx).prev }
 
-    fn container(self, ctx: &Self::Ctx) -> Option<Self::Container> {
-        self.try_deref(ctx).expect("invalid pointer").container
-    }
+    fn container(self, ctx: &Self::Ctx) -> Option<Self::Container> { self.deref(ctx).container }
 
-    fn set_next(self, ctx: &mut Self::Ctx, next: Option<Self>) {
-        self.try_deref_mut(ctx).expect("invalid pointer").next = next;
-    }
+    fn set_next(self, ctx: &mut Self::Ctx, next: Option<Self>) { self.deref_mut(ctx).next = next; }
 
-    fn set_prev(self, ctx: &mut Self::Ctx, prev: Option<Self>) {
-        self.try_deref_mut(ctx).expect("invalid pointer").prev = prev;
-    }
+    fn set_prev(self, ctx: &mut Self::Ctx, prev: Option<Self>) { self.deref_mut(ctx).prev = prev; }
 
     fn set_container(self, ctx: &mut Self::Ctx, container: Option<Self::Container>) {
-        self.try_deref_mut(ctx).expect("invalid pointer").container = container;
+        self.deref_mut(ctx).container = container;
     }
 }
