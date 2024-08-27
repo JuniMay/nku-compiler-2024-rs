@@ -5,3 +5,4 @@ mod func;
 mod inst;
 mod ty;
 mod value;
+mod global;

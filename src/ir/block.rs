@@ -5,9 +5,11 @@ use super::def_use::{Usable, User};
 use super::func::Func;
 use super::inst::Inst;
 use crate::infra::linked_list::{LinkedListContainer, LinkedListNode};
-use crate::infra::storage::{Arena, ArenaPtr, GenericPtr};
+use crate::infra::storage::{Arena, ArenaPtr, GenericPtr, Idx};
 
 pub struct BlockData {
+    self_ptr: Block,
+
     users: HashSet<User<Block>>,
 
     next: Option<Block>,
@@ -21,6 +23,27 @@ pub struct BlockData {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Block(GenericPtr<BlockData>);
+
+impl Block {
+    pub fn new(ctx: &mut Context) -> Self {
+        ctx.alloc_with(|self_ptr| BlockData {
+            self_ptr,
+            users: HashSet::new(),
+            next: None,
+            prev: None,
+            head: None,
+            tail: None,
+            container: None,
+        })
+    }
+
+    /// Get the name of the block.
+    pub fn name(self, _ctx: &Context) -> String {
+        // We use the arena index directly as the block number. This is not a good way
+        // to number blocks in a real compiler, but only for debugging purposes.
+        format!("%{}", self.0.index())
+    }
+}
 
 impl ArenaPtr for Block {
     type Arena = Context;
@@ -47,16 +70,20 @@ impl Arena<Block> for Context {
 impl LinkedListContainer<Inst> for Block {
     type Ctx = Context;
 
-    fn head(self, ctx: &Self::Ctx) -> Option<Inst> { self.try_deref(ctx).unwrap().head }
+    fn head(self, ctx: &Self::Ctx) -> Option<Inst> {
+        self.try_deref(ctx).expect("invalid pointer").head
+    }
 
-    fn tail(self, ctx: &Self::Ctx) -> Option<Inst> { self.try_deref(ctx).unwrap().tail }
+    fn tail(self, ctx: &Self::Ctx) -> Option<Inst> {
+        self.try_deref(ctx).expect("invalid pointer").tail
+    }
 
     fn set_head(self, ctx: &mut Self::Ctx, head: Option<Inst>) {
-        self.try_deref_mut(ctx).unwrap().head = head;
+        self.try_deref_mut(ctx).expect("invalid pointer").head = head;
     }
 
     fn set_tail(self, ctx: &mut Self::Ctx, tail: Option<Inst>) {
-        self.try_deref_mut(ctx).unwrap().tail = tail;
+        self.try_deref_mut(ctx).expect("invalid pointer").tail = tail;
     }
 }
 
@@ -64,24 +91,28 @@ impl LinkedListNode for Block {
     type Container = Func;
     type Ctx = Context;
 
-    fn next(self, ctx: &Self::Ctx) -> Option<Self> { self.try_deref(ctx).unwrap().next }
+    fn next(self, ctx: &Self::Ctx) -> Option<Self> {
+        self.try_deref(ctx).expect("invalid pointer").next
+    }
 
-    fn prev(self, ctx: &Self::Ctx) -> Option<Self> { self.try_deref(ctx).unwrap().prev }
+    fn prev(self, ctx: &Self::Ctx) -> Option<Self> {
+        self.try_deref(ctx).expect("invalid pointer").prev
+    }
 
     fn container(self, ctx: &Self::Ctx) -> Option<Self::Container> {
-        self.try_deref(ctx).unwrap().container
+        self.try_deref(ctx).expect("invalid pointer").container
     }
 
     fn set_next(self, ctx: &mut Self::Ctx, next: Option<Self>) {
-        self.try_deref_mut(ctx).unwrap().next = next;
+        self.try_deref_mut(ctx).expect("invalid pointer").next = next;
     }
 
     fn set_prev(self, ctx: &mut Self::Ctx, prev: Option<Self>) {
-        self.try_deref_mut(ctx).unwrap().prev = prev;
+        self.try_deref_mut(ctx).expect("invalid pointer").prev = prev;
     }
 
     fn set_container(self, ctx: &mut Self::Ctx, container: Option<Self::Container>) {
-        self.try_deref_mut(ctx).unwrap().container = container;
+        self.try_deref_mut(ctx).expect("invalid pointer").container = container;
     }
 }
 

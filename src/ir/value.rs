@@ -21,8 +21,8 @@ pub enum ConstantValue {
     Int32 { ty: Ty, value: i32 },
     /// An array constant.
     Array { ty: Ty, elems: Vec<ConstantValue> },
-    /// Global variables/functions are treated as constants, because they
-    /// represent immutable memory locations.
+    /// Global variables/functions are treated as constants, because their
+    /// addresses are immutable.
     Global {
         /// The type of the global variable/function.
         ty: Ty,
@@ -76,7 +76,7 @@ impl ConstantValue {
 
 pub enum ValueKind {
     /// The value is the result of an instruction.
-    InstResult { inst: Inst },
+    InstResult { inst: Inst, ty: Ty },
     /// The value is a function parameter.
     Param { func: Func, ty: Ty, index: u32 },
     /// The value is an invariant constant.
@@ -99,17 +99,24 @@ pub struct Value(GenericPtr<ValueData>);
 pub struct DisplayValue<'ctx> {
     ctx: &'ctx Context,
     value: Value,
+    with_type: bool,
 }
 
-impl<'ctx> std::fmt::Display for DisplayValue<'ctx> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl<'ctx> fmt::Display for DisplayValue<'ctx> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.value.try_deref(self.ctx).unwrap().kind {
-            ValueKind::InstResult { .. } | ValueKind::Param { .. } => {
+            ValueKind::InstResult { ty, .. } | ValueKind::Param { ty, .. } => {
                 // We use the arena index directly as the value number. This is not a good way
                 // to number values in a real compiler, but only for debugging purposes.
-                write!(f, "%{}", self.value.0.index())
+                if self.with_type {
+                    write!(f, "{} %{}", ty.display(self.ctx), self.value.0.index())
+                } else {
+                    write!(f, "%{}", self.value.0.index())
+                }
             }
-            ValueKind::Constant { .. } => todo!(),
+            ValueKind::Constant { ref value } => {
+                write!(f, "{}", value.to_string(self.ctx, self.with_type))
+            }
         }
     }
 }
@@ -123,7 +130,17 @@ impl Value {
         })
     }
 
-    pub fn display(self, ctx: &Context) -> DisplayValue { DisplayValue { ctx, value: self } }
+    pub fn new_inst_result(ctx: &mut Context, inst: Inst, ty: Ty) -> Self {
+        Self::new(ctx, ValueKind::InstResult { inst, ty })
+    }
+
+    pub fn display(self, ctx: &Context, with_type: bool) -> DisplayValue {
+        DisplayValue {
+            ctx,
+            value: self,
+            with_type,
+        }
+    }
 }
 
 impl ArenaPtr for Value {

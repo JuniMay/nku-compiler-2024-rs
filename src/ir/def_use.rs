@@ -2,6 +2,8 @@ use super::inst::Inst;
 use crate::infra::storage::ArenaPtr;
 
 /// Represents an entity that can be used in an instruction.
+///
+/// An instruction can use values and blocks.
 pub trait Usable: ArenaPtr {
     /// Get all the uses of the entity.
     fn users(self, arena: &Self::Arena) -> impl IntoIterator<Item = User<Self>>;
