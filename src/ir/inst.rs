@@ -9,6 +9,7 @@ use super::value::Value;
 use crate::infra::linked_list::LinkedListNode;
 use crate::infra::storage::{Arena, ArenaPtr, GenericPtr};
 
+#[derive(Debug)]
 pub enum IntCmpCond {
     Eq,
     Ne,
@@ -27,6 +28,7 @@ impl fmt::Display for IntCmpCond {
     }
 }
 
+#[derive(Debug)]
 pub enum IntBinaryOp {
     Add,
     Sub,
@@ -65,6 +67,7 @@ impl fmt::Display for IntBinaryOp {
     }
 }
 
+#[derive(Debug)]
 pub enum CastOp {
     Zext,
     Sext,
@@ -81,6 +84,7 @@ impl fmt::Display for CastOp {
     }
 }
 
+#[derive(Debug)]
 pub enum InstKind {
     Alloca {
         /// The type of the allocated memory.
@@ -219,18 +223,6 @@ impl<T: Usable> OperandList<T> {
         }
     }
 
-    /// Get the operand at the given index mutably.
-    ///
-    /// # Panics
-    ///
-    /// - Panics if there is no operand at the given index.
-    fn get_mut(&mut self, idx: usize) -> &mut Operand<T> {
-        match &mut self.operands[idx] {
-            OperandEntry::Occupied { operand } => operand,
-            _ => panic!("invalid operand index"),
-        }
-    }
-
     /// Iterate over the operands.
     ///
     /// There might be vacant slots in the operand list, we need to filter them
@@ -245,14 +237,11 @@ impl<T: Usable> OperandList<T> {
             _ => None,
         })
     }
-
-    /// Get the length of the operand list.
-    fn len(&self) -> usize { self.len }
 }
 
 pub struct InstData {
     /// Pointer to the instruction itself.
-    self_ptr: Inst,
+    _self_ptr: Inst,
     /// The kind of the instruction.
     kind: InstKind,
     /// The operands of the instruction.
@@ -282,11 +271,6 @@ pub struct InstData {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Inst(GenericPtr<InstData>);
 
-pub struct DisplayInst<'ctx> {
-    ctx: &'ctx Context,
-    inst: Inst,
-}
-
 impl Inst {
     /// Create a new instruction. The new instruction is not linked to any
     /// block.
@@ -298,7 +282,7 @@ impl Inst {
     /// - `ty`: The type of the instruction result.
     fn new(ctx: &mut Context, kind: InstKind, ty: Ty) -> Self {
         let inst = ctx.alloc_with(|self_ptr| InstData {
-            self_ptr,
+            _self_ptr: self_ptr,
             kind,
             operands: OperandList::default(),
             phi_node: HashMap::default(),
@@ -308,10 +292,13 @@ impl Inst {
             prev: None,
             container: None,
         });
-        let result = Value::new_inst_result(ctx, inst, ty);
-        inst.try_deref_mut(ctx)
-            .unwrap_or_else(|| unreachable!())
-            .result = Some(result);
+
+        if !ty.is_void(ctx) {
+            let result = Value::new_inst_result(ctx, inst, ty);
+            inst.try_deref_mut(ctx)
+                .unwrap_or_else(|| unreachable!())
+                .result = Some(result);
+        }
         inst
     }
 
@@ -351,6 +338,48 @@ impl Inst {
         inst
     }
 
+    /// Create a new `add` instruction.
+    pub fn add(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::IntBinary {
+                op: IntBinaryOp::Add,
+            },
+            ty,
+        );
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    /// Create a new `ret` instruction.
+    pub fn ret(ctx: &mut Context, val: Option<Value>) -> Self {
+        let void = Ty::void(ctx);
+        let inst = Self::new(ctx, InstKind::Ret, void);
+        if let Some(val) = val {
+            inst.add_operand(ctx, val);
+        }
+        inst
+    }
+
+    /// Create a new `br` instruction.
+    pub fn br(ctx: &mut Context, dest: Block) -> Self {
+        let void = Ty::void(ctx);
+        let inst = Self::new(ctx, InstKind::Br, void);
+        inst.add_successor(ctx, dest);
+        inst
+    }
+
+    /// Create a new conditional branch instruction.
+    pub fn cond_br(ctx: &mut Context, cond: Value, then_dest: Block, else_dest: Block) -> Self {
+        let void = Ty::void(ctx);
+        let inst = Self::new(ctx, InstKind::CondBr, void);
+        inst.add_operand(ctx, cond);
+        inst.add_successor(ctx, then_dest);
+        inst.add_successor(ctx, else_dest);
+        inst
+    }
+
     // TODO: Implement constructors for other instructions.
 
     /// Create an operand and add it to the operand list.
@@ -360,6 +389,16 @@ impl Inst {
         self.try_deref_mut(ctx)
             .unwrap_or_else(|| unreachable!())
             .operands
+            .insert(operand);
+    }
+
+    /// Create a successor operand and add it to the successor list.
+    fn add_successor(self, ctx: &mut Context, successor: Block) {
+        let next_idx = self.deref_mut(ctx).successors.next_idx();
+        let operand = Operand::new(ctx, successor, self, next_idx);
+        self.try_deref_mut(ctx)
+            .unwrap_or_else(|| unreachable!())
+            .successors
             .insert(operand);
     }
 
@@ -476,6 +515,91 @@ impl Inst {
 
     /// Check if this is a phi node.
     pub fn is_phi(self, ctx: &Context) -> bool { matches!(self.deref(ctx).kind, InstKind::Phi) }
+}
+
+pub struct DisplayInst<'ctx> {
+    ctx: &'ctx Context,
+    inst: Inst,
+}
+
+impl fmt::Display for DisplayInst<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(result) = self.inst.result(self.ctx) {
+            write!(f, "{}", result.display(self.ctx, false))?;
+            write!(f, " = ")?;
+        }
+
+        // match kind to decide the instruction format
+
+        match self.inst.kind(self.ctx) {
+            InstKind::Alloca { ty } => {
+                write!(f, "alloca {}", ty.display(self.ctx))?;
+            }
+            InstKind::Phi => {
+                let ty = self.inst.result(self.ctx).unwrap().ty(self.ctx);
+                write!(f, "phi {}", ty.display(self.ctx))?;
+                let mut first = true;
+                for (block, value) in self.inst.incoming_iter(self.ctx) {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    first = false;
+                    write!(
+                        f,
+                        "[{}, {}]",
+                        value.display(self.ctx, false),
+                        block.name(self.ctx)
+                    )?;
+                }
+            }
+            InstKind::Load => {
+                let ty = self.inst.result(self.ctx).unwrap().ty(self.ctx);
+                write!(
+                    f,
+                    "load {}, {}",
+                    ty.display(self.ctx),
+                    self.inst.operand(self.ctx, 0).display(self.ctx, true)
+                )?;
+            }
+            InstKind::Store => {
+                write!(
+                    f,
+                    "store {}, {}",
+                    self.inst.operand(self.ctx, 0).display(self.ctx, true),
+                    self.inst.operand(self.ctx, 1).display(self.ctx, true)
+                )?;
+            }
+            InstKind::IntBinary { op } => {
+                write!(
+                    f,
+                    "{} {}, {}",
+                    op,
+                    self.inst.operand(self.ctx, 0).display(self.ctx, true),
+                    self.inst.operand(self.ctx, 1).display(self.ctx, false)
+                )?;
+            }
+            InstKind::Ret => {
+                if let Some(val) = self.inst.operand_iter(self.ctx).next() {
+                    write!(f, "ret {}", val.display(self.ctx, true))?;
+                } else {
+                    write!(f, "ret void")?;
+                }
+            }
+            InstKind::Br => {
+                write!(
+                    f,
+                    "br label {}",
+                    self.inst.successor(self.ctx, 0).name(self.ctx)
+                )?;
+            }
+            _ => {
+                dbg!(self.inst.kind(self.ctx));
+                todo!("implement the display for other instructions");
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl ArenaPtr for Inst {

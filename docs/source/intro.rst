@@ -19,6 +19,8 @@
    
     Rust 版本为 2024 年课程新加入的实验，如果在实验过程中遇到问题，请及时与助教联系。
 
+    **出于实验难度的考虑，我们只提供了 RISC-V 后端实现的指导，如果你希望实现 ARM 后端，请先与助教和老师进行沟通。**
+
 .. important::
 
     在选择实验所使用的语言并开始实验前，请先仔细阅读本页面中的内容，**尤其是关于如何解决问题的部分**，这将有助于你更好地与助教沟通并解决实验中遇到的问题。
@@ -91,11 +93,17 @@
 
 由于 Rust 版本实验为新添加实验，许多内容可能并不成熟，此处给出几个可以参考的 Rust 编译器实现：
 
-#. `orzcc <https://github.com/JuniMay/orzcc>`_ ：一个 SysY 到 RISC-V 后端编译器的实现，实验代码框架主要使用这个项目作为参考。
+#. `orzcc <https://github.com/JuniMay/orzcc>`_ ：一个 SysY 到 RISC-V 后端编译器的实现，2024 毕昇杯编译系统设计赛 RISC-V 赛道获奖作品，实验代码框架主要基于这个项目作为参考。
 
    .. note::
 
       orzcc 没有使用 LLVM IR，但是根据课程实验要求，你需要使用 LLVM IR 作为中间代码。
+
+      orzcc 设计时支持多后端，但是只实现了 RISC-V 后端，如果你想实现 ARM 后端，可能需要自行探索。
+      
+   .. danger::
+
+      请注意，orzcc 代码是面向竞赛设计的产物，可能存在大量 Bug，功能冗余和不符合实验要求的部分，如果你要参考 orzcc 代码，请注意鉴别。
 
 #. `kira-rs <https://github.com/pku-minic/kira-rs>`_：PKU 编译课程的 Rust 版本实现，可以作为参考。
 #. `vicis <https://github.com/maekawatoshiki/vicis>`_ ：在 Rust 中构建 LLVM IR 的实现，可以作为参考。
@@ -124,7 +132,9 @@
 
 如何解决问题？
 ---------------------
-在实现编译器的过程中，你可能会遇到各种各样的问题，对于这些问题，你可以依次尝试以下几种方法尝试解决：
+
+请仔细阅读 `提问的智慧 <https://github.com/ryanhanwu/How-To-Ask-Questions-The-Smart-Way/blob/main/README-zh_CN.md>`_ 和
+`别像弱智一样提问 <https://github.com/tangx/Stop-Ask-Questions-The-Stupid-Ways/blob/master/README.md>`_ 这两篇文章。如果你没有时间阅读，下面是一些比较一般的解决问题的方法。
 
 #. 先尝试自己解决。仔细想想，问题出在哪里？是不是自己操作有误？是不是代码有问题？是不是对某个概念理解不正确？
 #. **RTFM (Read The Friendly Manual) 先查文档！** 本文档以及本文档给出的参考资料中提及了许多常见问题以及解决方法，请仔细阅读。大部分问题都可以通过这些资料解决。

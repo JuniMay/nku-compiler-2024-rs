@@ -74,6 +74,10 @@ impl Ty {
         ctx.alloc(TyData::Array { elem, len })
     }
 
+    pub fn is_void(&self, ctx: &Context) -> bool {
+        matches!(self.try_deref(ctx).unwrap(), TyData::Void)
+    }
+
     /// Get the bit width of the type.
     pub fn bitwidth(&self, ctx: &Context) -> usize {
         match self.try_deref(ctx).unwrap() {

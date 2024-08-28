@@ -3,4 +3,22 @@ name = "nkucc"
 version = "0.1.0"
 edition = "2021"
 
+build = "build.rs"
+
 [dependencies]
+thiserror = "1.0.61"
+
+lalrpop-util = { version = "0.20.2", features = ["lexer"], optional = true }
+
+[build-dependencies]
+lalrpop = "0.20.2"
+
+[features]
+default = [
+    "target-riscv64",
+    "frontend-sysy",  # comment this if its too slow to compile
+]
+
+target-riscv64 = []
+
+frontend-sysy = ["dep:lalrpop-util"]

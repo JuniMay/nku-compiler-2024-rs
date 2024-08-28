@@ -23,11 +23,13 @@ pub enum ConstantValue {
     Array { ty: Ty, elems: Vec<ConstantValue> },
     /// Global variables/functions are treated as constants, because their
     /// addresses are immutable.
-    Global {
-        /// The type of the global variable/function.
+    GlobalRef {
+        /// The pointer type.
         ty: Ty,
         /// The name of the global variable/function.
         name: String,
+        /// The type of the value that the global variable/function points to.
+        value_ty: Ty,
     },
 }
 
@@ -40,8 +42,28 @@ impl ConstantValue {
             ConstantValue::Int8 { ty, .. } => *ty,
             ConstantValue::Int32 { ty, .. } => *ty,
             ConstantValue::Array { ty, .. } => *ty,
-            ConstantValue::Global { ty, .. } => *ty,
+            ConstantValue::GlobalRef { ty, .. } => *ty,
         }
+    }
+
+    pub fn i1(ctx: &mut Context, value: bool) -> ConstantValue {
+        let i1 = Ty::i1(ctx);
+        ConstantValue::Int1 { ty: i1, value }
+    }
+
+    pub fn i8(ctx: &mut Context, value: i8) -> ConstantValue {
+        let i8 = Ty::i8(ctx);
+        ConstantValue::Int8 { ty: i8, value }
+    }
+
+    pub fn i32(ctx: &mut Context, value: i32) -> ConstantValue {
+        let i32 = Ty::i32(ctx);
+        ConstantValue::Int32 { ty: i32, value }
+    }
+
+    pub fn global_ref(ctx: &mut Context, name: String, value_ty: Ty) -> ConstantValue {
+        let ty = Ty::ptr(ctx);
+        ConstantValue::GlobalRef { ty, name, value_ty }
     }
 
     pub fn to_string(&self, ctx: &Context, typed: bool) -> String {
@@ -67,7 +89,10 @@ impl ConstantValue {
                 }
                 s.push(']');
             }
-            ConstantValue::Global { name, .. } => s.push_str(name),
+            ConstantValue::GlobalRef { name, .. } => {
+                s.push('@');
+                s.push_str(name);
+            }
         }
 
         s
@@ -84,7 +109,7 @@ pub enum ValueKind {
 }
 
 pub struct ValueData {
-    self_ptr: Value,
+    _self_ptr: Value,
     kind: ValueKind,
     /// The user of this value.
     ///
@@ -109,9 +134,9 @@ impl<'ctx> fmt::Display for DisplayValue<'ctx> {
                 // We use the arena index directly as the value number. This is not a good way
                 // to number values in a real compiler, but only for debugging purposes.
                 if self.with_type {
-                    write!(f, "{} %{}", ty.display(self.ctx), self.value.0.index())
+                    write!(f, "{} %v{}", ty.display(self.ctx), self.value.0.index())
                 } else {
-                    write!(f, "%{}", self.value.0.index())
+                    write!(f, "%v{}", self.value.0.index())
                 }
             }
             ValueKind::Constant { ref value } => {
@@ -124,13 +149,25 @@ impl<'ctx> fmt::Display for DisplayValue<'ctx> {
 impl Value {
     fn new(ctx: &mut Context, kind: ValueKind) -> Self {
         ctx.alloc_with(|self_ptr| ValueData {
-            self_ptr,
+            _self_ptr: self_ptr,
             kind,
             users: HashSet::new(),
         })
     }
 
-    pub fn new_inst_result(ctx: &mut Context, inst: Inst, ty: Ty) -> Self {
+    pub fn ty(&self, ctx: &Context) -> Ty {
+        match self.try_deref(ctx).unwrap().kind {
+            ValueKind::InstResult { ty, .. } => ty,
+            ValueKind::Param { ty, .. } => ty,
+            ValueKind::Constant { ref value } => value.ty(),
+        }
+    }
+
+    pub(super) fn new_param(ctx: &mut Context, func: Func, ty: Ty, index: u32) -> Self {
+        Self::new(ctx, ValueKind::Param { func, ty, index })
+    }
+
+    pub(super) fn new_inst_result(ctx: &mut Context, inst: Inst, ty: Ty) -> Self {
         Self::new(ctx, ValueKind::InstResult { inst, ty })
     }
 
@@ -140,6 +177,30 @@ impl Value {
             value: self,
             with_type,
         }
+    }
+
+    pub fn is_param(&self, ctx: &Context) -> bool {
+        matches!(self.try_deref(ctx).unwrap().kind, ValueKind::Param { .. })
+    }
+
+    pub fn i1(ctx: &mut Context, value: bool) -> Self {
+        let value = ConstantValue::i1(ctx, value);
+        Self::new(ctx, ValueKind::Constant { value })
+    }
+
+    pub fn i8(ctx: &mut Context, value: i8) -> Self {
+        let value = ConstantValue::i8(ctx, value);
+        Self::new(ctx, ValueKind::Constant { value })
+    }
+
+    pub fn i32(ctx: &mut Context, value: i32) -> Self {
+        let value = ConstantValue::i32(ctx, value);
+        Self::new(ctx, ValueKind::Constant { value })
+    }
+
+    pub fn global_ref(ctx: &mut Context, name: String, value_ty: Ty) -> Self {
+        let value = ConstantValue::global_ref(ctx, name, value_ty);
+        Self::new(ctx, ValueKind::Constant { value })
     }
 }
 

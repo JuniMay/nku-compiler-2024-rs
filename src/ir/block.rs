@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fmt;
 
 use super::context::Context;
 use super::def_use::{Usable, User};
@@ -8,26 +9,35 @@ use crate::infra::linked_list::{LinkedListContainer, LinkedListNode};
 use crate::infra::storage::{Arena, ArenaPtr, GenericPtr, Idx};
 
 pub struct BlockData {
-    self_ptr: Block,
+    _self_ptr: Block,
 
+    /// Users of this block.
     users: HashSet<User<Block>>,
 
     next: Option<Block>,
     prev: Option<Block>,
 
+    /// The first instructions in the block.
     head: Option<Inst>,
+    /// The last instruction in the block.
     tail: Option<Inst>,
 
+    /// The function that contains this block.
     container: Option<Func>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Block(GenericPtr<BlockData>);
 
+pub struct DisplayBlock<'ctx> {
+    ctx: &'ctx Context,
+    block: Block,
+}
+
 impl Block {
     pub fn new(ctx: &mut Context) -> Self {
         ctx.alloc_with(|self_ptr| BlockData {
-            self_ptr,
+            _self_ptr: self_ptr,
             users: HashSet::new(),
             next: None,
             prev: None,
@@ -41,7 +51,21 @@ impl Block {
     pub fn name(self, _ctx: &Context) -> String {
         // We use the arena index directly as the block number. This is not a good way
         // to number blocks in a real compiler, but only for debugging purposes.
-        format!("%{}", self.0.index())
+        format!("%bb_{}", self.0.index())
+    }
+
+    pub fn display(self, ctx: &Context) -> DisplayBlock { DisplayBlock { ctx, block: self } }
+}
+
+impl fmt::Display for DisplayBlock<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "bb_{}:", self.block.0.index())?;
+
+        for inst in self.block.iter(self.ctx) {
+            write!(f, "\n\t{}", inst.display(self.ctx))?;
+        }
+
+        Ok(())
     }
 }
 

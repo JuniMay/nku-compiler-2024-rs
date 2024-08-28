@@ -13,6 +13,7 @@
    env-setup.rst
    rust-basics.rst
    llvm-basics.rst
+   asm-basics.rst
    parser.rst
    irgen.rst
    codegen.rst

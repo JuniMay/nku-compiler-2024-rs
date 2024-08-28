@@ -1,0 +1,231 @@
+use crate::frontend::{
+    ast::*,
+    types::*,
+};
+
+grammar;
+
+match {
+  r"\s*" => {},
+  r"//[^\n\r]*[\n\r]*" => {},
+  r"/\*[^*]*\*+(?:[^/*][^*]*\*+)*/" => {},
+  _
+}
+
+Ident: String = r"[_a-zA-Z][_a-zA-Z0-9]*" => <>.to_string();
+
+// CompUnit -> [ CompUnit ] ( Decl | FuncDef )
+pub SysY: CompUnit = {
+    <items: (Item)*> => CompUnit { items }
+}
+
+pub Item: Item = {
+    <d: Decl> => Item::Decl(d),
+    <f: FuncDef> => Item::FuncDef(f),
+}
+
+// Decl -> ConstDecl | VarDecl
+pub Decl: Decl = {
+    <c: ConstDecl> => Decl::ConstDecl(c),
+    <v: VarDecl> => Decl::VarDecl(v),
+}
+
+// BType -> 'int' | 'void' 
+// void is actually FuncType, but merge them all to avoid conflicts
+pub BType: Type = {
+    "int" => Type::int(),
+    "void" => Type::void(),
+}
+
+// ConstDecl -> 'const' BType ConstDef { ',' ConstDef } ';'
+pub ConstDecl: ConstDecl = {
+    "const" <ty: BType> <def: ConstDef> <mut defs: ("," <ConstDef>)*> ";" => {
+        defs.insert(0, def);
+        ConstDecl { ty, defs }
+    }
+}
+
+// ConstDef -> Ident '=' ConstInitVal
+pub ConstDef: ConstDef = {
+    <ident: Ident> "=" <init: ConstInitVal> => ConstDef { ident, init }
+}
+
+// ConstInitVal -> ConstExp
+pub ConstInitVal: Expr = {
+    <e: ConstExp> => e,
+}
+
+// VarDecl -> BType VarDef { ',' VarDef } ';'
+pub VarDecl: VarDecl = {
+    <ty: BType> <def: VarDef> <mut defs: ("," <VarDef>)*> ";" => {
+        defs.insert(0, def);
+        VarDecl { ty, defs }
+    }
+}
+
+// VarDef -> Ident
+//         | Ident '=' InitVal
+pub VarDef: VarDef = {
+    <ident: Ident> <init: ("=" <InitVal>)?> => VarDef { ident, init }
+}
+
+// InitVal -> Exp
+pub InitVal: Expr = {
+    <e: Exp> => e,
+}
+
+// FuncDef -> FuncType Ident '(' FuncFParams ')' Block
+pub FuncDef: FuncDef = {
+    <ret_ty: BType> <ident: Ident> "(" ")" <body: Block> => FuncDef { ret_ty, ident, params: vec![], body },
+    <ret_ty: BType> <ident: Ident> "(" <params: FuncFParams> ")" <body: Block> => {
+        FuncDef { ret_ty, ident, params, body }
+    }
+}
+
+// FuncFParams -> FuncFParam { ',' FuncFParam }
+pub FuncFParams: Vec<FuncFParam> = {
+    <param: FuncFParam> <mut params: ("," <FuncFParam>)*> => {
+        params.insert(0, param);
+        params
+    }
+}
+
+// FuncFParam -> BType Ident
+pub FuncFParam: FuncFParam = {
+    <ty: BType> <ident: Ident> => {
+        FuncFParam { ty, ident }
+    },
+}
+
+// Block -> '{' { BlockItem } '}'
+pub Block: Block = {
+    "{" <items: (BlockItem)*> "}" => Block { items }
+}
+
+// BlockItem -> Decl | Stmt
+pub BlockItem: BlockItem = {
+    <d: Decl> => BlockItem::Decl(d),
+    <s: Stmt> => BlockItem::Stmt(s),
+}
+
+Int: i32 = {
+  r"[1-9][0-9]*" => i32::from_str_radix(<>, 10).unwrap(),
+  r"0[0-7]*" => i32::from_str_radix(<>, 8).unwrap(),
+  r"0[xX][0-9a-fA-F]+" => i32::from_str_radix(&<>[2..], 16).unwrap(),
+}
+
+
+// Number -> IntConst | floatConst
+pub Number: ComptimeVal = {
+  <n: Int> => ComptimeVal::int(n),
+}
+
+// LVal -> Ident
+pub LVal: LVal = {
+    <ident: Ident> => LVal { ident }
+}
+
+// PrimaryExp -> '(' Exp ')' | LVal | Number
+pub PrimaryExp: Expr = {
+    "(" <e: Exp> ")" => e,
+    <v: LVal> => Expr::lval(v),
+    <n: Number> => Expr::const_(n),
+}
+
+// UnaryExp -> PrimaryExp
+//           | Ident '(' [ FuncRParams ] ')'
+//           | UnaryOp UnaryExp
+pub UnaryExp: Expr = {
+    PrimaryExp => <>,
+    <ident: Ident> "(" ")" => Expr::func_call(ident, vec![]),
+    <ident: Ident> "(" <arg: Exp> <mut args: ("," <Exp>)*> ")" => {
+        args.insert(0, arg);
+        Expr::func_call(ident, args)
+    },
+    "+" <e: UnaryExp> => e,
+}
+
+// MulExp -> UnaryExp | MulExp ('*' | '/' | '%') UnaryExp
+pub MulExp: Expr = {
+  UnaryExp => <>,
+  <lhs: MulExp> "*" <rhs: UnaryExp> => Expr::binary(BinaryOp::Mul, lhs, rhs),
+  <lhs: MulExp> "/" <rhs: UnaryExp> => Expr::binary(BinaryOp::Div, lhs, rhs),
+  // TODO: Support modulo operator
+}
+
+// AddExp -> MulExp | AddExp ('+' | '−') MulExp
+pub AddExp: Expr = {
+  MulExp => <>,
+  <lhs: AddExp> "+" <rhs: MulExp> => Expr::binary(BinaryOp::Add, lhs, rhs),
+  <lhs: AddExp> "-" <rhs: MulExp> => Expr::binary(BinaryOp::Sub, lhs, rhs),
+}
+
+// RelExp -> AddExp | RelExp ('<' | '>' | '<=' | '>=') AddExp
+pub RelExp: Expr = {
+  AddExp => <>,
+  // TODO: Suppoert relational operators
+}
+
+// EqExp -> RelExp | EqExp ('==' | '!=') RelExp
+pub EqExp: Expr = {
+  RelExp => <>,
+  // TODO: Support equality operators
+}
+
+// LAndExp -> EqExp | LAndExp '&&' EqExp
+LAndExp: Expr = {
+  EqExp => <>,
+  // TODO: Support logical and operator
+}
+
+// LOrExp -> LAndExp | LOrExp '||' LAndExp
+LOrExp: Expr = {
+  LAndExp => <>,
+  // TODO: Support logical or operator
+}
+
+// Exp -> AddExp
+pub Exp: Expr = AddExp => <>;
+
+// ConstExp -> AddExp
+pub ConstExp: Expr = AddExp => <>;
+
+// Cond -> LOrExp
+pub Cond: Expr = LOrExp => <>;
+
+// Stmt -> LVal '=' Exp ';' 
+//       | [ Exp ] ';' 
+//       | Block
+//       | 'if' '( Cond ')' Stmt [ 'else' Stmt ]
+//       | 'while' '(' Cond ')' Stmt
+//       | 'break' ';' 
+//       | 'continue' ';'
+//       | 'return' [ Exp ] ';'
+// reference: https://github.com/pku-minic/kira-rs/blob/master/src/sysy.lalrpop, line 97 - 129
+pub Stmt: Stmt = {
+  MatchedStmt => <>,
+  OpenStmt => <>,
+}
+
+pub MatchedStmt: Stmt = {
+  <lval: LVal> "=" <exp: Exp> ";" => Stmt::Assign(lval, exp),
+  <expr: (Exp)?> ";" => Stmt::Expr(ExprStmt { expr }),
+  <b: Block> => Stmt::Block(b),
+  "if" "(" <c: Cond> ")" <s1: MatchedStmt> "else" <s2: MatchedStmt> => {
+    Stmt::If(c, Box::new(s1), Some(Box::new(s2)))
+  },
+  "while" "(" <c: Cond> ")" <s: MatchedStmt> => Stmt::While(c, Box::new(s)),
+  "break" ";" => Stmt::Break,
+  "continue" ";" => Stmt::Continue,
+  "return" <expr: (Exp)?> ";" => Stmt::Return(ReturnStmt { expr }),
+}
+
+pub OpenStmt: Stmt = {
+  "if" "(" <c: Cond> ")" <s1: Stmt> => {
+    Stmt::If(c, Box::new(s1), None)
+  },
+  "if" "(" <c: Cond> ")" <s1: MatchedStmt> "else" <s2: OpenStmt> => {
+    Stmt::If(c, Box::new(s1), Some(Box::new(s2)))
+  },
+  "while" "(" <c: Cond> ")" <s: OpenStmt> => Stmt::While(c, Box::new(s)),
+}
