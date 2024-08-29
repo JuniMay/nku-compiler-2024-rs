@@ -142,7 +142,7 @@ RISC-V 工具链
 
 .. code-block:: bash
 
-    sudo apt install riscv64-linux-gnu-gcc
+    sudo apt install gcc-riscv64-linux-gnu
 
 .. note::
 
