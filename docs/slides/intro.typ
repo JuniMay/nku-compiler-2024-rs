@@ -34,7 +34,7 @@
     - 后端（框架、CodeGen、Regalloc）：2000～3000 行（仍在整理）；
     - 优化：基础设施 300～500 行，基本要求 200～500 行，进阶优化每一个 100～1000 行不等。
   - Rust 框架代码量、实现难度、所需时间*远大于* C++ 版本。
-  - #link("https://junimay.github.io/nku-compiler-2024-rs/index.html")[参考文档] & #link("https://github.com/JuniMay/nku-compiler-2024-rs")[项目地址]
+  - #link("https://junimay.github.io/nku-compiler-2024-rs/index.html")[实验文档] & #link("https://github.com/JuniMay/nku-compiler-2024-rs")[项目地址]
 
 ]
 
@@ -78,4 +78,34 @@
   - 注意保存 git commit 记录；
   - 检查时会提问代码实现（可能会涉及一些 Rust 的特性）；
   - 难度较高。
+]
+
+#polylux-slide[
+  == 如果你希望使用 Rust 完成实验
+
+  #v(1em)
+
+  为了尽可能防止实验中途从 Rust 切换到 C++ 而耽误后续实验的情况，我们要求选择 Rust 的同学在开始正式的编译器构建工作之前完成以下任务：
+
+  - 使用 Rust 实现一个 Dijkstra 或最小生成树算法：
+    - 请不要使用第三方图论、算法或者数据结构库；
+    - 请尽可能使用 Rust 的惯用写法；
+    - 请保持一个良好的代码风格；
+    - 请尽可能证明你代码的正确性：
+      - 包括但不限于单元测试、模糊测试等；
+]
+
+#polylux-slide[
+  == 如果你希望使用 Rust 完成实验（续）
+
+  #v(2em)
+
+  - 建议在之后两周内完成，最迟于预备工作 1 完成时联系助教；
+  - 完成之后请联系助教（梅骏逸、郭大玮）进行检查，每一组只有一次检查机会；
+  - 不计入实验成绩，只是为了确保你们组具备了 Rust 的编程能力；
+  - 参考资料：#link("https://junimay.github.io/nku-compiler-2024-rs/rust-basics.html")[Rust 实验指导文档]；
+  - 如果你希望用其他方式表明你具备 Rust 的编程能力（例如已有的 Rust 项目，或者你是 rust-org 的一员），也可以联系助教；
+    - 除非组内所有成员都能够表明自己具备了 Rust 编程能力，否则仍然需要完成上述任务；
+  - 如果无法在上述期限内按照要求完成这一任务，我们将默认你们选择 C++ 完成实验。
+
 ]
