@@ -1,9 +1,12 @@
+//! Define the types in AST of SysY language.
+//! The types are used in the AST and the symbol table.
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::{fmt, hash};
 
-/// The type in SysY language.
+/// The type in AST
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeKind {
     Void,
@@ -17,6 +20,7 @@ pub enum TypeKind {
     Func(Vec<Type>, Type),
 }
 
+// The type in AST
 #[derive(Clone, Eq)]
 pub struct Type(Rc<TypeKind>);
 

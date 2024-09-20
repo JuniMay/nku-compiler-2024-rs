@@ -1,3 +1,5 @@
+//! Abstract Syntax Tree (AST) for the SysY language.
+
 use std::collections::HashMap;
 
 use super::irgen::IrGenResult;

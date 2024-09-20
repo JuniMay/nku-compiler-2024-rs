@@ -1,9 +1,11 @@
+//! IR generation from AST.
+
 use super::ast::{
     self,
     BinaryOp,
     BlockItem,
     CompUnit,
-    ComptimeVal as Cv,
+    ComptimeVal as Cv, // alias, represents conptime values in the AST
     ConstDecl,
     ConstDef,
     Decl,
@@ -29,12 +31,12 @@ use crate::ir::{Block, ConstantValue, Context, Func, Global, Inst, TargetInfo, T
 pub fn irgen(ast: &CompUnit, pointer_width: u8) -> Context {
     let mut irgen = IrGenContext::default();
 
-    // set pointer width for target platform
+    // Set pointer width for target platform
     irgen.ctx.set_target_info(TargetInfo {
         ptr_size: pointer_width as u32,
     });
 
-    // generate IR
+    // Generate IR
     ast.irgen(&mut irgen);
 
     // Transfer ownership of the generated IR.
@@ -43,7 +45,7 @@ pub fn irgen(ast: &CompUnit, pointer_width: u8) -> Context {
 
 /// Generated IR result.
 /// Its used to map AST nodes to IR values.
-/// It can be either a global or a value.
+/// It can be either a Global or a Value.
 #[derive(Debug, Clone, Copy)]
 pub enum IrGenResult {
     Global(Global),
@@ -68,17 +70,19 @@ impl IrGenResult {
 pub struct IrGenContext {
     pub ctx: Context,
 
+    // Symbol table
     pub symtable: SymbolTable,
 
+    // Current function and block
     pub curr_func: Option<Func>,
     pub curr_func_name: Option<String>,
-
     pub curr_block: Option<Block>,
 
     // Stacks for loop control flow.
     pub loop_entry_stack: Vec<Block>,
     pub loop_exit_stack: Vec<Block>,
 
+    // Return block and slot
     pub curr_ret_slot: Option<Value>,
     pub curr_ret_block: Option<Block>,
 }
@@ -87,6 +91,7 @@ impl IrGenContext {
     /// Consume the context and return the generated IR.
     pub fn finish(self) -> Context { self.ctx }
 
+    // Generate a new global constant value in ir given a comptime value in AST.
     fn gen_global_comptime(&mut self, val: &Cv) -> ConstantValue {
         match val {
             Cv::Bool(a) => ConstantValue::i1(&mut self.ctx, *a),
@@ -94,6 +99,7 @@ impl IrGenContext {
         }
     }
 
+    // Gerate a new type in ir given a type in AST.
     fn gen_type(&mut self, ty: &Type) -> Ty {
         match ty.kind() {
             Tk::Void => Ty::void(&mut self.ctx),
@@ -103,6 +109,7 @@ impl IrGenContext {
         }
     }
 
+    // Generate a new local constant value in ir given a comptime value in AST.
     fn gen_local_comptime(&mut self, val: &Cv) -> Value {
         match val {
             Cv::Bool(a) => Value::i1(&mut self.ctx, *a),
@@ -110,22 +117,27 @@ impl IrGenContext {
         }
     }
 
+    // Generate a new local expression in ir given an expression in AST.
     fn gen_local_expr(&mut self, expr: &Expr) -> Option<Value> {
         use BinaryOp as Bo;
 
         let curr_block = self.curr_block.unwrap();
 
         match &expr.kind {
+            // Constants -> generate a local constant value
             ExprKind::Const(v) => Some(self.gen_local_comptime(v)),
+            // Binary operations -> generate the operation
             ExprKind::Binary(op, lhs, rhs) => match op {
                 Bo::Add | Bo::Sub | Bo::Mul | Bo::Div => {
-                    let lhs = self.gen_local_expr(lhs).unwrap();
-                    let rhs = self.gen_local_expr(rhs).unwrap();
+                    let lhs = self.gen_local_expr(lhs).unwrap(); // Generate lhs
+                    let rhs = self.gen_local_expr(rhs).unwrap(); // Generate rhs
 
                     let lhs_ty = lhs.ty(&self.ctx);
 
                     let inst = match op {
+                        // Generate add instruction
                         Bo::Add => Inst::add(&mut self.ctx, lhs, rhs, lhs_ty),
+                        // TODO: Implement other binary operations
                         Bo::Sub => {
                             todo!("implement sub");
                         }
@@ -137,11 +149,14 @@ impl IrGenContext {
                         }
                     };
 
+                    // Push the instruction to the current block
                     curr_block.push_back(&mut self.ctx, inst).unwrap();
                     Some(inst.result(&self.ctx).unwrap())
                 }
             },
+            // Unary operations -> generate the operation
             ExprKind::Unary(op, _) => match op {
+                // TODO: Implement unary operations
                 UnaryOp::Neg => {
                     todo!("implement neg");
                 }
@@ -149,36 +164,42 @@ impl IrGenContext {
                     todo!("implement not");
                 }
             },
+            // LValues -> Get the value
             ExprKind::LVal(LVal { ident }) => {
+                // Look up the symbol in the symbol table to get the IR value
                 let entry = self.symtable.lookup(ident).unwrap();
                 let ir_value = entry.ir_value.unwrap();
 
                 let ir_base_ty = self.gen_type(&entry.ty.clone());
 
                 let slot = if let IrGenResult::Global(slot) = ir_value {
-                    // get global
+                    // If the value is a global, get the global reference
                     let name = slot.name(&self.ctx).to_string();
                     let value_ty = slot.ty(&self.ctx);
                     Value::global_ref(&mut self.ctx, name, value_ty)
                 } else if let IrGenResult::Value(slot) = ir_value {
+                    // If the value is a local, get the value
                     slot
                 } else {
                     unreachable!()
                 };
 
                 if slot.is_param(&self.ctx) {
+                    // If the value is a parameter, just return the value
                     Some(slot)
                 } else {
-                    // load
+                    // Otherwise, we need to load the value, generate a load instruction
                     let load = Inst::load(&mut self.ctx, slot, ir_base_ty);
                     curr_block.push_back(&mut self.ctx, load).unwrap();
                     Some(load.result(&self.ctx).unwrap())
                 }
             }
             ExprKind::Coercion(_) => {
+                // TODO: Implement coercion generation
                 todo!("implement coercion");
             }
             ExprKind::FuncCall(FuncCall { .. }) => {
+                // TODO: Implement function call generation
                 todo!("implement call");
             }
         }
