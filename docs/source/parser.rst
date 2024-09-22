@@ -1,14 +1,9 @@
-语法分析器与抽象语法树
+词法、语法分析器与抽象语法树
 ================================================
 
 .. toctree::
     :hidden:
     :maxdepth: 4
-
-
-.. note::
-
-    Rust 版本实验中，词法分析和语法分析合为一个实验，DDL 与 C++ 版本实验的语法分析 DDL 一致。
 
 实验描述
 ----------------
@@ -16,14 +11,23 @@
 相信你已经在 C++ 文档中或者同学处听说了 Flex 和 Bison 这两个工具，它们是用于生成词法分析器和语法分析器的工具。在这一部分，
 我们将使用 Rust 语言中的一系列库来实现 SysY 语言的 Parser，并且将 SysY 源代码转换到抽象语法树（AST）。
 
+根据实验要求，Rust 版本实验仍然拆分为词法分析和语法分析两个部分。我们所给出的框架中语法分析和词法分析是耦合的，所以你需要在阅读实验指导之后自己实现词法分析器这个实验中的内容。
 
-抽象语法树的构建
-----------------
+实现词法分析器（Lexer）要求
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-在 C++ 中我们可能需要使用基类 + 继承的方式构建 AST 的数据结构，但在 Rust 中，得益于 Rust 优秀的语言特性，我们可以使用枚举类型来构建 AST 的数据结构。
+#. 能够识别简单的 SysY 源程序；
+#. 输出解析得到的 Token 序列；
 
-实现 Parser
-----------------
+实现语法分析器（Parser）要求
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+#. 理解 AST 结构的实现
+#. 能够识别 SysY 语言的语法；
+#. 输出解析得到的抽象语法树（AST）；
+
+实现 Lexer 和 Parser
+--------------------------------
 
 有许多方法可以实现 Parser，例如手写递归下降 Parser、使用工具生成 Parser 等。
 且由于 Rust 包管理的便利，有许多工具都可以帮助我们实现 Parser。此处我们并不限制 Parser 的实现方式，
@@ -31,9 +35,11 @@
 
 .. note::
 
-    提供的代码框架中使用了 LALRPOP 生成 Parser，你也可以选择使用其他方法实现 Parser。
+    Rust 中并没有一个与 Flex + Bison 完全对应的工具组合，所以此处直接对前端实现可能需要对工具进行统一介绍。
 
-手写递归下降 Parser
+    理论上，下面介绍的三种工具/方法都可以实现词法分析实验，但是我们的框架使用的是 LALRPOP，所以我们推荐你使用 LALRPOP 来实现编译器前端（包括词法分析和语法分析两个实验）
+
+手写递归下降
 ^^^^^^^^^^^^^^^^^^^^
 
     人类的赞歌就是勇气的赞歌。
@@ -44,6 +50,16 @@
 - GeeksforGeeks 上的 `Recursive Descent Parser <https://www.geeksforgeeks.org/recursive-descent-parser/>`_
 - `Building Recursive Descent Parsers: The Definitive Guide <https://www.booleanworld.com/building-recursive-descent-parsers-definitive-guide/>`_
 - `A Beginner's Guide to Parsing in Rust <https://depth-first.com/articles/2021/12/16/a-beginners-guide-to-parsing-in-rust/>`_
+
+当然，如果你只是想手写一个词法分析器，那这个任务就相对简单一点，此处给出一个大致的思路：
+
+1. 读取源代码，获得一个字符串；
+2. 从头开始扫描字符串，根据当前字符的类型判断 Token 可能的类型；
+3. 继续读取字符，直到 Token 的类型确定或者出现错误；
+4. 将读入的字符串内容转换为 Token，存入 Token 列表中；
+5. 重复 2-4 步，直到读取完整个源代码。
+
+你可以利用 Rust 的枚举类型来定义 Token。
 
 .. note::
 
@@ -76,6 +92,8 @@ Flex 和 Bison 都属于 Parser Generator，它们可以帮助我们生成词法
 - `LALRPOP 文档 <https://lalrpop.github.io/lalrpop/tutorial/002_paren_numbers.html>`_
 - `Pest 文档 <https://docs.rs/pest/latest/pest/>`_
 
+此外，如果你要使用 LALRPOP 来完成词法分析的实验，可以在其文档中找到 `这一章 <https://lalrpop.github.io/lalrpop/lexer_tutorial/index.html>`_ ，
+里面的内容详细讲解了如何控制 LALRPOP 中的词法分析器。如果你时间有限，可以只阅读里面的 6.1。如果你发现 LALRPOP 对于词法分析来说并不好用，你可以参考上述文档中的 6.5 节，里面给出了一个更纯粹的用于词法分析的库。
 
 代码框架
 ----------------
