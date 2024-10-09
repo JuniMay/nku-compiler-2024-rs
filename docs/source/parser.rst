@@ -164,13 +164,37 @@ Flex 和 Bison 都属于 Parser Generator，它们可以帮助我们生成词法
         Ok(())
     }
 
-本次实验中你需要完成的工作包括以下几个部分：
+语法分析和词法分析两次实验中你需要完成的工作包括以下几个部分：
 
-#. 阅读 ``frontend`` 中与语法分析有关的代码，包括 ``ast.rs``， ``parse.rs``，
-   ``preprocess.rs``， ``types.rs`` 以及 ``sysy.lalrpop`` 等文件，并且理解这些代码的作用。
-#. 完善 ``sysy.lalrpop`` 中的语法规则，使其能够正确解析 SysY 语言的语法（主要是已经标注了 ``TODO`` 的部分），你可以用
-   VSCode 中的 Todo Tree 来快速查看所有的 ``TODO``，RustRover 则自带了这个功能。
-#. 在 ``main.rs`` 中添加命令行参数，通过命令行指定源文件并输出对应的 AST。
+1. 对于词法分析实验，你需要阅读 ``frontend`` 中的 ``parse.rs``， ``sysy.lalrpop`` 以及 ``main.rs``
+   文件，理解代码的结构和作用。为了保持和后续试验的连贯性，同时验证对要求的代码的理解，你需要完善下面这个程序：
+
+   .. code-block:: rust
+
+       fn main() -> Result<(), Box<dyn std::error::Error>> {
+           let int_str = String::from("/* xxxx */ 114514 // 123");
+           let hex_str = String::from("/* xxxx */ 0xfff // 123");
+           assert_eq!(parse_int(&int_str), 114514);
+           assert_eq!(parse_int(&hex_str), 0xfff);
+           println!("lexer test passed");
+           Ok(())
+       }
+   
+       fn parse_int(str: &str) -> i32 {
+           // TODO: use NumberParser to parse int
+           todo!()
+       }
+
+   你可以使用 ``frontend/parse.rs`` 中与 ``SysYParser`` 一样的方法找到
+   ``NumberParser``，并且实现解析。你也可以替换这个程序里面的字符串、修改 ``sysy.lalrpop``
+   中的规则来进一步理解里面的内容。另外你需要理解 LALRPOP 文件里面， ``Number`` 和 ``Ident`` 这两个规则中每一个 ``=>``
+   左右的部分分别是什么含义，以及对 ``NumberParser`` 进行定义的 Rust 源代码在哪。
+
+2. 对于语法分析实验：
+
+   - 阅读 ``frontend`` 中与语法分析有关的代码，包括 ``ast.rs``， ``parse.rs``，``preprocess.rs``， ``types.rs`` 以及 ``sysy.lalrpop`` 等文件，并且理解这些代码的作用。
+   - 完善 ``sysy.lalrpop`` 中的语法规则，使其能够正确解析 SysY 语言的语法（主要是已经标注了 ``TODO`` 的部分），你可以用VSCode 中的 Todo Tree 来快速查看所有的 ``TODO``，RustRover 则自带了这个功能。
+   - 在 ``main.rs`` 中添加命令行参数，通过命令行指定源文件并输出对应的 AST。
 
 你可能需要注意以下几个问题：
 
