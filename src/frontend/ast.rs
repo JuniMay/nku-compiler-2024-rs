@@ -224,6 +224,17 @@ pub enum BinaryOp {
     Sub,
     Mul,
     Div,
+    Mod,
+    /// Comparison operators.
+    Lt, // 小于
+    Le, // 小于等于
+    Gt, // 大于
+    Ge, // 大于等于
+    Eq, // 等于
+    Ne, // 不等于
+    /// Logical operators.
+    And,
+    Or,
 }
 
 /// Unary operators.
@@ -822,6 +833,15 @@ impl Expr {
                     Bo::Sub => Some(lhs - rhs),
                     Bo::Mul => Some(lhs * rhs),
                     Bo::Div => Some(lhs / rhs),
+                    Bo::Mod => Some(lhs % rhs),
+                    Bo::Lt => Some(ComptimeVal::bool(lhs < rhs)),
+                    Bo::Le => Some(ComptimeVal::bool(lhs <= rhs)),
+                    Bo::Gt => Some(ComptimeVal::bool(lhs > rhs)),
+                    Bo::Ge => Some(ComptimeVal::bool(lhs >= rhs)),
+                    Bo::Eq => Some(ComptimeVal::bool(lhs == rhs)),
+                    Bo::Ne => Some(ComptimeVal::bool(lhs != rhs)),
+                    Bo::And => Some(lhs.logical_and(&rhs)),
+                    Bo::Or => Some(lhs.logical_or(&rhs)),
                 }
             }
             ExprKind::Unary(op, expr) => {
@@ -904,9 +924,22 @@ impl Expr {
                 // Create the binary expression
                 let mut expr = Expr::binary(op, lhs, rhs);
                 match op {
-                    BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div => {
+                    BinaryOp::Add
+                    | BinaryOp::Sub
+                    | BinaryOp::Mul
+                    | BinaryOp::Div
+                    | BinaryOp::Mod => {
                         expr.ty = Some(lhs_ty.clone());
                     } // TODO: support other binary operations
+                    BinaryOp::Lt
+                    | BinaryOp::Le
+                    | BinaryOp::Gt
+                    | BinaryOp::Ge
+                    | BinaryOp::Eq
+                    | BinaryOp::Ne => {
+                        expr.ty = Some(lhs_ty.clone());
+                    }
+                    BinaryOp::And | BinaryOp::Or => expr.ty = Some(lhs_ty.clone()),
                 }
                 expr
             }

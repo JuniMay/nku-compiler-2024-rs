@@ -89,7 +89,9 @@ pub struct IrGenContext {
 
 impl IrGenContext {
     /// Consume the context and return the generated IR.
-    pub fn finish(self) -> Context { self.ctx }
+    pub fn finish(self) -> Context {
+        self.ctx
+    }
 
     // Generate a new global constant value in ir given a comptime value in AST.
     fn gen_global_comptime(&mut self, val: &Cv) -> ConstantValue {
@@ -128,7 +130,19 @@ impl IrGenContext {
             ExprKind::Const(v) => Some(self.gen_local_comptime(v)),
             // Binary operations -> generate the operation
             ExprKind::Binary(op, lhs, rhs) => match op {
-                Bo::Add | Bo::Sub | Bo::Mul | Bo::Div => {
+                Bo::Add
+                | Bo::Sub
+                | Bo::Mul
+                | Bo::Div
+                | Bo::Mod
+                | Bo::Lt
+                | Bo::Le
+                | Bo::Gt
+                | Bo::Ge
+                | Bo::Eq
+                | Bo::Ne
+                | Bo::And
+                | Bo::Or => {
                     let lhs = self.gen_local_expr(lhs).unwrap(); // Generate lhs
                     let rhs = self.gen_local_expr(rhs).unwrap(); // Generate rhs
 
@@ -138,13 +152,38 @@ impl IrGenContext {
                         // Generate add instruction
                         Bo::Add => Inst::add(&mut self.ctx, lhs, rhs, lhs_ty),
                         // TODO: Implement other binary operations
-                        Bo::Sub => {
-                            todo!("implement sub");
-                        }
+                        Bo::Sub => Inst::sub(&mut self.ctx, lhs, rhs, lhs_ty),
                         Bo::Mul => {
                             todo!("implement mul");
                         }
                         Bo::Div => {
+                            todo!("implement div");
+                        }
+                        Bo::Mod => {
+                            todo!("implement div");
+                        }
+                        Bo::Lt => {
+                            todo!("implement div");
+                        }
+                        Bo::Le => {
+                            todo!("implement div");
+                        }
+                        Bo::Gt => {
+                            todo!("implement div");
+                        }
+                        Bo::Ge => {
+                            todo!("implement div");
+                        }
+                        Bo::Eq => {
+                            todo!("implement div");
+                        }
+                        Bo::Ne => {
+                            todo!("implement div");
+                        }
+                        Bo::And => {
+                            todo!("implement div");
+                        }
+                        Bo::Or => {
                             todo!("implement div");
                         }
                     };

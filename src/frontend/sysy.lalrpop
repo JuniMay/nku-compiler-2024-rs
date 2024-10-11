@@ -151,6 +151,7 @@ pub MulExp: Expr = {
   <lhs: MulExp> "*" <rhs: UnaryExp> => Expr::binary(BinaryOp::Mul, lhs, rhs),
   <lhs: MulExp> "/" <rhs: UnaryExp> => Expr::binary(BinaryOp::Div, lhs, rhs),
   // TODO: Support modulo operator
+  <lhs: MulExp> "%" <rhs: UnaryExp> => Expr::binary(BinaryOp::Mod, lhs, rhs),
 }
 
 // AddExp -> MulExp | AddExp ('+' | '−') MulExp
@@ -163,25 +164,33 @@ pub AddExp: Expr = {
 // RelExp -> AddExp | RelExp ('<' | '>' | '<=' | '>=') AddExp
 pub RelExp: Expr = {
   AddExp => <>,
-  // TODO: Support relational operators
+  // TODO: Suppoert relational operators
+  <lhs: RelExp> "<" <rhs: AddExp> => Expr::binary(BinaryOp::Lt, lhs, rhs),
+  <lhs: RelExp> ">" <rhs: AddExp> => Expr::binary(BinaryOp::Gt, lhs, rhs),
+  <lhs: RelExp> "<=" <rhs: AddExp> => Expr::binary(BinaryOp::Le, lhs, rhs),
+  <lhs: RelExp> ">=" <rhs: AddExp> => Expr::binary(BinaryOp::Ge, lhs, rhs),
 }
 
 // EqExp -> RelExp | EqExp ('==' | '!=') RelExp
 pub EqExp: Expr = {
   RelExp => <>,
   // TODO: Support equality operators
+  <lhs: EqExp> "==" <rhs: RelExp> => Expr::binary(BinaryOp::Eq, lhs, rhs),
+  <lhs: EqExp> "!=" <rhs: RelExp> => Expr::binary(BinaryOp::Ne, lhs, rhs),
 }
 
 // LAndExp -> EqExp | LAndExp '&&' EqExp
 LAndExp: Expr = {
   EqExp => <>,
   // TODO: Support logical and operator
+  <lhs: EqExp> "&&" <rhs: EqExp> => Expr::binary(BinaryOp::And, lhs, rhs),
 }
 
 // LOrExp -> LAndExp | LOrExp '||' LAndExp
 LOrExp: Expr = {
   LAndExp => <>,
   // TODO: Support logical or operator
+  <lhs: LOrExp> "||" <rhs: LAndExp> => Expr::binary(BinaryOp::Or, lhs, rhs),
 }
 
 // Exp -> AddExp
