@@ -163,7 +163,7 @@ pub AddExp: Expr = {
 // RelExp -> AddExp | RelExp ('<' | '>' | '<=' | '>=') AddExp
 pub RelExp: Expr = {
   AddExp => <>,
-  // TODO: Suppoert relational operators
+  // TODO: Support relational operators
 }
 
 // EqExp -> RelExp | EqExp ('==' | '!=') RelExp

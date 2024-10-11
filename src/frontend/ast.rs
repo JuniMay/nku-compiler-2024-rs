@@ -21,9 +21,13 @@ impl ComptimeVal {
         }
     }
 
-    pub fn bool(b: bool) -> Self { Self::Bool(b) }
+    pub fn bool(b: bool) -> Self {
+        Self::Bool(b)
+    }
 
-    pub fn int(i: i32) -> Self { Self::Int(i) }
+    pub fn int(i: i32) -> Self {
+        Self::Int(i)
+    }
 
     /// Get the type of the comptime value.
     pub fn get_type(&self) -> Type {
@@ -273,7 +277,9 @@ pub struct Expr {
 }
 
 impl PartialEq for Expr {
-    fn eq(&self, other: &Self) -> bool { self.kind == other.kind }
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+    }
 }
 
 impl Eq for Expr {}
@@ -523,10 +529,14 @@ pub struct SymbolTable {
 
 impl SymbolTable {
     /// Enter a new scope.
-    pub fn enter_scope(&mut self) { self.stack.push(HashMap::default()); }
+    pub fn enter_scope(&mut self) {
+        self.stack.push(HashMap::default());
+    }
 
     /// Leave the current scope.
-    pub fn leave_scope(&mut self) { self.stack.pop(); }
+    pub fn leave_scope(&mut self) {
+        self.stack.pop();
+    }
 
     /// Insert a symbol into the current scope.
     pub fn insert(&mut self, name: impl Into<String>, entry: SymbolEntry) {
@@ -793,7 +803,9 @@ impl Stmt {
 
 impl Expr {
     /// Get the type of the expression.
-    pub fn ty(&self) -> &Type { self.ty.as_ref().unwrap() }
+    pub fn ty(&self) -> &Type {
+        self.ty.as_ref().unwrap()
+    }
 
     /// Try to fold the expression into a constant value.
     pub fn try_fold(&self, symtable: &SymbolTable) -> Option<ComptimeVal> {
