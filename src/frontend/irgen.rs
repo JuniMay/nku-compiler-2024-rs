@@ -96,6 +96,10 @@ impl IrGenContext {
         match val {
             Cv::Bool(a) => ConstantValue::i1(&mut self.ctx, *a),
             Cv::Int(a) => ConstantValue::i32(&mut self.ctx, *a),
+            Cv::Undef(ty) => {
+                let ir_ty = self.gen_type(ty);
+                ConstantValue::undef(&mut self.ctx, ir_ty)
+            }
         }
     }
 
@@ -114,6 +118,10 @@ impl IrGenContext {
         match val {
             Cv::Bool(a) => Value::i1(&mut self.ctx, *a),
             Cv::Int(a) => Value::i32(&mut self.ctx, *a),
+            Cv::Undef(ty) => {
+                let ir_ty = self.gen_type(ty);
+                Value::undef(&mut self.ctx, ir_ty)
+            }
         }
     }
 
@@ -205,7 +213,12 @@ impl IrGenContext {
         }
     }
 
-    fn gen_sysylib(&mut self) {}
+    // Generate the system library function definitions.
+    fn gen_sysylib(&mut self) {
+        // TODO: Implement gen_sysylib
+        // Since the system library is linked in the linking phase, we just need
+        // to generate declarations here.
+    }
 }
 
 pub trait IrGen {
@@ -213,31 +226,41 @@ pub trait IrGen {
 }
 
 impl IrGen for CompUnit {
+    // Generate IR for the compilation unit.
     fn irgen(&self, irgen: &mut IrGenContext) {
+        // Enter the global scope
         irgen.symtable.enter_scope();
+        // Generate system library function definitions
         irgen.gen_sysylib();
+        // Generate IR for each item in the compilation unit
         for item in &self.items {
             item.irgen(irgen);
         }
+        // Leave the global scope
         irgen.symtable.leave_scope();
     }
 }
 
 impl IrGen for Item {
+    // Generate IR for an item.
     fn irgen(&self, irgen: &mut IrGenContext) {
         match self {
             Item::Decl(decl) => match decl {
                 Decl::ConstDecl(ConstDecl { defs, .. }) => {
                     for ConstDef { ident, init, .. } in defs {
+                        // Try to fold the initializer to get the constant value
+                        // Note for const declaration, the initializer must be a constant
                         let comptime = init
                             .try_fold(&irgen.symtable)
                             .expect("global def expected to have constant initializer");
+                        // Generate the constant value in IR
                         let constant = irgen.gen_global_comptime(&comptime);
                         let slot = Global::new(
                             &mut irgen.ctx,
                             format!("__GLOBAL_CONST_{}", ident),
                             constant,
                         );
+                        // Insert the symbol in the symbol table
                         irgen.symtable.insert(
                             ident.clone(),
                             SymbolEntry {
@@ -250,17 +273,22 @@ impl IrGen for Item {
                 }
                 Decl::VarDecl(VarDecl { defs, .. }) => {
                     for VarDef { ident, init, .. } in defs {
+                        // Note that if the variable is defined without an initializer, aka,
+                        // Undefined, we should already assigned their init as `None` in type
+                        // checking phase.
                         let comptime = init
                             .as_ref()
-                            .unwrap() // None should have been assigned with undef
+                            .unwrap() // Safe to unwrap since we already checked it in type checking phase
                             .try_fold(&irgen.symtable)
                             .expect("global def expected to have constant initializer");
+                        // Generate the constant value in IR
                         let constant = irgen.gen_global_comptime(&comptime);
                         let slot = Global::new(
                             &mut irgen.ctx,
                             format!("__GLOBAL_VAR_{}", ident),
                             constant,
                         );
+                        // Insert the symbol in the symbol table
                         irgen.symtable.insert(
                             ident.clone(),
                             SymbolEntry {
