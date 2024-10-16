@@ -1,0 +1,210 @@
+
+课程项目简介
+=======================
+
+.. toctree::
+   :hidden:
+   :maxdepth: 4
+
+.. attention::
+
+    本实验要求对 Rust 语言有一定的了解，并且有很大一部分实验需要在没有完整参考代码的情况下完成项目，会有一定难度。
+   
+    请注意 Rust 版本实验仍然要求完成完整的编译器构建，所以在确定最终课程项目所使用的语言前请评估自身的能力，如果你对 Rust 语言不熟悉，并且没有足够的时间、精力学习 Rust，建议使用 C++ 完成课程项目。
+
+    **如果你在选择 Rust 之后发现自己无法完成实验，打算回到 C++ 版本，则你需要重新完成 C++ 版本中与 Rust 实验存在差别的部分
+    （包括词法分析、语法分析、类型检查和中间代码生成、代码优化和目标代码生成等）并且重新和助教联系进行检查。**
+
+.. note::
+   
+    Rust 版本为 2024 年课程新加入的实验，如果在实验过程中遇到问题，请及时与助教联系。
+
+    **出于实验难度的考虑，我们只提供了 RISC-V 后端实现的指导，如果你希望实现 ARM 后端，请先与助教和老师进行沟通。**
+
+.. important::
+
+    在选择实验所使用的语言并开始实验前，请先仔细阅读本页面中的内容，**尤其是关于如何解决问题的部分**，这将有助于你更好地与助教沟通并解决实验中遇到的问题。
+
+    **本文档包括什么**
+
+    - 对 Rust 语言以及实现一个编译器可能需要用到的设计模式和数据结构的介绍。
+    - 对 LLVM IR 的基本介绍。
+    - 对 Rust 中构建语法分析器、生成抽象语法树的介绍。
+    - 对 AST 翻译到中间表示的一般方法的介绍。
+    - 对中间表示翻译到目标代码的一般方法的介绍。
+    - 对一些编译优化方法的概述。
+
+    **本文档不包括什么**
+
+    - 完整的 Rust 语言教程。本文档并非 Rust 教程，但是会给出学习 Rust 所需的有关文档，如果你对 Rust 不熟悉可以参考这些文档。如果你没有足够的时间学习 Rust，建议使用 C++ 完成课程项目。
+    - 完整的编译器实现代码。本文档以及配套的代码框架并不包含完整的编译器实现，你可以参考下面给出的编译器项目，以及我们给出的基本框架代码，根据本文档的指导完成编译器的实现。
+    - 详细的编译优化算法或实现。本文档只会对一些基本的编译优化方法进行概述，如果你对编译优化感兴趣，或者想实现课程实验的进阶要求，可以自行查阅相关资料。
+
+
+本文档为南开大学编译系统原理课程 Rust 版本实验指导书。
+
+实验的主要目标是实现一个简单的编译器，将 SysY 语言（C 的一个子集）编译为 Arm 或 RISC-V 汇编代码。
+
+最终我们将使用 Rust 实现编译器，接受 SysY 语言的源代码作为输入，如：
+
+.. code-block:: c
+
+    int main() {
+        int n = getint();
+        int i = 1;
+        int sum = 0;
+        while (i <= n) {
+            sum = sum + i;
+            i = i + 1;
+        }
+        putint(sum);
+        return 0;
+    }
+
+经过词法分析、语法分析、构建抽象语法树、中间代码生成、优化等步骤，最终输出对应的 Arm 或 RISC-V 汇编代码，如：
+
+.. code-block:: asm
+
+        .text
+        .global main
+        .align 1
+        .type main, @function
+    main:
+    .bb0:
+        addi sp, sp, -16
+        sd ra, 8(sp)
+        call getint
+        li t1, 1
+        addi t2, zero, 0
+    .while.entry_0:
+        blt a0, t1, .while.exit_0
+        addw t2, t2, t1
+        addiw t1, t1, 1
+        j .while.entry_0
+    .while.exit_0:
+        addi a0, t2, 0
+        call putint
+        addi a0, zero, 0
+        ld ra, 8(sp)
+        addi sp, sp, 16
+        ret
+
+之后通过汇编器将汇编代码转换为机器码，最终在模拟器（或者实际的硬件平台）上运行，以检测正确性。
+
+由于 Rust 版本实验为新添加实验，许多内容可能并不成熟，此处给出几个可以参考的 Rust 编译器实现：
+
+#. `orzcc <https://github.com/JuniMay/orzcc>`_ ：一个 SysY 到 RISC-V 后端编译器的实现，2024 毕昇杯编译系统设计赛 RISC-V 赛道获奖作品，实验代码框架主要基于这个项目作为参考。
+
+   .. note::
+
+      orzcc 没有使用 LLVM IR，但是根据课程实验要求，你需要使用 LLVM IR 作为中间代码。
+
+      orzcc 设计时支持多后端，但是只实现了 RISC-V 后端，如果你想实现 ARM 后端，可能需要自行探索。
+      
+   .. danger::
+
+      请注意，orzcc 代码是面向竞赛设计的产物，可能存在大量 Bug，功能冗余和不符合实验要求的部分，如果你要参考 orzcc 代码，请注意鉴别。
+
+#. `kira-rs <https://github.com/pku-minic/kira-rs>`_：PKU 编译课程的 Rust 版本实现，可以作为参考。
+#. `vicis <https://github.com/maekawatoshiki/vicis>`_ ：在 Rust 中构建 LLVM IR 的实现，可以作为参考。
+#. `cranelift <https://github.com/bytecodealliance/wasmtime/tree/main/cranelift/codegen>`_ ：一个较为成熟的 Rust 编译器框架，可以参考其中的数据结构和实现。
+
+
+为什么使用 Rust ？
+---------------------
+
+   Rust 写图着色比 C++ 简单一个数量级。—— gdw
+
+你可能会问，既然 C++ 已经是一门非常成熟的系统编程语言，为什么还要尝试使用 Rust 来实现编译器呢？答案是多方面的：
+
+#. Rust 相比于 C++ 拥有更好的基础设施，通过 Cargo 可以方便地管理依赖、测试和构建项目，而不需要手动编写 Makefile 或者 CMakeLists.txt。
+#. Rust 的类型检查更为严格，有许多问题可以在编译期就被检测出来。
+#. 在正确使用的情况下，Rust 能够更方便地写出内存安全的代码，避免了许多 C++ 中常见的内存错误。
+#. Rust 提供了很多较为成熟的 Parser 工具，配合枚举类型可以更方便地实现语法分析器和 AST。
+
+当然，还是如本文档开头所述，Rust 语言的学习曲线可能会比较陡峭，对于你来说，课程项目的得分可能仍然是非常重要的，所以请根据自己的实际情况选择合适的语言。
+
+如果你确定要使用 Rust 完成课程项目，那么你需要注意以下几点：
+
+#. 不要想当然地认为可以用 Rust 以同样的思路和方法实现 C++ 版本中的功能，Rust 语言的特性和 C++ 有很大的不同，你需要重新思考如何使用 Rust 的特性来实现编译器，往往这种思考过程会让你对编译器的原理有更深入的理解，并且写出更加优雅的代码。
+#. Rust 编译器是你的朋友，而不是敌人，Rust 编译器会帮助你检测出许多潜在的错误，所以请不要忽略编译器的警告信息，尽量保持代码的可读性和可维护性。
+#. 当你遇到 Rust 编译器报错时，不要惊慌，尝试仔细阅读错误信息，理解错误的原因，重新思考你的代码逻辑或者阅读有关的资料，很多时候错误信息会帮助你找到代码中的问题。
+
+如何解决问题？
+---------------------
+
+请仔细阅读 `提问的智慧 <https://github.com/ryanhanwu/How-To-Ask-Questions-The-Smart-Way/blob/main/README-zh_CN.md>`_ 和
+`别像弱智一样提问 <https://github.com/tangx/Stop-Ask-Questions-The-Stupid-Ways/blob/master/README.md>`_ 这两篇文章。如果你没有时间阅读，下面是一些比较一般的解决问题的方法。
+
+#. 先尝试自己解决。仔细想想，问题出在哪里？是不是自己操作有误？是不是代码有问题？是不是对某个概念理解不正确？
+#. **RTFM (Read The Friendly Manual) 先查文档！** 本文档以及本文档给出的参考资料中提及了许多常见问题以及解决方法，请仔细阅读。大部分问题都可以通过这些资料解决。
+#. **STFW (Search The Fantastic Web) 善用搜索引擎！** 请至少尝试使用 Bing 或者 Google 搜索一下你的问题，再决定是否向助教求助。
+
+   .. hint::
+
+      在大部分情况下，Baidu/CSDN 远不如 Google/Bing/StackOverflow 等搜索引擎和平台给出的英文解决方案全面。
+
+#. **Ask ChatGPT!** 现在是大模型时代！ChatGPT 知识面比任何人都广，作为一个工科生，你应该至少有一个 ChatGPT 或者类似的工具，如果没有，请尽快找到一个。ChatGPT 将会在你的编程生涯中成为你一大利器，一定要善用 ChatGPT。
+
+   .. danger::
+
+      尽管大模型是个好工具，但是他们在专业知识上很有可能出错，请不要完全相信大模型的回答，特别是涉及到环境配置的指令，请自行验证后再执行。
+
+#. 向他人求助。如果以上方法都无法解决你的问题，那么请向同学或者助教求助。
+
+   .. important::
+
+      请注意，助教也有自己的作息时间，不要期望他们能够立刻回复你的问题，尽量提前预留足够的时间来解决问题。
+
+FAQ
+---------------------
+
+**问：我没有接触过 Rust 语言，可以使用 Rust 完成课程项目吗？**
+
+答：可以，但是请注意 Rust 语言的学习曲线可能会比较陡峭，你需要在有限的时间内学习 Rust 语言的基本知识，
+并且完成课程项目。如果你对 Rust 不熟悉，并且没有足够的时间学习 Rust，建议使用 C++ 完成课程项目。
+
+----
+
+**问：我在实现编译器的过程中遇到了 Rust 语言的问题，应该怎么办？**
+
+答：大部分情况下请参考上面的“如何解决问题”部分。但是，如果你发现自己学习 Rust 所花的时间已经远远超过了学习编译原理理论所需要的时间，
+那么你可能需要重新确定一下课程实验所使用的编程语言了。使用 Rust 编写编译器只是实验的一个选项，其目的仍然是让你更好地去学习编译原理，
+而非 Rust 这个编程语言。如果你确实对 Rust 很感兴趣但是时间不够，可以考虑在课程实验结束后继续学习 Rust。
+
+----
+
+**问：我在实现编译器的过程中遇到了其他问题，应该怎么办？**
+
+答：请参考上面的“如何解决问题”部分。
+
+
+注意 & 禁止事项
+---------------------
+
+- 你可以参考本文档中给出的参考资料和代码，如果你需要使用他人代码，请在自己代码中注明来源。
+- 你可以修改样例来验证自己编译器的正确性，但是最终需要通过给定的一系列测试样例。
+- 请不要通过特判文件名、函数名或变量名等方式生成特定的输出，这样的代码将会被认为是作弊。
+- 请不要通过特判样例的输入、输出等方式通过测试，这样的代码将会被认为是作弊。
+- 在进阶部分，请不要使用非正常的匹配方式（如毫无理由地只判断一个函数指令数量）生成优化后的代码，这样的优化方式将会被认为是作弊。
+
+.. hint::
+
+    你仍然可以匹配数组循环赋值，替换为 memset，或者将多条指令合并从而利用 ISA 的特性，这样的优化是合理的。
+
+
+参考资料
+---------------------
+
+- `Rust 程序设计语言 <https://kaisery.github.io/trpl-zh-cn/>`_
+- `Rust 语言圣经 <https://course.rs/about-book.html>`_
+- `Rust By Example <https://doc.rust-lang.org/rust-by-example/index.html>`_
+- `Effective Rust <https://www.lurklurk.org/effective-rust/title-page.html>`_
+- Engineering a Compiler by Cooper, Keith D., Torczon, Linda
+- 虎书（Modern Compiler Implementation in C）
+- 龙书（Compilers: Principles, Techniques, and Tools）
+- `The LALRPOP book <https://lalrpop.github.io/lalrpop/>`_
+- `A thoughtful introduction to the pest parser <https://pest.rs/book/>`_
+- `LLVM Programmer's Manual <https://llvm.org/docs/ProgrammersManual.html>`_
+- `RISC-V ISA Specifications <https://riscv.org/technical/specifications/>`_
+- `ARM Assembly Basics <https://azeria-labs.com/writing-arm-assembly-part-1/>`_
