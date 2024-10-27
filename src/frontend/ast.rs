@@ -10,6 +10,7 @@ use super::types::{Type, TypeKind as Tk};
 pub enum ComptimeVal {
     Bool(bool),
     Int(i32),
+    Array(Type, Vec<ComptimeVal>),
 }
 
 impl ComptimeVal {
@@ -18,6 +19,7 @@ impl ComptimeVal {
         match self {
             Self::Bool(b) => *b as i32,
             Self::Int(i) => *i,
+            _ => panic!("not an integer"),
         }
     }
 
@@ -29,11 +31,16 @@ impl ComptimeVal {
         Self::Int(i)
     }
 
+    pub fn array(ty: Type, elems: Vec<ComptimeVal>) -> Self {
+        Self::Array(ty, elems)
+    }
+
     /// Get the type of the comptime value.
     pub fn get_type(&self) -> Type {
         match self {
             Self::Bool(_) => Type::bool(),
             Self::Int(_) => Type::int(),
+            Self::Array(ty, _) => ty.clone(),
         }
     }
 
@@ -42,6 +49,7 @@ impl ComptimeVal {
         match self {
             Self::Bool(b) => !*b,
             Self::Int(i) => *i == 0,
+            _ => unreachable!("array"),
         }
     }
 
@@ -50,11 +58,13 @@ impl ComptimeVal {
         let lhs = match self {
             Self::Bool(a) => *a,
             Self::Int(a) => *a != 0,
+            _ => unreachable!("array"),
         };
 
         let rhs = match other {
             Self::Bool(b) => *b,
             Self::Int(b) => *b != 0,
+            _ => unreachable!("array"),
         };
 
         Self::Bool(lhs || rhs)
@@ -65,11 +75,13 @@ impl ComptimeVal {
         let lhs = match self {
             Self::Bool(a) => *a,
             Self::Int(a) => *a != 0,
+            _ => unreachable!("array"),
         };
 
         let rhs = match other {
             Self::Bool(b) => *b,
             Self::Int(b) => *b != 0,
+            _ => unreachable!("array"),
         };
 
         Self::Bool(lhs && rhs)
@@ -79,7 +91,85 @@ impl ComptimeVal {
     // Your compiler can still work without these operations, but it will be less
     // efficient.
     //
-    // TODO: Implement other operations for ComptimeVal
+    // HACK: Implement other operations for ComptimeVal
+    pub fn add(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Int(a + b),
+            _ => panic!("unsupported operation: {:?} + {:?}", self, other),
+        }
+    }
+    pub fn sub(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Int(a - b),
+            _ => panic!("unsupported operation: {:?} - {:?}", self, other),
+        }
+    }
+    pub fn mul(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Int(a * b),
+            _ => panic!("unsupported operation: {:?} * {:?}", self, other),
+        }
+    }
+    pub fn sdiv(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Int(a / b),
+            _ => panic!("unsupported operation: {:?} / {:?}", self, other),
+        }
+    }
+    pub fn srem(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Int(a % b),
+            _ => panic!("unsupported operation: {:?} % {:?}", self, other),
+        }
+    }
+    pub fn udiv(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Int(a / b),
+            _ => panic!("unsupported operation: {:?} / {:?}", self, other),
+        }
+    }
+    pub fn urem(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Int(a % b),
+            _ => panic!("unsupported operation: {:?} % {:?}", self, other),
+        }
+    }
+    pub fn eq(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Bool(a == b),
+            _ => panic!("unsupported operation: {:?} == {:?}", self, other),
+        }
+    }
+    pub fn ne(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Bool(a != b),
+            _ => panic!("unsupported operation: {:?} != {:?}", self, other),
+        }
+    }
+    pub fn lt(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Bool(a < b),
+            _ => panic!("unsupported operation: {:?} < {:?}", self, other),
+        }
+    }
+    pub fn le(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Bool(a <= b),
+            _ => panic!("unsupported operation: {:?} <= {:?}", self, other),
+        }
+    }
+    pub fn neg(&self) -> Self {
+        match self {
+            Self::Int(a) => Self::Int(-a),
+            _ => panic!("unsupported operation: -{:?}", self),
+        }
+    }
+    pub fn not(&self) -> Self {
+        match self {
+            Self::Bool(a) => Self::Bool(!a),
+            _ => panic!("unsupported operation: !{:?}", self),
+        }
+    }
 }
 
 impl PartialEq for ComptimeVal {
@@ -92,6 +182,8 @@ impl PartialEq for ComptimeVal {
             // Coercion situations, bool -> int
             (Cv::Bool(a), Cv::Int(b)) => (*a as i32) == *b,
             (Cv::Int(a), Cv::Bool(b)) => *a == (*b as i32),
+
+            _ => unreachable!(),
         }
     }
 }
@@ -108,6 +200,8 @@ impl PartialOrd for ComptimeVal {
             // Coercion situations, bool -> int
             (Cv::Bool(a), Cv::Int(b)) => (*a as i32).partial_cmp(b),
             (Cv::Int(a), Cv::Bool(b)) => a.partial_cmp(&(*b as i32)),
+
+            _ => unreachable!(),
         }
     }
 }
@@ -120,6 +214,8 @@ impl std::ops::Neg for ComptimeVal {
         match self {
             Cv::Bool(a) => Cv::Int(-(a as i32)),
             Cv::Int(a) => Cv::Int(-a),
+
+            _ => unreachable!("array"),
         }
     }
 }
@@ -132,6 +228,8 @@ impl std::ops::Not for ComptimeVal {
         match self {
             Cv::Bool(a) => Cv::Bool(!a),
             Cv::Int(a) => Cv::Bool(a != 0),
+
+            _ => unreachable!("array"),
         }
     }
 }
@@ -148,6 +246,8 @@ impl std::ops::Add for ComptimeVal {
             (Cv::Bool(a), Cv::Int(b)) => Cv::Int(a as i32 + b),
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a + b as i32),
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 + b as i32),
+
+            _ => unreachable!("array"),
         }
     }
 }
@@ -159,12 +259,17 @@ impl std::ops::Sub for ComptimeVal {
         use ComptimeVal as Cv;
 
         match (self, other) {
-            (Cv::Int(a), Cv::Int(b)) => Cv::Int(a - b),
+            (Cv::Int(a), Cv::Int(b)) => Cv::Int(a.checked_sub(b).unwrap_or_else(|| {
+                println!("integer overflow");
+                0 // 或者其他默认值
+            })),
 
             // coercion situations, bool -> int
             (Cv::Bool(a), Cv::Int(b)) => Cv::Int(a as i32 - b),
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a - b as i32),
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 - b as i32),
+
+            _ => unreachable!("array"),
         }
     }
 }
@@ -181,6 +286,8 @@ impl std::ops::Mul for ComptimeVal {
             (Cv::Bool(a), Cv::Int(b)) => Cv::Int(a as i32 * b),
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a * b as i32),
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 * b as i32),
+
+            _ => unreachable!("array"),
         }
     }
 }
@@ -197,6 +304,8 @@ impl std::ops::Div for ComptimeVal {
             (Cv::Bool(a), Cv::Int(b)) => Cv::Int(a as i32 / b),
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a / b as i32),
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 / b as i32),
+
+            _ => unreachable!("array"),
         }
     }
 }
@@ -213,6 +322,8 @@ impl std::ops::Rem for ComptimeVal {
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 % b as i32),
             (Cv::Bool(a), Cv::Int(b)) => Cv::Int(a as i32 % b),
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a % b as i32),
+
+            _ => unreachable!("array"),
         }
     }
 }
@@ -422,9 +533,10 @@ pub enum Decl {
 ///           ^^^^^
 /// ```
 #[derive(Debug)]
-pub struct ConstDef {
-    pub ident: String,
-    pub init: Expr,
+pub enum ConstDef {
+    // HACK: 分成两种情况，一种是数组，一种是普通的常量
+    Val(String, Expr),
+    Array(ArrayIdent, ArrayVal),
 }
 
 /// Variable definition.
@@ -435,9 +547,10 @@ pub struct ConstDef {
 ///     ^^^^^
 /// ```
 #[derive(Debug)]
-pub struct VarDef {
-    pub ident: String,
-    pub init: Option<Expr>,
+pub enum VarDef {
+    // HACK: 分成两种情况，一种是数组，一种是普通的变量
+    Val(String, Option<Expr>),
+    Array(ArrayIdent, Option<ArrayVal>),
 }
 
 /// Constant declaration.
@@ -483,6 +596,29 @@ pub struct FuncDef {
     pub params: Vec<FuncFParam>,
     /// Body of the function. It contains a block of statements.
     pub body: Block,
+}
+
+#[derive(Debug)]
+pub struct ArrayIdent {
+    pub ident: String,
+    /// 用来标记每个维度的大小
+    pub size: Vec<usize>,
+}
+
+#[derive(Debug)]
+pub enum ArrayVal {
+    Val(Expr),           // 数组值
+    Vals(Vec<ArrayVal>), // 嵌套数组
+}
+
+impl ArrayVal {
+    pub fn from_vec(vals: Vec<Expr>) -> Self {
+        let vals: Vec<ArrayVal> = vals.into_iter().map(ArrayVal::Val).collect();
+        Self::Vals(vals)
+    }
+    pub fn empty() -> Self {
+        Self::Vals(Vec::new())
+    }
 }
 
 /// A global item.
@@ -586,7 +722,20 @@ impl SymbolTable {
 
     /// Register SysY library functions to the symbol table.
     pub fn register_sysylib(&mut self) {
-        // TODO: Register SysY library functions to the symbol table
+        // HACK: Register SysY library functions to the symbol table
+        // 注册一些函数，但是目前用不到
+        let sysy_funcs = vec![
+            ("getint", Type::func(vec![], Type::int())),
+            ("getch", Type::func(vec![], Type::int())),
+            ("putint", Type::func(vec![Type::int()], Type::void())),
+            ("putch", Type::func(vec![Type::int()], Type::void())),
+            ("starttime", Type::func(vec![], Type::void())),
+            ("stoptime", Type::func(vec![], Type::void())),
+        ];
+
+        for (name, ty) in sysy_funcs {
+            self.insert(name, SymbolEntry::from_ty(ty));
+        }
     }
 }
 
@@ -654,27 +803,54 @@ impl ConstDecl {
     pub fn type_check(&mut self, symtable: &mut SymbolTable) {
         let mut new_defs = Vec::new();
         for mut def in self.defs.drain(..) {
-            // TODO: array type checking
-
+            // HACK: array type checking，
+            // 目前的方式是，如果是数组，那么就直接将其插入符号表，然后将其初始化为0，否则就按照常量处理
             let ty = self.ty.clone();
 
-            // Type check the init expression
-            def.init = def.init.type_check(Some(&ty), symtable);
+            match &mut def {
+                ConstDef::Val(ident, init) => {
+                    // Type check the init expression
+                    let new_init =
+                        std::mem::replace(init, Expr::default()).type_check(Some(&ty), symtable);
+                    *init = new_init;
 
-            // Fold the init expression into a constant value
-            let folded = def.init.try_fold(symtable).expect("non-constant init");
-            def.init = Expr::const_(folded.clone());
+                    // Fold the init expression into a constant value
+                    let folded = init.try_fold(symtable).expect("non-constant init");
+                    *init = Expr::const_(folded.clone());
 
-            // Insert the constant into the symbol table
-            symtable.insert(
-                def.ident.clone(),
-                SymbolEntry {
-                    ty,
-                    comptime: Some(folded),
-                    ir_value: None,
-                },
-            );
-            new_defs.push(def);
+                    // Insert the constant into the symbol table
+                    symtable.insert(
+                        ident.clone(),
+                        SymbolEntry {
+                            ty,
+                            comptime: Some(folded),
+                            ir_value: None,
+                        },
+                    );
+                    new_defs.push(def);
+                }
+                ConstDef::Array(ident, init) => {
+                    // Type check the init expression
+                    let new_init = std::mem::replace(init, ArrayVal::default())
+                        .type_check(Some(&ty), symtable);
+                    *init = new_init;
+
+                    let mut folded = init.try_fold(symtable).expect("non-constant init");
+                    // HACK:一个简单的方式是不使用Expr:const_，而是直接使用ArrayVal::Vals
+                    // *init = Expr::const_(folded.clone());
+
+                    // Insert the constant into the symbol table
+                    symtable.insert(
+                        ident.ident.clone(),
+                        SymbolEntry {
+                            ty: Type::make(Tk::Array(ty.clone(), ident.size.clone())),
+                            comptime: Some(folded.to_comptimeval(&ty)),
+                            ir_value: None,
+                        },
+                    );
+                    new_defs.push(def);
+                }
+            }
         }
         self.defs = new_defs;
     }
@@ -685,31 +861,131 @@ impl VarDecl {
     pub fn type_check(&mut self, symtable: &mut SymbolTable) {
         let mut new_defs = Vec::new();
         for mut def in self.defs.drain(..) {
-            // TODO: array type checking
+            // HACK: array type checking
 
             let ty = self.ty.clone();
 
-            // Type check the init expression, and fold it if possible
-            let init = def
-                .init
-                .map(|init| {
-                    // fold as much as possible
-                    // XXX: what if we do not fold here?
-                    let typed_init = init.type_check(Some(&ty), symtable);
-                    match typed_init.try_fold(symtable) {
-                        Some(val) => Expr::const_(val),
-                        None => typed_init,
-                    }
-                })
-                .unwrap_or_else(|| todo!("what if there is no init value?"));
+            match &mut def {
+                VarDef::Val(ident, init) => {
+                    // Type check the init expression, and fold it if possible
+                    let new_init = std::mem::replace(init, Some(Expr::default()))
+                        .map(|init| {
+                            // fold as much as possible
+                            // XXX: what if we do not fold here?
+                            let typed_init = init.type_check(Some(&ty), symtable);
+                            match typed_init.try_fold(symtable) {
+                                Some(val) => Expr::const_(val),
+                                None => typed_init,
+                            }
+                        })
+                        .unwrap_or_else(|| match &ty.kind() {
+                            // HACK：没有初始化值则指定为0或者false
+                            Tk::Int => Expr::const_(ComptimeVal::int(0)),
+                            Tk::Bool => Expr::const_(ComptimeVal::bool(false)),
+                            _ => panic!("unsupported type"),
+                        });
 
-            def.init = Some(init);
+                    *init = Some(new_init);
 
-            // Insert the variable into the symbol table
-            symtable.insert(def.ident.clone(), SymbolEntry::from_ty(ty));
-            new_defs.push(def);
+                    // Insert the variable into the symbol table
+                    symtable.insert(ident.clone(), SymbolEntry::from_ty(ty));
+                    new_defs.push(def);
+                }
+                VarDef::Array(ident, init) => {
+                    // Type check the init expression, and fold it if possible
+                    let new_init = std::mem::replace(init, Some(ArrayVal::default()))
+                        .map(|init| {
+                            // fold as much as possible
+                            // XXX: what if we do not fold here?
+                            let typed_init = init.type_check(Some(&ty), symtable);
+                            typed_init.force_fold(symtable)
+                        })
+                        .unwrap()
+                        .unwrap();
+
+                    *init = Some(new_init);
+
+                    // Insert the variable into the symbol table
+                    symtable.insert(ident.ident.clone(), SymbolEntry::from_ty(ty));
+                    new_defs.push(def);
+                }
+            }
         }
         self.defs = new_defs;
+    }
+}
+
+impl ArrayVal {
+    pub fn type_check(self, expect: Option<&Type>, symtable: &SymbolTable) -> Self {
+        match self {
+            ArrayVal::Val(expr) => {
+                let expr = expr.type_check(expect, symtable);
+                ArrayVal::Val(expr)
+            }
+            ArrayVal::Vals(vals) => {
+                // 采用递归的方式进行类型检查，逐层检查
+                let vals = vals
+                    .into_iter()
+                    .map(|val| val.type_check(expect, symtable))
+                    .collect();
+                ArrayVal::Vals(vals)
+            }
+        }
+    }
+
+    /// 强制折叠数组，如果不能折叠则使用原来的值，需要移动权限
+    pub fn force_fold(self, symtable: &SymbolTable) -> Option<ArrayVal> {
+        // HACK:递归的方式进行折叠
+        match self {
+            ArrayVal::Val(expr) => {
+                let expr = expr.try_fold(symtable)?;
+                Some(ArrayVal::Val(Expr::const_(expr)))
+            }
+            ArrayVal::Vals(vals) => {
+                //不能折叠则保持原状
+                let vals = vals
+                    .into_iter()
+                    .map(|val| val.try_fold(symtable).or(Some(val)))
+                    .collect::<Option<Vec<_>>>()?;
+
+                Some(ArrayVal::Vals(vals))
+            }
+        }
+    }
+
+    pub fn try_fold(&self, symtable: &SymbolTable) -> Option<ArrayVal> {
+        // HACK:递归的方式进行折叠
+        match self {
+            ArrayVal::Val(expr) => {
+                let expr = expr.try_fold(symtable)?;
+                Some(ArrayVal::Val(Expr::const_(expr)))
+            }
+            ArrayVal::Vals(vals) => {
+                //确保所有的值都被折叠
+                let vals = vals
+                    .iter()
+                    .map(|val| val.try_fold(symtable))
+                    .collect::<Option<Vec<_>>>()?;
+
+                Some(ArrayVal::Vals(vals))
+            }
+        }
+    }
+
+    pub fn to_comptimeval(&self, ty: &Type) -> ComptimeVal {
+        match self {
+            ArrayVal::Val(expr) => {
+                if let ExprKind::Const(val) = &expr.kind {
+                    val.clone()
+                } else {
+                    panic!("non-constant array value");
+                }
+            }
+            ArrayVal::Vals(vals) => {
+                let vals = vals.iter().map(|val| val.to_comptimeval(ty)).collect();
+                ComptimeVal::array(Type::int(), vals)
+            }
+        }
     }
 }
 
@@ -866,6 +1142,7 @@ impl Expr {
                         let expr = match expr {
                             ComptimeVal::Bool(val) => val,
                             ComptimeVal::Int(val) => val != 0,
+                            _ => unreachable!("array"),
                         };
                         Some(ComptimeVal::bool(expr))
                     }
@@ -873,10 +1150,11 @@ impl Expr {
                         let expr = match expr {
                             ComptimeVal::Bool(val) => val as i32,
                             ComptimeVal::Int(val) => val,
+                            _ => unreachable!("array"),
                         };
                         Some(ComptimeVal::int(expr))
                     }
-                    Tk::Void | Tk::Func(..) => {
+                    Tk::Void | Tk::Func(..) | Tk::Array(_, _) => {
                         panic!("unsupported type coercion")
                     }
                 }
@@ -930,7 +1208,7 @@ impl Expr {
                     | BinaryOp::Div
                     | BinaryOp::Mod => {
                         expr.ty = Some(lhs_ty.clone());
-                    } // TODO: support other binary operations
+                    } // HACK: support other binary operations
                     BinaryOp::Lt
                     | BinaryOp::Le
                     | BinaryOp::Gt
@@ -994,7 +1272,8 @@ impl Expr {
                         if ty.is_bool() {
                             // Do nothing
                         } else if ty.is_int() {
-                            // TODO: How do we convert int to bool?
+                            // HACK: How do we convert int to bool?
+                            expr = Expr::coercion(expr, Type::bool());
                         } else {
                             panic!("unsupported type for logical not: {:?}", ty);
                         }
@@ -1015,7 +1294,7 @@ impl Expr {
                 match ty.kind() {
                     Tk::Bool => expr = Expr::coercion(expr, Type::bool()),
                     Tk::Int => expr = Expr::coercion(expr, Type::int()),
-                    Tk::Func(..) | Tk::Void => {
+                    Tk::Func(..) | Tk::Void | Tk::Array(_, _) => {
                         unreachable!()
                     }
                 }
@@ -1031,5 +1310,17 @@ impl Expr {
         }
 
         expr
+    }
+}
+
+impl Default for Expr {
+    fn default() -> Self {
+        Expr::const_(ComptimeVal::int(0))
+    }
+}
+
+impl Default for ArrayVal {
+    fn default() -> Self {
+        ArrayVal::empty()
     }
 }

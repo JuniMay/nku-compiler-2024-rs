@@ -16,6 +16,8 @@ pub enum TypeKind {
     Bool,
     /// The integer type.
     Int,
+    /// HACK:The array type, with the element type and the size.
+    Array(Type, Vec<usize>),
     /// The function type, with params and return type.
     Func(Vec<Type>, Type),
 }
@@ -25,16 +27,22 @@ pub enum TypeKind {
 pub struct Type(Rc<TypeKind>);
 
 impl hash::Hash for Type {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) { self.0.hash(state) }
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state)
+    }
 }
 
 impl PartialEq for Type {
     // Just compare the pointers
-    fn eq(&self, other: &Self) -> bool { Rc::ptr_eq(&self.0, &other.0) }
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
 }
 
 impl fmt::Debug for Type {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.0.fmt(f) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
 }
 
 impl fmt::Display for Type {
@@ -44,6 +52,7 @@ impl fmt::Display for Type {
             TypeKind::Void => write!(f, "void"),
             TypeKind::Bool => write!(f, "bool"),
             TypeKind::Int => write!(f, "int"),
+            TypeKind::Array(ty, size) => write!(f, "{}[{:?}]", ty, size),
             TypeKind::Func(params, ret) => write!(
                 f,
                 "{}({})",
@@ -84,28 +93,48 @@ impl Type {
     }
 
     /// Get the kind of the type.
-    pub fn kind(&self) -> &TypeKind { &self.0 }
+    pub fn kind(&self) -> &TypeKind {
+        &self.0
+    }
 
     /// Create a new void type.
-    pub fn void() -> Self { Self::make(TypeKind::Void) }
+    pub fn void() -> Self {
+        Self::make(TypeKind::Void)
+    }
 
     /// Create a new boolean type.
-    pub fn bool() -> Self { Self::make(TypeKind::Bool) }
+    pub fn bool() -> Self {
+        Self::make(TypeKind::Bool)
+    }
 
     /// Create a new integer type.
-    pub fn int() -> Self { Self::make(TypeKind::Int) }
+    pub fn int() -> Self {
+        Self::make(TypeKind::Int)
+    }
+
+    pub fn array(ty: Type, size: Vec<usize>) -> Self {
+        Self::make(TypeKind::Array(ty, size))
+    }
 
     /// Create a new function type.
-    pub fn func(params: Vec<Type>, ret: Type) -> Self { Self::make(TypeKind::Func(params, ret)) }
+    pub fn func(params: Vec<Type>, ret: Type) -> Self {
+        Self::make(TypeKind::Func(params, ret))
+    }
 
     /// Check if the type is a int type.
-    pub fn is_int(&self) -> bool { matches!(self.kind(), TypeKind::Int) }
+    pub fn is_int(&self) -> bool {
+        matches!(self.kind(), TypeKind::Int)
+    }
 
     /// Check if the type is a bool type.
-    pub fn is_bool(&self) -> bool { matches!(self.kind(), TypeKind::Bool) }
+    pub fn is_bool(&self) -> bool {
+        matches!(self.kind(), TypeKind::Bool)
+    }
 
     /// Check if the type is a void type.
-    pub fn is_void(&self) -> bool { matches!(self.kind(), TypeKind::Void) }
+    pub fn is_void(&self) -> bool {
+        matches!(self.kind(), TypeKind::Void)
+    }
 
     /// Get the parameters and return type of a function type.
     ///
@@ -126,6 +155,7 @@ impl Type {
             TypeKind::Void => 0,
             TypeKind::Bool => 1,
             TypeKind::Int => 4,
+            TypeKind::Array(ty, size) => ty.bytewidth() * size.iter().product::<usize>(),
             TypeKind::Func(_, _) => unreachable!(),
         }
     }

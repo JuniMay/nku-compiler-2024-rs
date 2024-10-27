@@ -45,9 +45,36 @@ pub ConstDecl: ConstDecl = {
     }
 }
 
+pub ArrayVal: ArrayVal = {
+    "{" "}" => ArrayVal::empty(),
+    "{" <e: Exp> <mut vals: ("," <Exp>)*> "}" => {
+        if vals.is_empty() {
+            return ArrayVal::Val(e);
+        }
+        vals.insert(0, e);
+        ArrayVal::from_vec(vals)
+    },
+    "{" <e: ArrayVal> <mut vals: ("," <ArrayVal>)*> "}" => {
+        vals.insert(0, e);
+        ArrayVal::Vals(vals)
+    },
+}
+
+pub ArrayIdent: ArrayIdent = {
+    <ident: Ident> "[" <sz: Int> "]" <mut size: ("[" <Int> "]")*> => {
+        let mut new_size = vec![sz as usize];
+        for s in size {
+            new_size.push(s as usize);
+        }
+        ArrayIdent { ident, size: new_size }
+    },
+}
+
 // ConstDef -> Ident '=' ConstInitVal
+// XXX：这里貌似有点问题，const的定义不一定要有初始值
 pub ConstDef: ConstDef = {
-    <ident: Ident> "=" <init: ConstInitVal> => ConstDef { ident, init }
+    <ident: Ident> "=" <init: ConstInitVal> => ConstDef::Val( ident, init ),
+    <ident: ArrayIdent> "=" <init: ArrayVal> => ConstDef::Array( ident, init ),
 }
 
 // ConstInitVal -> ConstExp
@@ -66,7 +93,8 @@ pub VarDecl: VarDecl = {
 // VarDef -> Ident
 //         | Ident '=' InitVal
 pub VarDef: VarDef = {
-    <ident: Ident> <init: ("=" <InitVal>)?> => VarDef { ident, init }
+    <ident: Ident> <init: ("=" <InitVal>)?> => VarDef::Val ( ident, init ),
+    <ident: ArrayIdent> <init: ("=" <ArrayVal>)?> => VarDef::Array ( ident, init ),
 }
 
 // InitVal -> Exp
@@ -109,9 +137,27 @@ pub BlockItem: BlockItem = {
 }
 
 Int: i32 = {
-  r"[1-9][0-9]*" => i32::from_str_radix(<>, 10).unwrap(),
-  r"0[0-7]*" => i32::from_str_radix(<>, 8).unwrap(),
-  r"0[xX][0-9a-fA-F]+" => i32::from_str_radix(&<>[2..], 16).unwrap(),
+  r"[1-9][0-9]*" => {
+    let string = <>;
+    i32::from_str_radix(string, 10).unwrap_or_else(|err|{
+        println!("{}",err);
+        i64::from_str_radix(string, 10).unwrap() as i32
+    })
+  },
+  r"0[0-7]*" => {
+    let string = <>;
+    i32::from_str_radix(string, 8).unwrap_or_else(|err|{
+        println!("{}",err);
+        i64::from_str_radix(string, 8).unwrap() as i32
+    })
+  },
+  r"0[xX][0-9a-fA-F]+" => {
+    let string = <>;
+    i32::from_str_radix(&string[2..], 16).unwrap_or_else(|err|{
+        println!("{}",err);
+        i64::from_str_radix(&string[2..], 16).unwrap() as i32
+    })
+  },
 }
 
 
@@ -143,6 +189,10 @@ pub UnaryExp: Expr = {
         Expr::func_call(ident, args)
     },
     "+" <e: UnaryExp> => e,
+    "-" <e: UnaryExp> => {
+        let zero = Expr::const_(ComptimeVal::int(0));
+        Expr::binary(BinaryOp::Sub, zero, e)
+    },
 }
 
 // MulExp -> UnaryExp | MulExp ('*' | '/' | '%') UnaryExp

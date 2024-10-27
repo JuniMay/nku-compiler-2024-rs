@@ -8,6 +8,7 @@ use super::inst::Inst;
 use super::ty::Ty;
 use crate::infra::storage::{Arena, ArenaPtr, GenericPtr, Idx};
 
+#[derive(Clone)]
 pub enum ConstantValue {
     /// The undefined value.
     Undef { ty: Ty },
@@ -61,6 +62,11 @@ impl ConstantValue {
         ConstantValue::Int32 { ty: i32, value }
     }
 
+    pub fn array(ctx: &mut Context, ty: Ty, elems: Vec<ConstantValue>) -> ConstantValue {
+        let array = Ty::array(ctx, ty, elems.len());
+        ConstantValue::Array { ty: array, elems }
+    }
+
     pub fn global_ref(ctx: &mut Context, name: String, value_ty: Ty) -> ConstantValue {
         let ty = Ty::ptr(ctx);
         ConstantValue::GlobalRef { ty, name, value_ty }
@@ -79,6 +85,7 @@ impl ConstantValue {
             ConstantValue::Int1 { value, .. } => s.push_str(&value.to_string()),
             ConstantValue::Int8 { value, .. } => s.push_str(&value.to_string()),
             ConstantValue::Int32 { value, .. } => s.push_str(&value.to_string()),
+            // XXX：这里支持不全提供数值的初始化方式吗？
             ConstantValue::Array { elems, .. } => {
                 s.push('[');
                 for (i, elem) in elems.iter().enumerate() {
@@ -198,6 +205,17 @@ impl Value {
         Self::new(ctx, ValueKind::Constant { value })
     }
 
+    pub fn array(ctx: &mut Context, ty: Ty, elems: Vec<Self>) -> Self {
+        let mut vals = Vec::new();
+        for elem in elems {
+            if let ValueKind::Constant { value } = &elem.try_deref(ctx).unwrap().kind {
+                vals.push(value.clone());
+            }
+        }
+        let value = ConstantValue::array(ctx, ty, vals);
+        Self::new(ctx, ValueKind::Constant { value })
+    }
+
     pub fn global_ref(ctx: &mut Context, name: String, value_ty: Ty) -> Self {
         let value = ConstantValue::global_ref(ctx, name, value_ty);
         Self::new(ctx, ValueKind::Constant { value })
@@ -217,9 +235,13 @@ impl Arena<Value> for Context {
         Value(self.values.alloc_with(|ptr| f(Value(ptr))))
     }
 
-    fn try_dealloc(&mut self, ptr: Value) -> Option<ValueData> { self.values.try_dealloc(ptr.0) }
+    fn try_dealloc(&mut self, ptr: Value) -> Option<ValueData> {
+        self.values.try_dealloc(ptr.0)
+    }
 
-    fn try_deref(&self, ptr: Value) -> Option<&ValueData> { self.values.try_deref(ptr.0) }
+    fn try_deref(&self, ptr: Value) -> Option<&ValueData> {
+        self.values.try_deref(ptr.0)
+    }
 
     fn try_deref_mut(&mut self, ptr: Value) -> Option<&mut ValueData> {
         self.values.try_deref_mut(ptr.0)

@@ -98,6 +98,14 @@ impl IrGenContext {
         match val {
             Cv::Bool(a) => ConstantValue::i1(&mut self.ctx, *a),
             Cv::Int(a) => ConstantValue::i32(&mut self.ctx, *a),
+            Cv::Array(ty, vals) => {
+                let elem_ty = self.gen_type(ty);
+                let mut elems = Vec::new();
+                for elem in vals {
+                    elems.push(self.gen_global_comptime(elem));
+                }
+                ConstantValue::array(&mut self.ctx, elem_ty, elems)
+            }
         }
     }
 
@@ -107,6 +115,10 @@ impl IrGenContext {
             Tk::Void => Ty::void(&mut self.ctx),
             Tk::Bool => Ty::i1(&mut self.ctx),
             Tk::Int => Ty::i32(&mut self.ctx),
+            Tk::Array(ty, size) => {
+                let ir_ty = self.gen_type(ty);
+                Ty::array(&mut self.ctx, ir_ty, size.iter().product::<usize>())
+            }
             Tk::Func(..) => unreachable!("function type should be handled separately"),
         }
     }
@@ -116,6 +128,14 @@ impl IrGenContext {
         match val {
             Cv::Bool(a) => Value::i1(&mut self.ctx, *a),
             Cv::Int(a) => Value::i32(&mut self.ctx, *a),
+            Cv::Array(ty, vals) => {
+                let elem_ty = self.gen_type(ty);
+                let mut elems = Vec::new();
+                for elem in vals {
+                    elems.push(self.gen_local_comptime(elem));
+                }
+                Value::array(&mut self.ctx, elem_ty, elems)
+            }
         }
     }
 
@@ -151,41 +171,19 @@ impl IrGenContext {
                     let inst = match op {
                         // Generate add instruction
                         Bo::Add => Inst::add(&mut self.ctx, lhs, rhs, lhs_ty),
-                        // TODO: Implement other binary operations
+                        // HACK: Implement other binary operations
                         Bo::Sub => Inst::sub(&mut self.ctx, lhs, rhs, lhs_ty),
-                        Bo::Mul => {
-                            todo!("implement mul");
-                        }
-                        Bo::Div => {
-                            todo!("implement div");
-                        }
-                        Bo::Mod => {
-                            todo!("implement div");
-                        }
-                        Bo::Lt => {
-                            todo!("implement div");
-                        }
-                        Bo::Le => {
-                            todo!("implement div");
-                        }
-                        Bo::Gt => {
-                            todo!("implement div");
-                        }
-                        Bo::Ge => {
-                            todo!("implement div");
-                        }
-                        Bo::Eq => {
-                            todo!("implement div");
-                        }
-                        Bo::Ne => {
-                            todo!("implement div");
-                        }
-                        Bo::And => {
-                            todo!("implement div");
-                        }
-                        Bo::Or => {
-                            todo!("implement div");
-                        }
+                        Bo::Mul => Inst::mul(&mut self.ctx, lhs, rhs, lhs_ty),
+                        Bo::Div => Inst::sdiv(&mut self.ctx, lhs, rhs, lhs_ty),
+                        Bo::Mod => Inst::srem(&mut self.ctx, lhs, rhs, lhs_ty),
+                        Bo::Lt => Inst::lt(&mut self.ctx, lhs, rhs, lhs_ty),
+                        Bo::Le => Inst::le(&mut self.ctx, lhs, rhs, lhs_ty),
+                        Bo::Gt => Inst::gt(&mut self.ctx, lhs, rhs, lhs_ty),
+                        Bo::Ge => Inst::ge(&mut self.ctx, lhs, rhs, lhs_ty),
+                        Bo::Eq => Inst::eq(&mut self.ctx, lhs, rhs, lhs_ty),
+                        Bo::Ne => Inst::ne(&mut self.ctx, lhs, rhs, lhs_ty),
+                        Bo::And => Inst::and(&mut self.ctx, lhs, rhs, lhs_ty),
+                        Bo::Or => Inst::or(&mut self.ctx, lhs, rhs, lhs_ty),
                     };
 
                     // Push the instruction to the current block
@@ -267,47 +265,61 @@ impl IrGen for Item {
         match self {
             Item::Decl(decl) => match decl {
                 Decl::ConstDecl(ConstDecl { defs, .. }) => {
-                    for ConstDef { ident, init, .. } in defs {
-                        let comptime = init
-                            .try_fold(&irgen.symtable)
-                            .expect("global def expected to have constant initializer");
-                        let constant = irgen.gen_global_comptime(&comptime);
-                        let slot = Global::new(
-                            &mut irgen.ctx,
-                            format!("__GLOBAL_CONST_{}", ident),
-                            constant,
-                        );
-                        irgen.symtable.insert(
-                            ident.clone(),
-                            SymbolEntry {
-                                ty: init.ty().clone(),
-                                comptime: Some(comptime),
-                                ir_value: Some(IrGenResult::Global(slot)),
-                            },
-                        );
+                    for def in defs {
+                        match def {
+                            ConstDef::Val(ident, init) => {
+                                let comptime = init
+                                    .try_fold(&irgen.symtable)
+                                    .expect("global def expected to have constant initializer");
+                                let constant = irgen.gen_global_comptime(&comptime);
+                                let slot = Global::new(
+                                    &mut irgen.ctx,
+                                    format!("__GLOBAL_CONST_{}", ident),
+                                    constant,
+                                );
+                                irgen.symtable.insert(
+                                    ident.clone(),
+                                    SymbolEntry {
+                                        ty: init.ty().clone(),
+                                        comptime: Some(comptime),
+                                        ir_value: Some(IrGenResult::Global(slot)),
+                                    },
+                                );
+                            }
+                            ConstDef::Array(ident, init) => {
+                                todo!("implement array constant");
+                            }
+                        }
                     }
                 }
                 Decl::VarDecl(VarDecl { defs, .. }) => {
-                    for VarDef { ident, init, .. } in defs {
-                        let comptime = init
-                            .as_ref()
-                            .unwrap() // None should have been assigned with undef
-                            .try_fold(&irgen.symtable)
-                            .expect("global def expected to have constant initializer");
-                        let constant = irgen.gen_global_comptime(&comptime);
-                        let slot = Global::new(
-                            &mut irgen.ctx,
-                            format!("__GLOBAL_VAR_{}", ident),
-                            constant,
-                        );
-                        irgen.symtable.insert(
-                            ident.clone(),
-                            SymbolEntry {
-                                ty: init.as_ref().unwrap().ty().clone(),
-                                comptime: Some(comptime),
-                                ir_value: Some(IrGenResult::Global(slot)),
-                            },
-                        );
+                    for def in defs {
+                        match def {
+                            VarDef::Val(ident, init) => {
+                                let comptime = init
+                                    .as_ref()
+                                    .unwrap() // None should have been assigned with undef
+                                    .try_fold(&irgen.symtable)
+                                    .expect("global def expected to have constant initializer");
+                                let constant = irgen.gen_global_comptime(&comptime);
+                                let slot = Global::new(
+                                    &mut irgen.ctx,
+                                    format!("__GLOBAL_VAR_{}", ident),
+                                    constant,
+                                );
+                                irgen.symtable.insert(
+                                    ident.clone(),
+                                    SymbolEntry {
+                                        ty: init.as_ref().unwrap().ty().clone(),
+                                        comptime: Some(comptime),
+                                        ir_value: Some(IrGenResult::Global(slot)),
+                                    },
+                                );
+                            }
+                            VarDef::Array(ident, init) => {
+                                todo!("implement array variable");
+                            }
+                        }
                     }
                 }
             },
@@ -448,53 +460,67 @@ impl IrGen for Decl {
         let curr_block = irgen.curr_block.unwrap();
         match self {
             Decl::ConstDecl(ConstDecl { defs, .. }) => {
-                for ConstDef { ident, init, .. } in defs {
-                    let comptime = init
-                        .try_fold(&irgen.symtable)
-                        .expect("global def expected to have constant initializer");
+                for def in defs {
+                    match def {
+                        ConstDef::Val(ident, init) => {
+                            let comptime = init
+                                .try_fold(&irgen.symtable)
+                                .expect("global def expected to have constant initializer");
 
-                    let ir_ty = irgen.gen_type(init.ty());
-                    let stack_slot = Inst::alloca(&mut irgen.ctx, ir_ty);
+                            let ir_ty = irgen.gen_type(init.ty());
+                            let stack_slot = Inst::alloca(&mut irgen.ctx, ir_ty);
 
-                    entry_block.push_front(&mut irgen.ctx, stack_slot).unwrap();
-                    irgen.symtable.insert(
-                        ident,
-                        SymbolEntry {
-                            ty: init.ty().clone(),
-                            comptime: Some(comptime),
-                            ir_value: Some(IrGenResult::Value(
-                                stack_slot.result(&irgen.ctx).unwrap(),
-                            )),
-                        },
-                    );
-                    let init = irgen.gen_local_expr(init).unwrap();
-                    let slot = stack_slot.result(&irgen.ctx).unwrap();
-                    let store = Inst::store(&mut irgen.ctx, init, slot);
-                    curr_block.push_back(&mut irgen.ctx, store).unwrap();
+                            entry_block.push_front(&mut irgen.ctx, stack_slot).unwrap();
+                            irgen.symtable.insert(
+                                ident,
+                                SymbolEntry {
+                                    ty: init.ty().clone(),
+                                    comptime: Some(comptime),
+                                    ir_value: Some(IrGenResult::Value(
+                                        stack_slot.result(&irgen.ctx).unwrap(),
+                                    )),
+                                },
+                            );
+                            let init = irgen.gen_local_expr(init).unwrap();
+                            let slot = stack_slot.result(&irgen.ctx).unwrap();
+                            let store = Inst::store(&mut irgen.ctx, init, slot);
+                            curr_block.push_back(&mut irgen.ctx, store).unwrap();
+                        }
+                        ConstDef::Array(ident, init) => {
+                            todo!("implement array constant");
+                        }
+                    }
                 }
             }
             Decl::VarDecl(VarDecl { defs, .. }) => {
-                for VarDef { ident, init, .. } in defs {
-                    let init = init.as_ref().unwrap();
-                    let ir_ty = irgen.gen_type(init.ty());
-                    let stack_slot = Inst::alloca(&mut irgen.ctx, ir_ty);
+                for def in defs {
+                    match def {
+                        VarDef::Val(ident, init) => {
+                            let init = init.as_ref().unwrap();
+                            let ir_ty = irgen.gen_type(init.ty());
+                            let stack_slot = Inst::alloca(&mut irgen.ctx, ir_ty);
 
-                    entry_block.push_front(&mut irgen.ctx, stack_slot).unwrap();
-                    irgen.symtable.insert(
-                        ident,
-                        SymbolEntry {
-                            ty: init.ty().clone(),
-                            comptime: None,
-                            ir_value: Some(IrGenResult::Value(
-                                stack_slot.result(&irgen.ctx).unwrap(),
-                            )),
-                        },
-                    );
+                            entry_block.push_front(&mut irgen.ctx, stack_slot).unwrap();
+                            irgen.symtable.insert(
+                                ident,
+                                SymbolEntry {
+                                    ty: init.ty().clone(),
+                                    comptime: None,
+                                    ir_value: Some(IrGenResult::Value(
+                                        stack_slot.result(&irgen.ctx).unwrap(),
+                                    )),
+                                },
+                            );
 
-                    let init = irgen.gen_local_expr(init).unwrap();
-                    let slot = stack_slot.result(&irgen.ctx).unwrap();
-                    let store = Inst::store(&mut irgen.ctx, init, slot);
-                    curr_block.push_back(&mut irgen.ctx, store).unwrap();
+                            let init = irgen.gen_local_expr(init).unwrap();
+                            let slot = stack_slot.result(&irgen.ctx).unwrap();
+                            let store = Inst::store(&mut irgen.ctx, init, slot);
+                            curr_block.push_back(&mut irgen.ctx, store).unwrap();
+                        }
+                        VarDef::Array(ident, init) => {
+                            todo!("implement array variable");
+                        }
+                    }
                 }
             }
         }

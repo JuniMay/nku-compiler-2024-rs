@@ -384,7 +384,7 @@ impl Inst {
         inst
     }
 
-    // TODO: Implement constructors for other instructions.
+    // HACK: Implement constructors for other instructions.
     pub fn sub(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
         let inst = Self::new(
             ctx,
@@ -437,6 +437,147 @@ impl Inst {
         inst
     }
 
+    pub fn srem(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::IntBinary {
+                op: IntBinaryOp::SRem,
+            },
+            ty,
+        );
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    pub fn urem(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::IntBinary {
+                op: IntBinaryOp::URem,
+            },
+            ty,
+        );
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    pub fn and(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::IntBinary {
+                op: IntBinaryOp::And,
+            },
+            ty,
+        );
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    pub fn or(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::IntBinary {
+                op: IntBinaryOp::Or,
+            },
+            ty,
+        );
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    pub fn lt(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::IntBinary {
+                op: IntBinaryOp::ICmp {
+                    cond: IntCmpCond::Slt,
+                },
+            },
+            ty,
+        );
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    pub fn le(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::IntBinary {
+                op: IntBinaryOp::ICmp {
+                    cond: IntCmpCond::Sle,
+                },
+            },
+            ty,
+        );
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    pub fn gt(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::IntBinary {
+                op: IntBinaryOp::ICmp {
+                    cond: IntCmpCond::Slt,
+                },
+            },
+            ty,
+        );
+        inst.add_operand(ctx, rhs);
+        inst.add_operand(ctx, lhs);
+        inst
+    }
+
+    pub fn ge(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::IntBinary {
+                op: IntBinaryOp::ICmp {
+                    cond: IntCmpCond::Sle,
+                },
+            },
+            ty,
+        );
+        inst.add_operand(ctx, rhs);
+        inst.add_operand(ctx, lhs);
+        inst
+    }
+
+    pub fn eq(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::IntBinary {
+                op: IntBinaryOp::ICmp {
+                    cond: IntCmpCond::Eq,
+                },
+            },
+            ty,
+        );
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    pub fn ne(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::IntBinary {
+                op: IntBinaryOp::ICmp {
+                    cond: IntCmpCond::Ne,
+                },
+            },
+            ty,
+        );
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
 
     /// Create an operand and add it to the operand list.
     fn add_operand(self, ctx: &mut Context, operand: Value) {
