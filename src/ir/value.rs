@@ -20,6 +20,8 @@ pub enum ConstantValue {
     Int8 { ty: Ty, value: i8 },
     /// A 32-bit integer constant.
     Int32 { ty: Ty, value: i32 },
+    /// A 32-bit floating-point constant.
+    Float32 { ty: Ty, value: i64 },
     /// An array constant.
     Array { ty: Ty, elems: Vec<ConstantValue> },
     /// Global variables/functions are treated as constants, because their
@@ -42,6 +44,7 @@ impl ConstantValue {
             ConstantValue::Int1 { ty, .. } => *ty,
             ConstantValue::Int8 { ty, .. } => *ty,
             ConstantValue::Int32 { ty, .. } => *ty,
+            ConstantValue::Float32 { ty, .. } => *ty,
             ConstantValue::Array { ty, .. } => *ty,
             ConstantValue::GlobalRef { ty, .. } => *ty,
         }
@@ -60,6 +63,15 @@ impl ConstantValue {
     pub fn i32(ctx: &mut Context, value: i32) -> ConstantValue {
         let i32 = Ty::i32(ctx);
         ConstantValue::Int32 { ty: i32, value }
+    }
+
+    pub fn f32(ctx: &mut Context, value: f32) -> ConstantValue {
+        let f32 = Ty::f32(ctx);
+        // XXX:此处应该用f32还是int32，取决与LLVM IR中的实现
+        ConstantValue::Float32 {
+            ty: f32,
+            value: value.to_bits() as i64,
+        }
     }
 
     pub fn array(ctx: &mut Context, ty: Ty, elems: Vec<ConstantValue>) -> ConstantValue {
@@ -85,6 +97,7 @@ impl ConstantValue {
             ConstantValue::Int1 { value, .. } => s.push_str(&value.to_string()),
             ConstantValue::Int8 { value, .. } => s.push_str(&value.to_string()),
             ConstantValue::Int32 { value, .. } => s.push_str(&value.to_string()),
+            ConstantValue::Float32 { value, .. } => s.push_str(&format!("0x{:01$x}", value, 16)),
             // XXX：这里支持不全提供数值的初始化方式吗？
             ConstantValue::Array { elems, .. } => {
                 s.push('[');
@@ -202,6 +215,11 @@ impl Value {
 
     pub fn i32(ctx: &mut Context, value: i32) -> Self {
         let value = ConstantValue::i32(ctx, value);
+        Self::new(ctx, ValueKind::Constant { value })
+    }
+
+    pub fn f32(ctx: &mut Context, value: f32) -> Self {
+        let value = ConstantValue::f32(ctx, value);
         Self::new(ctx, ValueKind::Constant { value })
     }
 

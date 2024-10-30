@@ -10,6 +10,7 @@ use super::types::{Type, TypeKind as Tk};
 pub enum ComptimeVal {
     Bool(bool),
     Int(i32),
+    Float(f32),
     Array(Type, Vec<ComptimeVal>),
 }
 
@@ -31,6 +32,10 @@ impl ComptimeVal {
         Self::Int(i)
     }
 
+    pub fn float(f: f32) -> Self {
+        Self::Float(f)
+    }
+
     pub fn array(ty: Type, elems: Vec<ComptimeVal>) -> Self {
         Self::Array(ty, elems)
     }
@@ -40,6 +45,7 @@ impl ComptimeVal {
         match self {
             Self::Bool(_) => Type::bool(),
             Self::Int(_) => Type::int(),
+            Self::Float(_) => Type::float(),
             Self::Array(ty, _) => ty.clone(),
         }
     }
@@ -49,7 +55,7 @@ impl ComptimeVal {
         match self {
             Self::Bool(b) => !*b,
             Self::Int(i) => *i == 0,
-            _ => unreachable!("array"),
+            _ => unreachable!(""),
         }
     }
 
@@ -58,13 +64,13 @@ impl ComptimeVal {
         let lhs = match self {
             Self::Bool(a) => *a,
             Self::Int(a) => *a != 0,
-            _ => unreachable!("array"),
+            _ => unreachable!(""),
         };
 
         let rhs = match other {
             Self::Bool(b) => *b,
             Self::Int(b) => *b != 0,
-            _ => unreachable!("array"),
+            _ => unreachable!(""),
         };
 
         Self::Bool(lhs || rhs)
@@ -75,13 +81,13 @@ impl ComptimeVal {
         let lhs = match self {
             Self::Bool(a) => *a,
             Self::Int(a) => *a != 0,
-            _ => unreachable!("array"),
+            _ => unreachable!(""),
         };
 
         let rhs = match other {
             Self::Bool(b) => *b,
             Self::Int(b) => *b != 0,
-            _ => unreachable!("array"),
+            _ => unreachable!(""),
         };
 
         Self::Bool(lhs && rhs)
@@ -92,6 +98,7 @@ impl ComptimeVal {
     // efficient.
     //
     // HACK: Implement other operations for ComptimeVal
+    // TODO: 完成float的其他操作
     pub fn add(&self, other: &Self) -> Self {
         match (self, other) {
             (Self::Int(a), Self::Int(b)) => Self::Int(a + b),
@@ -835,7 +842,7 @@ impl ConstDecl {
                         .type_check(Some(&ty), symtable);
                     *init = new_init;
 
-                    let mut folded = init.try_fold(symtable).expect("non-constant init");
+                    let folded = init.try_fold(symtable).expect("non-constant init");
                     // HACK:一个简单的方式是不使用Expr:const_，而是直接使用ArrayVal::Vals
                     // *init = Expr::const_(folded.clone());
 
@@ -1142,6 +1149,7 @@ impl Expr {
                         let expr = match expr {
                             ComptimeVal::Bool(val) => val,
                             ComptimeVal::Int(val) => val != 0,
+                            ComptimeVal::Float(val) => val != 0.0,
                             _ => unreachable!("array"),
                         };
                         Some(ComptimeVal::bool(expr))
@@ -1150,9 +1158,19 @@ impl Expr {
                         let expr = match expr {
                             ComptimeVal::Bool(val) => val as i32,
                             ComptimeVal::Int(val) => val,
+                            ComptimeVal::Float(val) => val as i32,
                             _ => unreachable!("array"),
                         };
                         Some(ComptimeVal::int(expr))
+                    }
+                    Tk::Float => {
+                        let expr = match expr {
+                            ComptimeVal::Bool(val) => val as i32 as f32,
+                            ComptimeVal::Int(val) => val as f32,
+                            ComptimeVal::Float(val) => val,
+                            _ => unreachable!("array"),
+                        };
+                        Some(ComptimeVal::float(expr))
                     }
                     Tk::Void | Tk::Func(..) | Tk::Array(_, _) => {
                         panic!("unsupported type coercion")
@@ -1294,6 +1312,7 @@ impl Expr {
                 match ty.kind() {
                     Tk::Bool => expr = Expr::coercion(expr, Type::bool()),
                     Tk::Int => expr = Expr::coercion(expr, Type::int()),
+                    Tk::Float => expr = Expr::coercion(expr, Type::float()),
                     Tk::Func(..) | Tk::Void | Tk::Array(_, _) => {
                         unreachable!()
                     }

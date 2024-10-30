@@ -98,6 +98,7 @@ impl IrGenContext {
         match val {
             Cv::Bool(a) => ConstantValue::i1(&mut self.ctx, *a),
             Cv::Int(a) => ConstantValue::i32(&mut self.ctx, *a),
+            Cv::Float(a) => ConstantValue::f32(&mut self.ctx, *a),
             Cv::Array(ty, vals) => {
                 let elem_ty = self.gen_type(ty);
                 let mut elems = Vec::new();
@@ -115,6 +116,7 @@ impl IrGenContext {
             Tk::Void => Ty::void(&mut self.ctx),
             Tk::Bool => Ty::i1(&mut self.ctx),
             Tk::Int => Ty::i32(&mut self.ctx),
+            Tk::Float => Ty::f32(&mut self.ctx),
             Tk::Array(ty, size) => {
                 let ir_ty = self.gen_type(ty);
                 Ty::array(&mut self.ctx, ir_ty, size.iter().product::<usize>())
@@ -128,6 +130,7 @@ impl IrGenContext {
         match val {
             Cv::Bool(a) => Value::i1(&mut self.ctx, *a),
             Cv::Int(a) => Value::i32(&mut self.ctx, *a),
+            Cv::Float(a) => Value::f32(&mut self.ctx, *a),
             Cv::Array(ty, vals) => {
                 let elem_ty = self.gen_type(ty);
                 let mut elems = Vec::new();

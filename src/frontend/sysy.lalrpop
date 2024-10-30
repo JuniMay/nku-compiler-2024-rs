@@ -35,6 +35,7 @@ pub Decl: Decl = {
 pub BType: Type = {
     "int" => Type::int(),
     "void" => Type::void(),
+    "float" => Type::float(),
 }
 
 // ConstDecl -> 'const' BType ConstDef { ',' ConstDef } ';'
@@ -160,10 +161,62 @@ Int: i32 = {
   },
 }
 
+Float: f32 = {
+  r"\.[0-9]+" => {
+    let string = <>;
+    string.parse::<f32>().unwrap_or_else(|err| {
+        println!("{}", err);
+        string.parse::<f64>().unwrap() as f32
+    })
+  },
+  r"[0-9]+\." => {
+    let string = <>;
+    string.parse::<f32>().unwrap_or_else(|err| {
+        println!("{}", err);
+        string.parse::<f64>().unwrap() as f32
+    })
+  },
+  r"[0-9]+\.[0-9]+" => {
+    let string = <>;
+    string.parse::<f32>().unwrap_or_else(|err| {
+        println!("{}", err);
+        string.parse::<f64>().unwrap() as f32
+    })
+  },
+  r"[0-9]+(\.[0-9]*)?([eE][+-]?[0-9]+)" => {
+    let string = <>;
+    string.parse::<f32>().unwrap_or_else(|err| {
+        println!("{}", err);
+        string.parse::<f64>().unwrap() as f32
+    })
+  },
+  "inf" => {
+    let string = <>;
+    string.parse::<f32>().unwrap_or_else(|err| {
+        println!("{}", err);
+        string.parse::<f64>().unwrap() as f32
+    })
+  },
+  "infinity" => {
+    let string = <>;
+    string.parse::<f32>().unwrap_or_else(|err| {
+        println!("{}", err);
+        string.parse::<f64>().unwrap() as f32
+    })
+  },
+  "Nan" => {
+    let string = <>;
+    string.parse::<f32>().unwrap_or_else(|err| {
+        println!("{}", err);
+        string.parse::<f64>().unwrap() as f32
+    })
+  },
+}
 
 // Number -> IntConst | floatConst
 pub Number: ComptimeVal = {
   <n: Int> => ComptimeVal::int(n),
+  <n: Float> => ComptimeVal::float(n),
 }
 
 // LVal -> Ident

@@ -16,6 +16,8 @@ pub enum TypeKind {
     Bool,
     /// The integer type.
     Int,
+    /// HACK:The float type.
+    Float,
     /// HACK:The array type, with the element type and the size.
     Array(Type, Vec<usize>),
     /// The function type, with params and return type.
@@ -52,6 +54,7 @@ impl fmt::Display for Type {
             TypeKind::Void => write!(f, "void"),
             TypeKind::Bool => write!(f, "bool"),
             TypeKind::Int => write!(f, "int"),
+            TypeKind::Float => write!(f, "float"),
             TypeKind::Array(ty, size) => write!(f, "{}[{:?}]", ty, size),
             TypeKind::Func(params, ret) => write!(
                 f,
@@ -112,6 +115,11 @@ impl Type {
         Self::make(TypeKind::Int)
     }
 
+    /// Create a new float type.
+    pub fn float() -> Self {
+        Self::make(TypeKind::Float)
+    }
+
     pub fn array(ty: Type, size: Vec<usize>) -> Self {
         Self::make(TypeKind::Array(ty, size))
     }
@@ -155,6 +163,7 @@ impl Type {
             TypeKind::Void => 0,
             TypeKind::Bool => 1,
             TypeKind::Int => 4,
+            TypeKind::Float => 4,
             TypeKind::Array(ty, size) => ty.bytewidth() * size.iter().product::<usize>(),
             TypeKind::Func(_, _) => unreachable!(),
         }
@@ -170,5 +179,6 @@ mod tests {
         assert_eq!(Type::void().to_string(), "void");
         assert_eq!(Type::bool().to_string(), "bool");
         assert_eq!(Type::int().to_string(), "int");
+        assert_eq!(Type::float().to_string(), "float");
     }
 }

@@ -12,6 +12,8 @@ pub enum TyData {
     Int8,
     /// The `i32` type.
     Int32,
+    /// The `f32` type.
+    Float32,
     /// The pointer type.
     Ptr,
     /// The array type.
@@ -39,6 +41,7 @@ impl<'ctx> std::fmt::Display for DisplayTy<'ctx> {
             TyData::Int1 => write!(f, "i1"),
             TyData::Int8 => write!(f, "i8"),
             TyData::Int32 => write!(f, "i32"),
+            TyData::Float32 => write!(f, "float"),
             TyData::Ptr => write!(f, "ptr"),
             TyData::Array { elem, len } => write!(
                 f,
@@ -66,6 +69,9 @@ impl Ty {
     /// Fetch a type representing `i32`.
     pub fn i32(ctx: &mut Context) -> Self { ctx.alloc(TyData::Int32) }
 
+    /// Fetch a type representing `f32`.
+    pub fn f32(ctx: &mut Context) -> Self { ctx.alloc(TyData::Float32) }
+
     /// Fetch a type representing a pointer.
     pub fn ptr(ctx: &mut Context) -> Self { ctx.alloc(TyData::Ptr) }
 
@@ -85,6 +91,7 @@ impl Ty {
             TyData::Int1 => 1,
             TyData::Int8 => 8,
             TyData::Int32 => 32,
+            TyData::Float32 => 32,
             TyData::Ptr => ctx.target.ptr_size as usize * 8,
             TyData::Array { elem, len } => elem.bitwidth(ctx) * len,
         }

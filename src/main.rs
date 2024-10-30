@@ -11,7 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // println!("lexer test passed");
     // Ok(())
 
-    let src = std::fs::read_to_string("tests/sysy/parser_test.sy")?;
+    let src = std::fs::read_to_string("tests/sysy/basic.sy")?;
     let src = preprocess(&src);
 
     let mut ast = SysYParser::new().parse(&src).unwrap();
@@ -20,13 +20,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("{:#?}", ast);
 
+    // Ok(());
+
+    let ir = irgen(&ast, 8);
+
+    println!("{}", ir);
+
     Ok(())
-
-    // let ir = irgen(&ast, 8);
-
-    // println!("{}", ir);
-
-
 }
 
 fn parse_int(str: &str) -> i32 {
