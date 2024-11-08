@@ -19,7 +19,7 @@ pub enum TypeKind {
     /// HACK:The float type.
     Float,
     /// HACK:The array type, with the element type and the size.
-    Array(Type, Vec<usize>),
+    Array(Type, usize),
     /// The function type, with params and return type.
     Func(Vec<Type>, Type),
 }
@@ -120,7 +120,7 @@ impl Type {
         Self::make(TypeKind::Float)
     }
 
-    pub fn array(ty: Type, size: Vec<usize>) -> Self {
+    pub fn array(ty: Type, size: usize) -> Self {
         Self::make(TypeKind::Array(ty, size))
     }
 
@@ -164,7 +164,7 @@ impl Type {
             TypeKind::Bool => 1,
             TypeKind::Int => 4,
             TypeKind::Float => 4,
-            TypeKind::Array(ty, size) => ty.bytewidth() * size.iter().product::<usize>(),
+            TypeKind::Array(ty, size) => ty.bytewidth() * size,
             TypeKind::Func(_, _) => unreachable!(),
         }
     }

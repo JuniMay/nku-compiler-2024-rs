@@ -7,6 +7,7 @@ use super::func::Func;
 use super::inst::Inst;
 use super::ty::Ty;
 use crate::infra::storage::{Arena, ArenaPtr, GenericPtr, Idx};
+use crate::ir::TyData;
 
 #[derive(Clone)]
 pub enum ConstantValue {
@@ -98,7 +99,6 @@ impl ConstantValue {
             ConstantValue::Int8 { value, .. } => s.push_str(&value.to_string()),
             ConstantValue::Int32 { value, .. } => s.push_str(&value.to_string()),
             ConstantValue::Float32 { value, .. } => s.push_str(&format!("0x{:01$x}", value, 16)),
-            // XXX：这里支持不全提供数值的初始化方式吗？
             ConstantValue::Array { elems, .. } => {
                 s.push('[');
                 for (i, elem) in elems.iter().enumerate() {
@@ -126,6 +126,8 @@ pub enum ValueKind {
     Param { func: Func, ty: Ty, index: u32 },
     /// The value is an invariant constant.
     Constant { value: ConstantValue },
+    /// The value is an array constant.
+    Array { ty: Ty, elems: Vec<Value> },
 }
 
 pub struct ValueData {
@@ -162,6 +164,39 @@ impl<'ctx> fmt::Display for DisplayValue<'ctx> {
             ValueKind::Constant { ref value } => {
                 write!(f, "{}", value.to_string(self.ctx, self.with_type))
             }
+            ValueKind::Array { ty, ref elems } => {
+                write!(f, "{} ", ty.display(self.ctx))?;
+                write!(f, "[")?;
+                for (i, elem) in elems.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    match &elem.try_deref(self.ctx).unwrap().kind {
+                        ValueKind::Constant { value } => {
+                            write!(f, "{}", value.to_string(self.ctx, true))?
+                        }
+                        ValueKind::InstResult { inst: _, ty: _ } => {
+                            if let TyData::Array { elem, .. } = ty.try_deref(self.ctx).unwrap() {
+                                write!(f, "{} ", elem.display(self.ctx))?
+                            }
+                            // write!(f, "{} ", ty.display(self.ctx))?;
+                            write!(f, "{}", elem.display(self.ctx, false))?
+                        }
+                        ValueKind::Param {
+                            func: _,
+                            ty: _,
+                            index: _,
+                        } => {
+                            write!(f, "{} ", ty.display(self.ctx))?;
+                            write!(f, "{}", elem.display(self.ctx, false))?
+                        }
+                        ValueKind::Array { ty: _, elems: _ } => {
+                            write!(f, "{}", elem.display(self.ctx, true))?
+                        }
+                    }
+                }
+                write!(f, "]")
+            }
         }
     }
 }
@@ -180,6 +215,7 @@ impl Value {
             ValueKind::InstResult { ty, .. } => ty,
             ValueKind::Param { ty, .. } => ty,
             ValueKind::Constant { ref value } => value.ty(),
+            ValueKind::Array { ty, .. } => ty,
         }
     }
 
@@ -226,11 +262,20 @@ impl Value {
     pub fn array(ctx: &mut Context, ty: Ty, elems: Vec<Self>) -> Self {
         let mut vals = Vec::new();
         for elem in elems {
-            if let ValueKind::Constant { value } = &elem.try_deref(ctx).unwrap().kind {
-                vals.push(value.clone());
-            }
+            vals.push(elem);
         }
-        let value = ConstantValue::array(ctx, ty, vals);
+        let array = Ty::array(ctx, ty, vals.len());
+        Self::new(
+            ctx,
+            ValueKind::Array {
+                ty: array,
+                elems: vals,
+            },
+        )
+    }
+
+    pub fn const_array(ctx: &mut Context, ty: Ty, elems: Vec<ConstantValue>) -> Self {
+        let value = ConstantValue::array(ctx, ty, elems);
         Self::new(ctx, ValueKind::Constant { value })
     }
 

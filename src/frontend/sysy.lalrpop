@@ -41,20 +41,15 @@ pub BType: Type = {
 // ConstDecl -> 'const' BType ConstDef { ',' ConstDef } ';'
 pub ConstDecl: ConstDecl = {
     "const" <ty: BType> <def: ConstDef> <mut defs: ("," <ConstDef>)*> ";" => {
-        defs.insert(0, def);
+        let mut defs: Vec<ConstDef> = defs.into_iter().map(|def| { def.unwrap() }).collect();
+        defs.insert(0, def.unwrap());
         ConstDecl { ty, defs }
     }
 }
 
 pub ArrayVal: ArrayVal = {
+    <e: Exp> => ArrayVal::Val(e),
     "{" "}" => ArrayVal::empty(),
-    "{" <e: Exp> <mut vals: ("," <Exp>)*> "}" => {
-        if vals.is_empty() {
-            return ArrayVal::Val(e);
-        }
-        vals.insert(0, e);
-        ArrayVal::from_vec(vals)
-    },
     "{" <e: ArrayVal> <mut vals: ("," <ArrayVal>)*> "}" => {
         vals.insert(0, e);
         ArrayVal::Vals(vals)
@@ -62,10 +57,10 @@ pub ArrayVal: ArrayVal = {
 }
 
 pub ArrayIdent: ArrayIdent = {
-    <ident: Ident> "[" <sz: Int> "]" <mut size: ("[" <Int> "]")*> => {
-        let mut new_size = vec![sz as usize];
+    <ident: Ident> "[" <sz: Exp> "]" <mut size: ("[" <Exp> "]")*> => {
+        let mut new_size = vec![sz];
         for s in size {
-            new_size.push(s as usize);
+            new_size.push(s);
         }
         ArrayIdent { ident, size: new_size }
     },
@@ -73,9 +68,14 @@ pub ArrayIdent: ArrayIdent = {
 
 // ConstDef -> Ident '=' ConstInitVal
 // XXX：这里貌似有点问题，const的定义不一定要有初始值
-pub ConstDef: ConstDef = {
-    <ident: Ident> "=" <init: ConstInitVal> => ConstDef::Val( ident, init ),
-    <ident: ArrayIdent> "=" <init: ArrayVal> => ConstDef::Array( ident, init ),
+pub ConstDef: Result<ConstDef, &'static str> = {
+    <ident: Ident> "=" <init: ConstInitVal> => Ok(ConstDef::Val( ident, init )),
+    <ident: ArrayIdent> "=" <init: ArrayVal> => {
+      if let ArrayVal::Val(_) = init {
+        return Err("Array must be initialized with array value");
+      }
+      Ok(ConstDef::Array( ident, init ))
+    },
 }
 
 // ConstInitVal -> ConstExp
@@ -86,16 +86,25 @@ pub ConstInitVal: Expr = {
 // VarDecl -> BType VarDef { ',' VarDef } ';'
 pub VarDecl: VarDecl = {
     <ty: BType> <def: VarDef> <mut defs: ("," <VarDef>)*> ";" => {
-        defs.insert(0, def);
-        VarDecl { ty, defs }
+      let mut defs: Vec<VarDef> = defs.into_iter().map(|def| { def.unwrap() }).collect();
+      defs.insert(0, def.unwrap());
+      VarDecl { ty, defs }
     }
 }
 
 // VarDef -> Ident
 //         | Ident '=' InitVal
-pub VarDef: VarDef = {
-    <ident: Ident> <init: ("=" <InitVal>)?> => VarDef::Val ( ident, init ),
-    <ident: ArrayIdent> <init: ("=" <ArrayVal>)?> => VarDef::Array ( ident, init ),
+pub VarDef: Result<VarDef, &'static str> = {
+    <ident: Ident> <init: ("=" <InitVal>)?> => Ok(VarDef::Val ( ident, init )),
+    <ident: ArrayIdent> <init: ("=" <ArrayVal>)?> => {
+      if let Some(ref init) = init {
+        if let ArrayVal::Val(_) = init {
+          return Err("Array must be initialized with array value");
+        }
+      }
+
+      Ok(VarDef::Array ( ident, init ))
+    },
 }
 
 // InitVal -> Exp
@@ -228,6 +237,7 @@ pub LVal: LVal = {
 pub PrimaryExp: Expr = {
     "(" <e: Exp> ")" => e,
     <v: LVal> => Expr::lval(v),
+    <arr: ArrayIdent> => Expr::array_access(Expr::lval(LVal{ ident: arr.ident }), arr.size),
     <n: Number> => Expr::const_(n),
 }
 
@@ -253,7 +263,6 @@ pub MulExp: Expr = {
   UnaryExp => <>,
   <lhs: MulExp> "*" <rhs: UnaryExp> => Expr::binary(BinaryOp::Mul, lhs, rhs),
   <lhs: MulExp> "/" <rhs: UnaryExp> => Expr::binary(BinaryOp::Div, lhs, rhs),
-  // TODO: Support modulo operator
   <lhs: MulExp> "%" <rhs: UnaryExp> => Expr::binary(BinaryOp::Mod, lhs, rhs),
 }
 
@@ -267,7 +276,6 @@ pub AddExp: Expr = {
 // RelExp -> AddExp | RelExp ('<' | '>' | '<=' | '>=') AddExp
 pub RelExp: Expr = {
   AddExp => <>,
-  // TODO: Suppoert relational operators
   <lhs: RelExp> "<" <rhs: AddExp> => Expr::binary(BinaryOp::Lt, lhs, rhs),
   <lhs: RelExp> ">" <rhs: AddExp> => Expr::binary(BinaryOp::Gt, lhs, rhs),
   <lhs: RelExp> "<=" <rhs: AddExp> => Expr::binary(BinaryOp::Le, lhs, rhs),
@@ -277,7 +285,6 @@ pub RelExp: Expr = {
 // EqExp -> RelExp | EqExp ('==' | '!=') RelExp
 pub EqExp: Expr = {
   RelExp => <>,
-  // TODO: Support equality operators
   <lhs: EqExp> "==" <rhs: RelExp> => Expr::binary(BinaryOp::Eq, lhs, rhs),
   <lhs: EqExp> "!=" <rhs: RelExp> => Expr::binary(BinaryOp::Ne, lhs, rhs),
 }
@@ -285,14 +292,12 @@ pub EqExp: Expr = {
 // LAndExp -> EqExp | LAndExp '&&' EqExp
 LAndExp: Expr = {
   EqExp => <>,
-  // TODO: Support logical and operator
   <lhs: EqExp> "&&" <rhs: EqExp> => Expr::binary(BinaryOp::And, lhs, rhs),
 }
 
 // LOrExp -> LAndExp | LOrExp '||' LAndExp
 LOrExp: Expr = {
   LAndExp => <>,
-  // TODO: Support logical or operator
   <lhs: LOrExp> "||" <rhs: LAndExp> => Expr::binary(BinaryOp::Or, lhs, rhs),
 }
 
@@ -321,6 +326,7 @@ pub Stmt: Stmt = {
 
 pub MatchedStmt: Stmt = {
   <lval: LVal> "=" <exp: Exp> ";" => Stmt::Assign(lval, exp),
+  <idnet: ArrayIdent> "=" <exp: Exp> ";" => Stmt::ArrayAssign(idnet, exp),
   <expr: (Exp)?> ";" => Stmt::Expr(ExprStmt { expr }),
   <b: Block> => Stmt::Block(b),
   "if" "(" <c: Cond> ")" <s1: MatchedStmt> "else" <s2: MatchedStmt> => {

@@ -105,6 +105,8 @@ impl Ty {
         }
     }
 
+    pub fn kind(&self, ctx: &Context) -> TyData { self.try_deref(ctx).unwrap().clone() }
+
     /// Get the displayable type.
     pub fn display(self, ctx: &Context) -> DisplayTy { DisplayTy { ctx, ty: self } }
 }

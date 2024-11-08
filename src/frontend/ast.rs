@@ -391,6 +391,8 @@ pub enum ExprKind {
     FuncCall(FuncCall),
     /// Left value.
     LVal(LVal),
+    /// Array access.
+    ArrayAccess(Box<Expr>, Vec<Box<Expr>>),
     /// Type coercion. This is used to convert one type to another.
     Coercion(Box<Expr>),
 }
@@ -450,6 +452,13 @@ impl Expr {
         }
     }
 
+    pub fn array_access(expr: Expr, index: Vec<Expr>) -> Self {
+        Self {
+            kind: ExprKind::ArrayAccess(Box::new(expr), index.into_iter().map(Box::new).collect()),
+            ty: None,
+        }
+    }
+
     pub fn coercion(expr: Expr, to: Type) -> Self {
         if let Some(ref from) = expr.ty {
             if from == &to {
@@ -482,6 +491,9 @@ pub enum Stmt {
     /// Assignment statement.
     /// e.g. `a = 1;`
     Assign(LVal, Expr),
+    /// Array assignment statement.
+    /// e.g. `a[1] = 1;`
+    ArrayAssign(ArrayIdent, Expr),
     /// Expression statement.
     /// e.g. `1 + 2;`
     Expr(ExprStmt),
@@ -609,7 +621,7 @@ pub struct FuncDef {
 pub struct ArrayIdent {
     pub ident: String,
     /// 用来标记每个维度的大小
-    pub size: Vec<usize>,
+    pub size: Vec<Expr>,
 }
 
 #[derive(Debug)]
@@ -625,6 +637,12 @@ impl ArrayVal {
     }
     pub fn empty() -> Self {
         Self::Vals(Vec::new())
+    }
+    pub fn depth(&self) -> usize {
+        match self {
+            Self::Val(_) => 0,
+            Self::Vals(vals) => 1 + vals.iter().map(ArrayVal::depth).max().unwrap_or(0),
+        }
     }
 }
 
@@ -805,6 +823,8 @@ impl Item {
     }
 }
 
+use super::irgen::make_array;
+
 impl ConstDecl {
     /// Type check the constant declaration.
     pub fn type_check(&mut self, symtable: &mut SymbolTable) {
@@ -836,25 +856,38 @@ impl ConstDecl {
                     );
                     new_defs.push(def);
                 }
-                ConstDef::Array(ident, init) => {
-                    // Type check the init expression
-                    let new_init = std::mem::replace(init, ArrayVal::default())
-                        .type_check(Some(&ty), symtable);
-                    *init = new_init;
+                ConstDef::Array(arr_ident, init) => {
+                    // Type check the init expression, and fold it if possible
+                    let new_init = Some(std::mem::replace(init, ArrayVal::default()))
+                        .map(|init| {
+                            let typed_init = init.type_check(Some(&ty), symtable);
+                            typed_init.try_fold(symtable)
+                        })
+                        .unwrap()
+                        .unwrap_or_else(|| panic!("unable to fold!"));
 
-                    let folded = init.try_fold(symtable).expect("non-constant init");
-                    // HACK:一个简单的方式是不使用Expr:const_，而是直接使用ArrayVal::Vals
-                    // *init = Expr::const_(folded.clone());
+                    let mut size = Vec::new();
+                    for expr in &arr_ident.size {
+                        if let ExprKind::Const(ComptimeVal::Int(val)) = &expr.kind {
+                            size.push(*val as usize);
+                        }
+                    }
 
-                    // Insert the constant into the symbol table
+                    let mut full_array = ArrayVal::new_array(&ty, &size);
+                    new_init.fix_size(&mut full_array, &size);
+
+                    // Insert the variable into the symbol table
                     symtable.insert(
-                        ident.ident.clone(),
+                        arr_ident.ident.clone(),
                         SymbolEntry {
-                            ty: Type::make(Tk::Array(ty.clone(), ident.size.clone())),
-                            comptime: Some(folded.to_comptimeval(&ty)),
+                            ty: ty.clone(),
+                            comptime: Some(full_array.to_comptimeval(&ty)),
                             ir_value: None,
                         },
                     );
+
+                    *init = full_array;
+                    
                     new_defs.push(def);
                 }
             }
@@ -907,10 +940,35 @@ impl VarDecl {
                             let typed_init = init.type_check(Some(&ty), symtable);
                             typed_init.force_fold(symtable)
                         })
-                        .unwrap()
+                        .unwrap_or_else(|| match &ty.kind() {
+                            // HACK：未初始化则指定为0或者false
+                            Tk::Int => Some(ArrayVal::Vals(vec![ArrayVal::Val(Expr::const_(
+                                ComptimeVal::int(0),
+                            ))])),
+                            Tk::Bool => Some(ArrayVal::Vals(vec![ArrayVal::Val(Expr::const_(
+                                ComptimeVal::bool(false),
+                            ))])),
+                            Tk::Float => Some(ArrayVal::Vals(vec![ArrayVal::Val(Expr::const_(
+                                ComptimeVal::float(0.0),
+                            ))])),
+                            _ => panic!("unsupported type"),
+                        })
                         .unwrap();
 
-                    *init = Some(new_init);
+                    // println!("{:#?}", new_init);
+
+                    let mut size = Vec::new();
+                    for expr in &ident.size {
+                        if let ExprKind::Const(ComptimeVal::Int(val)) = &expr.kind {
+                            size.push(*val as usize);
+                        }
+                    }
+
+                    let mut full_array = ArrayVal::new_array(&ty, &size);
+                    new_init.fix_size(&mut full_array, &size);
+
+                    *init = Some(full_array);
+                    // println!("{:#?}", init);
 
                     // Insert the variable into the symbol table
                     symtable.insert(ident.ident.clone(), SymbolEntry::from_ty(ty));
@@ -945,8 +1003,11 @@ impl ArrayVal {
         // HACK:递归的方式进行折叠
         match self {
             ArrayVal::Val(expr) => {
-                let expr = expr.try_fold(symtable)?;
-                Some(ArrayVal::Val(Expr::const_(expr)))
+                let new_expr = expr.try_fold(symtable);
+                match new_expr {
+                    Some(new_expr) => Some(ArrayVal::Val(Expr::const_(new_expr))),
+                    None => Some(ArrayVal::Val(expr)),
+                }
             }
             ArrayVal::Vals(vals) => {
                 //不能折叠则保持原状
@@ -994,6 +1055,91 @@ impl ArrayVal {
             }
         }
     }
+
+    pub fn new_array(ty: &Type, size: &Vec<usize>) -> Self {
+        let mut vals = Vec::new();
+        for _ in 0..size[0] {
+            if size.len() == 1 {
+                match ty.kind() {
+                    Tk::Int => vals.push(ArrayVal::Val(Expr::const_(ComptimeVal::int(0)))),
+                    Tk::Bool => vals.push(ArrayVal::Val(Expr::const_(ComptimeVal::bool(false)))),
+                    Tk::Float => vals.push(ArrayVal::Val(Expr::const_(ComptimeVal::float(0.0)))),
+                    _ => unreachable!("invalid type"),
+                }
+            } else {
+                let new_size = size[1..].to_vec();
+                vals.push(ArrayVal::new_array(&ty.clone(), &new_size));
+            }
+        }
+        ArrayVal::Vals(vals)
+    }
+
+    pub fn fix_size(self, full_array: &mut ArrayVal, size: &Vec<usize>) {
+        match self {
+            ArrayVal::Val(new_val) => match full_array {
+                ArrayVal::Val(_) => {
+                    *full_array = ArrayVal::Val(new_val);
+                }
+                ArrayVal::Vals(vals) => {
+                    let new_val = ArrayVal::Val(new_val);
+                    new_val.fix_size(&mut vals[0], &size[1..].to_vec());
+                }
+            },
+            ArrayVal::Vals(mut new_vals) => match full_array {
+                ArrayVal::Val(_) => unreachable!("unable array"),
+                ArrayVal::Vals(old_vals) => {
+                    // println!("{:#?}{:#?}", old_vals.len(), new_vals.len());
+                    if new_vals.len() > old_vals.len() {
+                        let group_size: usize = size[1..].iter().product();
+                        let mut group_vals = vec![];
+                        let mut group_cnt = 0;
+                        let new_size = size[1..].to_vec();
+                        new_vals.reverse();
+                        for i in 0..new_vals.len() {
+                            if let Some(new_val) = new_vals.pop() {
+                                let depth = new_val.depth();
+                                if depth > size.len() - 1 {
+                                    panic!("invalid array size");
+                                }
+                                if depth == size.len() - 1 && depth != 0 {
+                                    // 此时数组深度与当前的深度相同，确保为数组
+                                    if group_vals.len() == 0 {
+                                        new_val.fix_size(&mut old_vals[group_cnt], &new_size);
+                                        group_cnt += 1;
+                                        continue;
+                                    }
+                                    // 原来的group_vals还有值，先弹出
+                                    let group_val = ArrayVal::Vals(group_vals);
+                                    group_val.fix_size(&mut old_vals[group_cnt], &new_size);
+                                    group_cnt += 1;
+                                    group_vals = vec![];
+                                    new_val.fix_size(&mut old_vals[group_cnt], &new_size);
+                                    group_cnt += 1;
+                                    continue;
+                                }
+                                group_vals.push(new_val);
+                                if (i + 1) % group_size == 0 {
+                                    let new_val = ArrayVal::Vals(group_vals);
+                                    new_val.fix_size(&mut old_vals[group_cnt], &new_size);
+                                    group_cnt += 1;
+                                    group_vals = vec![];
+                                }
+                            } else {
+                                let new_val = ArrayVal::Vals(group_vals);
+                                new_val.fix_size(&mut old_vals[group_cnt], &new_size);
+                                break;
+                            }
+                        }
+                        return;
+                    }
+                    let new_size = size[1..].to_vec();
+                    for (i, new_val) in new_vals.into_iter().enumerate() {
+                        new_val.fix_size(&mut old_vals[i], &new_size);
+                    }
+                }
+            },
+        }
+    }
 }
 
 impl Block {
@@ -1035,14 +1181,19 @@ impl Stmt {
             Stmt::Assign(LVal { ident }, expr) => {
                 // lookup the variable in the symbol table
                 let entry = symtable.lookup(&ident).expect("variable not found");
-
-                // TODO: array type checking
-
                 let ty = &entry.ty;
 
                 // Type check the expression
                 let expr = expr.type_check(Some(ty), symtable);
                 Stmt::Assign(LVal { ident }, expr)
+            }
+            Stmt::ArrayAssign(ArrayIdent { ident, size }, expr) => {
+                let entry = symtable.lookup(&ident).expect("variable not found");
+                let ty = &entry.ty;
+
+                // Type check the expression
+                let expr = expr.type_check(Some(ty), symtable);
+                Stmt::ArrayAssign(ArrayIdent { ident, size }, expr)
             }
             Stmt::Expr(ExprStmt { expr }) => {
                 // Type check the expression
@@ -1137,9 +1288,21 @@ impl Expr {
             }
             ExprKind::FuncCall(_) => None,
             ExprKind::LVal(LVal { ident }) => {
-                // TODO: what if there are indices?
                 let entry = symtable.lookup(ident).unwrap();
                 Some(entry.comptime.as_ref()?.clone())
+            }
+            ExprKind::ArrayAccess(ident, indices) => {
+                if let ExprKind::LVal(LVal { ident }) = &ident.as_ref().kind {
+                    let entry = symtable.lookup(ident).unwrap();
+                    let array_entry = entry.comptime.as_ref()?;
+                    let indices = indices
+                        .iter()
+                        .map(|index| index.try_fold(symtable).unwrap())
+                        .collect();
+                    Some(get_comptime_array(array_entry, indices, 0))
+                } else {
+                    unreachable!("array access")
+                }
             }
             ExprKind::Coercion(expr) => {
                 // Coerce the expression to the target type
@@ -1267,6 +1430,22 @@ impl Expr {
                 expr.ty = Some(entry.ty.clone());
                 expr
             }
+            ExprKind::ArrayAccess(ident, indices) => {
+                // Lookup the variable in the symbol table
+                if let ExprKind::LVal(LVal { ident: id }) = &ident.as_ref().kind {
+                    let entry = symtable.lookup(id).unwrap();
+                    let ty = entry.ty.clone();
+                    let indices = indices
+                        .into_iter()
+                        .map(|index| index.type_check(None, symtable))
+                        .collect();
+                    let mut expr = Expr::array_access(*ident, indices);
+                    expr.ty = Some(ty);
+                    expr
+                } else {
+                    unreachable!("array access");
+                }
+            }
             ExprKind::Unary(op, expr) => {
                 // Type check the expression
                 let mut expr = expr.type_check(None, symtable);
@@ -1341,5 +1520,30 @@ impl Default for Expr {
 impl Default for ArrayVal {
     fn default() -> Self {
         ArrayVal::empty()
+    }
+}
+
+pub fn get_comptime_array(
+    array_entry: &ComptimeVal,
+    indices: Vec<ComptimeVal>,
+    pos: usize,
+) -> ComptimeVal {
+    if pos == indices.len() {
+        return array_entry.clone();
+    }
+    match array_entry {
+        ComptimeVal::Array(_, vals) => {
+            match &indices[pos] {
+                ComptimeVal::Int(index) => {
+                    let index = *index as usize;
+                    if index >= vals.len() {
+                        panic!("array index out of bounds");
+                    }
+                    get_comptime_array(&vals[index], indices, pos + 1)
+                }
+                _ => unreachable!("non-constant array index"),
+            }
+        }
+        _ => unreachable!("not an array"),
     }
 }

@@ -1,3 +1,4 @@
+use core::panic;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -6,6 +7,7 @@ use super::context::Context;
 use super::def_use::{Operand, Usable};
 use super::ty::Ty;
 use super::value::Value;
+use super::TyData;
 use crate::infra::linked_list::LinkedListNode;
 use crate::infra::storage::{Arena, ArenaPtr, GenericPtr};
 
@@ -72,6 +74,11 @@ pub enum CastOp {
     Zext,
     Sext,
     Trunc,
+    Bitcast,
+    Fptoui,
+    Fptosi,
+    Uitofp,
+    Sitofp,
 }
 
 impl fmt::Display for CastOp {
@@ -80,6 +87,11 @@ impl fmt::Display for CastOp {
             CastOp::Zext => write!(f, "zext"),
             CastOp::Sext => write!(f, "sext"),
             CastOp::Trunc => write!(f, "trunc"),
+            CastOp::Bitcast => write!(f, "bitcast"),
+            CastOp::Fptoui => write!(f, "fptoui"),
+            CastOp::Fptosi => write!(f, "fptosi"),
+            CastOp::Uitofp => write!(f, "uitofp"),
+            CastOp::Sitofp => write!(f, "sitofp"),
         }
     }
 }
@@ -489,6 +501,19 @@ impl Inst {
         inst
     }
 
+    pub fn xor(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::IntBinary {
+                op: IntBinaryOp::Xor,
+            },
+            ty,
+        );
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
     pub fn lt(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
         let inst = Self::new(
             ctx,
@@ -576,6 +601,93 @@ impl Inst {
         );
         inst.add_operand(ctx, lhs);
         inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    pub fn neg(ctx: &mut Context, val: Value, ty: Ty) -> Self {
+        match ty.try_deref(&ctx).unwrap() {
+            TyData::Int1 => Self::not(ctx, val, ty),
+            TyData::Int8 => {
+                let zero = Value::i8(ctx, 0);
+                Self::sub(ctx, zero, val, ty)
+            }
+            TyData::Int32 => {
+                let zero = Value::i32(ctx, 0);
+                Self::sub(ctx, zero, val, ty)
+            }
+            _ => unreachable!("unsupported type for neg operation"),
+        }
+    }
+
+    pub fn not(ctx: &mut Context, val: Value, ty: Ty) -> Self {
+        if let TyData::Int1 = ty.try_deref(&ctx).unwrap() {
+            let true_val = Value::i1(ctx, true);
+            Self::xor(ctx, val, true_val, ty)
+        } else {
+            panic!("not operation is only supported for i1 type")
+        }
+    }
+
+    pub fn trunc(ctx: &mut Context, val: Value, to_ty: Ty) -> Self {
+        let inst = Self::new(ctx, InstKind::Cast { op: CastOp::Trunc }, to_ty);
+        inst.add_operand(ctx, val);
+        inst
+    }
+
+    pub fn zext(ctx: &mut Context, val: Value, to_ty: Ty) -> Self {
+        let inst = Self::new(ctx, InstKind::Cast { op: CastOp::Zext }, to_ty);
+        inst.add_operand(ctx, val);
+        inst
+    }
+
+    pub fn sext(ctx: &mut Context, val: Value, to_ty: Ty) -> Self {
+        let inst = Self::new(ctx, InstKind::Cast { op: CastOp::Sext }, to_ty);
+        inst.add_operand(ctx, val);
+        inst
+    }
+
+    pub fn bitcast(ctx: &mut Context, val: Value, to_ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::Cast {
+                op: CastOp::Bitcast,
+            },
+            to_ty,
+        );
+        inst.add_operand(ctx, val);
+        inst
+    }
+
+    pub fn fptoui(ctx: &mut Context, val: Value, to_ty: Ty) -> Self {
+        let inst = Self::new(ctx, InstKind::Cast { op: CastOp::Fptoui }, to_ty);
+        inst.add_operand(ctx, val);
+        inst
+    }
+
+    pub fn fptosi(ctx: &mut Context, val: Value, to_ty: Ty) -> Self {
+        let inst = Self::new(ctx, InstKind::Cast { op: CastOp::Fptosi }, to_ty);
+        inst.add_operand(ctx, val);
+        inst
+    }
+
+    pub fn uitofp(ctx: &mut Context, val: Value, to_ty: Ty) -> Self {
+        let inst = Self::new(ctx, InstKind::Cast { op: CastOp::Uitofp }, to_ty);
+        inst.add_operand(ctx, val);
+        inst
+    }
+
+    pub fn sitofp(ctx: &mut Context, val: Value, to_ty: Ty) -> Self {
+        let inst = Self::new(ctx, InstKind::Cast { op: CastOp::Sitofp }, to_ty);
+        inst.add_operand(ctx, val);
+        inst
+    }
+
+    pub fn call(ctx: &mut Context, callee: Value, args: Vec<Value>, ret_ty: Ty) -> Self {
+        let inst = Self::new(ctx, InstKind::Call, ret_ty);
+        inst.add_operand(ctx, callee);
+        for arg in args {
+            inst.add_operand(ctx, arg);
+        }
         inst
     }
 
@@ -774,6 +886,17 @@ impl fmt::Display for DisplayInst<'_> {
                     self.inst.operand(self.ctx, 1).display(self.ctx, true)
                 )?;
             }
+            InstKind::GetElementPtr { bound_ty } => {
+                write!(
+                    f,
+                    "getelementptr {}, {}",
+                    bound_ty.display(self.ctx),
+                    self.inst.operand(self.ctx, 0).display(self.ctx, true)
+                )?;
+                for idx in self.inst.operand_iter(self.ctx).skip(1) {
+                    write!(f, ", {}", idx.display(self.ctx, true))?;
+                }
+            }
             InstKind::IntBinary { op } => {
                 write!(
                     f,
@@ -797,9 +920,38 @@ impl fmt::Display for DisplayInst<'_> {
                     self.inst.successor(self.ctx, 0).name(self.ctx)
                 )?;
             }
-            _ => {
-                dbg!(self.inst.kind(self.ctx));
-                todo!("implement the display for other instructions");
+            InstKind::CondBr => {
+                write!(
+                    f,
+                    "br i1 {}, label {}, label {}",
+                    self.inst.operand(self.ctx, 0).display(self.ctx, true),
+                    self.inst.successor(self.ctx, 0).name(self.ctx),
+                    self.inst.successor(self.ctx, 1).name(self.ctx)
+                )?;
+            }
+            InstKind::Cast { op } => {
+                write!(
+                    f,
+                    "{} {}, {} to {}",
+                    op,
+                    self.inst.operand(self.ctx, 0).display(self.ctx, true),
+                    self.inst.operand(self.ctx, 0).ty(self.ctx).display(self.ctx),
+                    self.inst.result(self.ctx).unwrap().ty(self.ctx).display(self.ctx)
+                )?;
+            }
+            InstKind::Call => {
+                let callee = self.inst.operand(self.ctx, 0);
+                write!(f, "call {} ", callee.display(self.ctx, true))?;
+                write!(f, "(")?;
+                let mut first = true;
+                for arg in self.inst.operand_iter(self.ctx).skip(1) {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    first = false;
+                    write!(f, "{}", arg.display(self.ctx, true))?;
+                }
+                write!(f, ")")?;
             }
         }
 
