@@ -10,6 +10,8 @@ use super::types::{Type, TypeKind as Tk};
 pub enum ComptimeVal {
     Bool(bool),
     Int(i32),
+    Undef(Type),
+    // TODO: Add more types, like float, list, etc.
 }
 
 impl ComptimeVal {
@@ -18,6 +20,7 @@ impl ComptimeVal {
         match self {
             Self::Bool(b) => *b as i32,
             Self::Int(i) => *i,
+            Self::Undef(_) => panic!("unwrapping undefined comptime value"),
         }
     }
 
@@ -25,11 +28,14 @@ impl ComptimeVal {
 
     pub fn int(i: i32) -> Self { Self::Int(i) }
 
+    pub fn undef(ty: Type) -> Self { Self::Undef(ty) }
+
     /// Get the type of the comptime value.
     pub fn get_type(&self) -> Type {
         match self {
             Self::Bool(_) => Type::bool(),
             Self::Int(_) => Type::int(),
+            Self::Undef(ty) => ty.clone(),
         }
     }
 
@@ -38,6 +44,7 @@ impl ComptimeVal {
         match self {
             Self::Bool(b) => !*b,
             Self::Int(i) => *i == 0,
+            Self::Undef(_) => false,
         }
     }
 
@@ -46,11 +53,13 @@ impl ComptimeVal {
         let lhs = match self {
             Self::Bool(a) => *a,
             Self::Int(a) => *a != 0,
+            Self::Undef(_) => panic!("logical OR with undefined comptime value"),
         };
 
         let rhs = match other {
             Self::Bool(b) => *b,
             Self::Int(b) => *b != 0,
+            Self::Undef(_) => panic!("logical OR with undefined comptime value"),
         };
 
         Self::Bool(lhs || rhs)
@@ -61,11 +70,13 @@ impl ComptimeVal {
         let lhs = match self {
             Self::Bool(a) => *a,
             Self::Int(a) => *a != 0,
+            Self::Undef(_) => panic!("logical AND with undefined comptime value"),
         };
 
         let rhs = match other {
             Self::Bool(b) => *b,
             Self::Int(b) => *b != 0,
+            Self::Undef(_) => panic!("logical AND with undefined comptime value"),
         };
 
         Self::Bool(lhs && rhs)
@@ -88,6 +99,8 @@ impl PartialEq for ComptimeVal {
             // Coercion situations, bool -> int
             (Cv::Bool(a), Cv::Int(b)) => (*a as i32) == *b,
             (Cv::Int(a), Cv::Bool(b)) => *a == (*b as i32),
+
+            _ => false,
         }
     }
 }
@@ -104,6 +117,8 @@ impl PartialOrd for ComptimeVal {
             // Coercion situations, bool -> int
             (Cv::Bool(a), Cv::Int(b)) => (*a as i32).partial_cmp(b),
             (Cv::Int(a), Cv::Bool(b)) => a.partial_cmp(&(*b as i32)),
+
+            _ => None,
         }
     }
 }
@@ -116,6 +131,7 @@ impl std::ops::Neg for ComptimeVal {
         match self {
             Cv::Bool(a) => Cv::Int(-(a as i32)),
             Cv::Int(a) => Cv::Int(-a),
+            Cv::Undef(_) => panic!("negating undefined comptime value"),
         }
     }
 }
@@ -128,6 +144,7 @@ impl std::ops::Not for ComptimeVal {
         match self {
             Cv::Bool(a) => Cv::Bool(!a),
             Cv::Int(a) => Cv::Bool(a != 0),
+            Cv::Undef(_) => panic!("logical NOT with undefined comptime value"),
         }
     }
 }
@@ -144,6 +161,8 @@ impl std::ops::Add for ComptimeVal {
             (Cv::Bool(a), Cv::Int(b)) => Cv::Int(a as i32 + b),
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a + b as i32),
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 + b as i32),
+
+            _ => panic!("unsupported addition"),
         }
     }
 }
@@ -161,6 +180,8 @@ impl std::ops::Sub for ComptimeVal {
             (Cv::Bool(a), Cv::Int(b)) => Cv::Int(a as i32 - b),
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a - b as i32),
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 - b as i32),
+
+            _ => panic!("unsupported subtraction"),
         }
     }
 }
@@ -177,6 +198,8 @@ impl std::ops::Mul for ComptimeVal {
             (Cv::Bool(a), Cv::Int(b)) => Cv::Int(a as i32 * b),
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a * b as i32),
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 * b as i32),
+
+            _ => panic!("unsupported multiplication"),
         }
     }
 }
@@ -193,6 +216,8 @@ impl std::ops::Div for ComptimeVal {
             (Cv::Bool(a), Cv::Int(b)) => Cv::Int(a as i32 / b),
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a / b as i32),
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 / b as i32),
+
+            _ => panic!("unsupported division"),
         }
     }
 }
@@ -209,6 +234,8 @@ impl std::ops::Rem for ComptimeVal {
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 % b as i32),
             (Cv::Bool(a), Cv::Int(b)) => Cv::Int(a as i32 % b),
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a % b as i32),
+
+            _ => panic!("unsupported remainder"),
         }
     }
 }
@@ -680,6 +707,7 @@ impl VarDecl {
                         None => typed_init,
                     }
                 })
+                // TODO: assign undef
                 .unwrap_or_else(|| todo!("what if there is no init value?"));
 
             def.init = Some(init);
@@ -834,6 +862,7 @@ impl Expr {
                         let expr = match expr {
                             ComptimeVal::Bool(val) => val,
                             ComptimeVal::Int(val) => val != 0,
+                            ComptimeVal::Undef(_) => unreachable!(),
                         };
                         Some(ComptimeVal::bool(expr))
                     }
@@ -841,6 +870,7 @@ impl Expr {
                         let expr = match expr {
                             ComptimeVal::Bool(val) => val as i32,
                             ComptimeVal::Int(val) => val,
+                            ComptimeVal::Undef(_) => unreachable!(),
                         };
                         Some(ComptimeVal::int(expr))
                     }
