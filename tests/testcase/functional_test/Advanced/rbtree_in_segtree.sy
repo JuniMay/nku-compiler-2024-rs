@@ -43,7 +43,7 @@ int ne(int a,int b)
   }
 }
 
-int select(int cond, int t, int f)
+int select_(int cond, int t, int f)
 {
   if(cond){
     return t;
@@ -165,14 +165,14 @@ void erase(int k)
     else while(w) {size[w]=size[w]+1; w = fa[w];}
 }
 
-int cmp(int x, int k) { return select(lt(val[x],k), 0, select(ne(val[x], k), 1, -1)); }
+int cmp(int x, int k) { return select_(lt(val[x],k), 0, select_(ne(val[x], k), 1, -1)); }
 int suc2(int k, int b)
 {
     int x = root, p = 0, res = -INT_MAX;
     while(x)
         if(cmp(x, k) == b) { p = x; res = val[p]; x = son[!b][x];}
         else x = son[b][x];
-    return select(ne(res, -INT_MAX) , res, select(b, INT_MAX, -INT_MAX));
+    return select_(ne(res, -INT_MAX) , res, select_(b, INT_MAX, -INT_MAX));
 }
 
 int rank(int r)
@@ -226,7 +226,7 @@ int lower(int ql, int qr, int val, int rt, int l, int r)
 
 int suc(int ql, int qr, int val, int opt, int rt, int l, int r)
 {
-    if(qr < l || r < ql) return select(opt, INT_MAX, -INT_MAX);
+    if(qr < l || r < ql) return select_(opt, INT_MAX, -INT_MAX);
     root = tree[rt];
     if(ql <= l && r <= qr) return suc2(val, opt);
     int mid = (l + r) / 2, lson = rt*2, rson = lson + 1;

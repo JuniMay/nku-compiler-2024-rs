@@ -7,6 +7,7 @@ build = "build.rs"
 
 [dependencies]
 thiserror = "1.0.61"
+clap = { version = "4.5.8", features = ["string"] }
 
 lalrpop-util = { version = "0.20.2", features = ["lexer"], optional = true }
 
