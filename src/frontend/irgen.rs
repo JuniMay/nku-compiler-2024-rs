@@ -108,6 +108,10 @@ impl IrGenContext {
                 }
                 ConstantValue::array(&mut self.ctx, elem_ty, elems)
             }
+            Cv::Undef(ty) => {
+                let ir_ty = self.gen_type(ty);
+                ConstantValue::undef(&mut self.ctx, ir_ty)
+            }
         }
     }
 
@@ -150,6 +154,10 @@ impl IrGenContext {
                     elems.push(self.gen_local_comptime(elem));
                 }
                 Value::array(&mut self.ctx, elem_ty, elems)
+            }
+            Cv::Undef(ty) => {
+                let ir_ty = self.gen_type(ty);
+                Value::undef(&mut self.ctx, ir_ty)
             }
         }
     }
@@ -356,10 +364,13 @@ impl IrGenContext {
                 let func = if let IrGenResult::Global(slot) = ir_value {
                     let name = slot.name(&self.ctx).to_string();
                     let value_ty = slot.ty(&self.ctx);
+                    // println!("{}", slot.ty(&self.ctx).display(&self.ctx));
                     Value::global_ref(&mut self.ctx, name, value_ty)
                 } else {
                     unreachable!()
                 };
+
+                // println!("{}", func.display(&self.ctx, true));
 
                 let mut ir_args = Vec::new();
                 for arg in args {
@@ -369,7 +380,8 @@ impl IrGenContext {
                 let ret_ty = self.gen_type(ret_ty);
                 let inst = Inst::call(&mut self.ctx, func, ir_args, ret_ty);
                 curr_block.push_back(&mut self.ctx, inst).unwrap();
-                Some(inst.result(&self.ctx).unwrap())
+
+                inst.result(&self.ctx)
             }
         }
     }
@@ -407,7 +419,12 @@ impl IrGenContext {
         }
     }
 
-    fn gen_sysylib(&mut self) {}
+    // Generate the system library function definitions.
+    fn gen_sysylib(&mut self) {
+        // TODO: Implement gen_sysylib
+        // Since the system library is linked in the linking phase, we just need
+        // to generate declarations here.
+    }
 }
 
 pub trait IrGen {
@@ -415,17 +432,23 @@ pub trait IrGen {
 }
 
 impl IrGen for CompUnit {
+    // Generate IR for the compilation unit.
     fn irgen(&self, irgen: &mut IrGenContext) {
+        // Enter the global scope
         irgen.symtable.enter_scope();
+        // Generate system library function definitions
         irgen.gen_sysylib();
+        // Generate IR for each item in the compilation unit
         for item in &self.items {
             item.irgen(irgen);
         }
+        // Leave the global scope
         irgen.symtable.leave_scope();
     }
 }
 
 impl IrGen for Item {
+    // Generate IR for an item.
     fn irgen(&self, irgen: &mut IrGenContext) {
         match self {
             Item::Decl(decl) => match decl {
@@ -508,7 +531,7 @@ impl IrGen for Item {
                                     .try_fold(&irgen.symtable)
                                     .expect("global def expected to have constant initializer");
 
-                                println!("init:-----------\n{:#?}", init);
+                                // println!("init:-----------\n{:#?}", init);
                                 let array_ty = make_array(ty.clone(), 0, &arr_ident.size).unwrap();
                                 let value = irgen.gen_global_comptime(&comptime.to_comptimeval(ty));
                                 let slot = Global::new(
@@ -532,6 +555,7 @@ impl IrGen for Item {
             },
             Item::FuncDef(func_def) => func_def.irgen(irgen),
         }
+        // println!("{:#?}", irgen.symtable);
     }
 }
 
@@ -549,12 +573,26 @@ impl IrGen for FuncDef {
         let ir_ret_ty = irgen.gen_type(&self.ret_ty);
         let func = Func::new(&mut irgen.ctx, self.ident.clone(), ir_ret_ty);
 
+        let func_ref = match &self.ret_ty.kind() {
+            Tk::Void => {
+                let ty = Ty::void(&mut irgen.ctx);
+                ConstantValue::undef(&mut irgen.ctx, ty)
+            }
+            Tk::Bool => ConstantValue::i1(&mut irgen.ctx, false),
+            Tk::Int => ConstantValue::i32(&mut irgen.ctx, 0),
+            Tk::Float => ConstantValue::f32(&mut irgen.ctx, 0.0),
+            _ => unreachable!("function type should be handled separately"),
+        };
+
+        let ir_value =
+            IrGenResult::Global(Global::new(&mut irgen.ctx, self.ident.clone(), func_ref));
+
         irgen.symtable.insert_upper(
             self.ident.clone(),
             SymbolEntry {
                 ty: func_ty,
                 comptime: None,
-                ir_value: None,
+                ir_value: Some(ir_value),
             },
             1,
         );

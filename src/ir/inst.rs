@@ -307,12 +307,10 @@ impl Inst {
             container: None,
         });
 
-        if !ty.is_void(ctx) {
-            let result = Value::new_inst_result(ctx, inst, ty);
-            inst.try_deref_mut(ctx)
-                .unwrap_or_else(|| unreachable!())
-                .result = Some(result);
-        }
+        let result = Value::new_inst_result(ctx, inst, ty);
+        inst.try_deref_mut(ctx)
+            .unwrap_or_else(|| unreachable!())
+            .result = Some(result);
         inst
     }
 
@@ -935,13 +933,26 @@ impl fmt::Display for DisplayInst<'_> {
                     "{} {}, {} to {}",
                     op,
                     self.inst.operand(self.ctx, 0).display(self.ctx, true),
-                    self.inst.operand(self.ctx, 0).ty(self.ctx).display(self.ctx),
-                    self.inst.result(self.ctx).unwrap().ty(self.ctx).display(self.ctx)
+                    self.inst
+                        .operand(self.ctx, 0)
+                        .ty(self.ctx)
+                        .display(self.ctx),
+                    self.inst
+                        .result(self.ctx)
+                        .unwrap()
+                        .ty(self.ctx)
+                        .display(self.ctx)
                 )?;
             }
             InstKind::Call => {
                 let callee = self.inst.operand(self.ctx, 0);
-                write!(f, "call {} ", callee.display(self.ctx, true))?;
+                let ret_ty = self.inst.result(self.ctx).unwrap().ty(self.ctx);
+                write!(
+                    f,
+                    "call {} {} ",
+                    ret_ty.display(self.ctx),
+                    callee.display(self.ctx, false)
+                )?;
                 write!(f, "(")?;
                 let mut first = true;
                 for arg in self.inst.operand_iter(self.ctx).skip(1) {

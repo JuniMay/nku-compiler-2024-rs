@@ -1,7 +1,7 @@
 int x[3] = {2344,1232,3435};
 int y[3] = {234,566,127378};
 int d;
-void modx()
+void modx(int a)
 {
   x[0] = x[0] + 2;
   x[1] = x[1] + 2;
@@ -48,26 +48,26 @@ int main()
   d = 5;
   t = t + x[2] + d + d;
   refx();
-  t = t + x[2] + d;
-  modx();
-  t = t + x[2] + d;
-  mody();
-  t = t + x[2] + d;
-  modyrefx();
-  t = t + x[2] + y[2] + d;
-  modxrefy();
-  t = t + x[2] + d;
-  t = t + y[1] + y[2] + d;
-  modyrefx();
-  t = t + y[1] + y[2] + d;
-  refy();
-  t = t + y[1] + y[2] + d;
-  putint(t);
-  putch(10);
-  putarray(3,x);
-  putarray(3,y);
-  putint(d);
-  putch(10);
+  // t = t + x[2] + d;
+  // modx();
+  // t = t + x[2] + d;
+  // mody();
+  // t = t + x[2] + d;
+  // modyrefx();
+  // t = t + x[2] + y[2] + d;
+  // modxrefy();
+  // t = t + x[2] + d;
+  // t = t + y[1] + y[2] + d;
+  // modyrefx();
+  // t = t + y[1] + y[2] + d;
+  // refy();
+  // t = t + y[1] + y[2] + d;
+  // putint(t);
+  // putch(10);
+  // putarray(3,x);
+  // putarray(3,y);
+  // putint(d);
+  // putch(10);
 
   return 0;
 }

@@ -12,6 +12,8 @@ pub enum ComptimeVal {
     Int(i32),
     Float(f32),
     Array(Type, Vec<ComptimeVal>),
+    Undef(Type),
+    // TODO: Add more types, like float, list, etc.
 }
 
 impl ComptimeVal {
@@ -20,6 +22,7 @@ impl ComptimeVal {
         match self {
             Self::Bool(b) => *b as i32,
             Self::Int(i) => *i,
+            Self::Undef(_) => panic!("unwrapping undefined comptime value"),
             _ => panic!("not an integer"),
         }
     }
@@ -40,6 +43,8 @@ impl ComptimeVal {
         Self::Array(ty, elems)
     }
 
+    pub fn undef(ty: Type) -> Self { Self::Undef(ty) }
+
     /// Get the type of the comptime value.
     pub fn get_type(&self) -> Type {
         match self {
@@ -47,6 +52,7 @@ impl ComptimeVal {
             Self::Int(_) => Type::int(),
             Self::Float(_) => Type::float(),
             Self::Array(ty, _) => ty.clone(),
+            Self::Undef(ty) => ty.clone(),
         }
     }
 
@@ -55,6 +61,7 @@ impl ComptimeVal {
         match self {
             Self::Bool(b) => !*b,
             Self::Int(i) => *i == 0,
+            Self::Undef(_) => false,
             _ => unreachable!(""),
         }
     }
@@ -64,12 +71,14 @@ impl ComptimeVal {
         let lhs = match self {
             Self::Bool(a) => *a,
             Self::Int(a) => *a != 0,
+            Self::Undef(_) => panic!("logical OR with undefined comptime value"),
             _ => unreachable!(""),
         };
 
         let rhs = match other {
             Self::Bool(b) => *b,
             Self::Int(b) => *b != 0,
+            Self::Undef(_) => panic!("logical OR with undefined comptime value"),
             _ => unreachable!(""),
         };
 
@@ -81,12 +90,14 @@ impl ComptimeVal {
         let lhs = match self {
             Self::Bool(a) => *a,
             Self::Int(a) => *a != 0,
+            Self::Undef(_) => panic!("logical AND with undefined comptime value"),
             _ => unreachable!(""),
         };
 
         let rhs = match other {
             Self::Bool(b) => *b,
             Self::Int(b) => *b != 0,
+            Self::Undef(_) => panic!("logical AND with undefined comptime value"),
             _ => unreachable!(""),
         };
 
@@ -190,7 +201,7 @@ impl PartialEq for ComptimeVal {
             (Cv::Bool(a), Cv::Int(b)) => (*a as i32) == *b,
             (Cv::Int(a), Cv::Bool(b)) => *a == (*b as i32),
 
-            _ => unreachable!(),
+            _ => false,
         }
     }
 }
@@ -208,7 +219,7 @@ impl PartialOrd for ComptimeVal {
             (Cv::Bool(a), Cv::Int(b)) => (*a as i32).partial_cmp(b),
             (Cv::Int(a), Cv::Bool(b)) => a.partial_cmp(&(*b as i32)),
 
-            _ => unreachable!(),
+            _ => None,
         }
     }
 }
@@ -221,7 +232,7 @@ impl std::ops::Neg for ComptimeVal {
         match self {
             Cv::Bool(a) => Cv::Int(-(a as i32)),
             Cv::Int(a) => Cv::Int(-a),
-
+            Cv::Undef(_) => panic!("negating undefined comptime value"),
             _ => unreachable!("array"),
         }
     }
@@ -236,6 +247,7 @@ impl std::ops::Not for ComptimeVal {
             Cv::Bool(a) => Cv::Bool(!a),
             Cv::Int(a) => Cv::Bool(a != 0),
 
+            Cv::Undef(_) => panic!("logical NOT with undefined comptime value"),
             _ => unreachable!("array"),
         }
     }
@@ -254,7 +266,7 @@ impl std::ops::Add for ComptimeVal {
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a + b as i32),
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 + b as i32),
 
-            _ => unreachable!("array"),
+            _ => panic!("unsupported addition"),
         }
     }
 }
@@ -276,7 +288,7 @@ impl std::ops::Sub for ComptimeVal {
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a - b as i32),
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 - b as i32),
 
-            _ => unreachable!("array"),
+            _ => panic!("unsupported subtraction"),
         }
     }
 }
@@ -294,7 +306,7 @@ impl std::ops::Mul for ComptimeVal {
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a * b as i32),
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 * b as i32),
 
-            _ => unreachable!("array"),
+            _ => panic!("unsupported multiplication"),
         }
     }
 }
@@ -312,7 +324,7 @@ impl std::ops::Div for ComptimeVal {
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a / b as i32),
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 / b as i32),
 
-            _ => unreachable!("array"),
+            _ => panic!("unsupported division"),
         }
     }
 }
@@ -330,7 +342,7 @@ impl std::ops::Rem for ComptimeVal {
             (Cv::Bool(a), Cv::Int(b)) => Cv::Int(a as i32 % b),
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a % b as i32),
 
-            _ => unreachable!("array"),
+            _ => panic!("unsupported remainder"),
         }
     }
 }
@@ -553,7 +565,6 @@ pub enum Decl {
 /// ```
 #[derive(Debug)]
 pub enum ConstDef {
-    // HACK: 分成两种情况，一种是数组，一种是普通的常量
     Val(String, Expr),
     Array(ArrayIdent, ArrayVal),
 }
@@ -567,7 +578,6 @@ pub enum ConstDef {
 /// ```
 #[derive(Debug)]
 pub enum VarDef {
-    // HACK: 分成两种情况，一种是数组，一种是普通的变量
     Val(String, Option<Expr>),
     Array(ArrayIdent, Option<ArrayVal>),
 }
@@ -689,7 +699,7 @@ impl SymbolEntry {
 
 /// Symbol table.
 /// This is used to store information about symbols in the program.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct SymbolTable {
     /// Stack of scopes.
     /// Each scope has its own hashmap of symbols.
@@ -1313,6 +1323,7 @@ impl Expr {
                             ComptimeVal::Bool(val) => val,
                             ComptimeVal::Int(val) => val != 0,
                             ComptimeVal::Float(val) => val != 0.0,
+                            ComptimeVal::Undef(_) => unreachable!(),
                             _ => unreachable!("array"),
                         };
                         Some(ComptimeVal::bool(expr))
@@ -1322,6 +1333,7 @@ impl Expr {
                             ComptimeVal::Bool(val) => val as i32,
                             ComptimeVal::Int(val) => val,
                             ComptimeVal::Float(val) => val as i32,
+                            ComptimeVal::Undef(_) => unreachable!(),
                             _ => unreachable!("array"),
                         };
                         Some(ComptimeVal::int(expr))

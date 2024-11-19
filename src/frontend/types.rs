@@ -16,9 +16,9 @@ pub enum TypeKind {
     Bool,
     /// The integer type.
     Int,
-    /// HACK:The float type.
+    /// The float type.
     Float,
-    /// HACK:The array type, with the element type and the size.
+    /// The array type, with the element type and the size.
     Array(Type, usize),
     /// The function type, with params and return type.
     Func(Vec<Type>, Type),

@@ -75,6 +75,10 @@ impl ConstantValue {
         }
     }
 
+    pub fn undef(ctx: &mut Context, ty: Ty) -> ConstantValue {
+        ConstantValue::Undef { ty }
+    }
+
     pub fn array(ctx: &mut Context, ty: Ty, elems: Vec<ConstantValue>) -> ConstantValue {
         let array = Ty::array(ctx, ty, elems.len());
         ConstantValue::Array { ty: array, elems }
@@ -259,6 +263,11 @@ impl Value {
         Self::new(ctx, ValueKind::Constant { value })
     }
 
+    pub fn undef(ctx: &mut Context, ty: Ty) -> Self {
+        let value = ConstantValue::Undef { ty };
+        Self::new(ctx, ValueKind::Constant { value })
+    }
+
     pub fn array(ctx: &mut Context, ty: Ty, elems: Vec<Self>) -> Self {
         let mut vals = Vec::new();
         for elem in elems {
@@ -283,6 +292,7 @@ impl Value {
         let value = ConstantValue::global_ref(ctx, name, value_ty);
         Self::new(ctx, ValueKind::Constant { value })
     }
+
 }
 
 impl ArenaPtr for Value {
