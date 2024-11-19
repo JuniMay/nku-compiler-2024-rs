@@ -1,0 +1,19 @@
+//test float define
+
+const float sb = 4.1;
+const int bs=22;
+int main(){
+    const float cd = 1;
+    float a=1.003;
+    float b=3.1415926535897;
+    float c=0.00000001;
+    float d=1.23e-4;
+    float e=a+b;
+    float f=a-b;
+    float g=a*b;
+    float h=a/b;
+    int i=1;
+    int j=2;
+     int k=i+j;
+    return 0;
+}

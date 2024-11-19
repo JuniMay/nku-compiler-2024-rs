@@ -97,6 +97,25 @@ impl fmt::Display for CastOp {
 }
 
 #[derive(Debug)]
+pub enum FloatBinaryOp {
+    Fadd,
+    Fsub,
+    Fmul,
+    Fdiv,
+}
+
+impl fmt::Display for FloatBinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            FloatBinaryOp::Fadd => write!(f, "fadd"),
+            FloatBinaryOp::Fsub => write!(f, "fsub"),
+            FloatBinaryOp::Fmul => write!(f, "fmul"),
+            FloatBinaryOp::Fdiv => write!(f, "fdiv"),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum InstKind {
     Alloca {
         /// The type of the allocated memory.
@@ -117,6 +136,9 @@ pub enum InstKind {
     },
     Cast {
         op: CastOp,
+    },
+    FloatBinary {
+        op: FloatBinaryOp,
     },
 }
 
@@ -354,10 +376,29 @@ impl Inst {
 
     /// Create a new `add` instruction.
     pub fn add(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = match ty.try_deref(ctx).unwrap() {
+            TyData::Float64 => Self::fadd(ctx, lhs, rhs, ty),
+            _ => {
+                let inst = Self::new(
+                    ctx,
+                    InstKind::IntBinary {
+                        op: IntBinaryOp::Add,
+                    },
+                    ty,
+                );
+                inst.add_operand(ctx, lhs);
+                inst.add_operand(ctx, rhs);
+                inst
+            }
+        };
+        inst
+    }
+
+    pub fn fadd(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
         let inst = Self::new(
             ctx,
-            InstKind::IntBinary {
-                op: IntBinaryOp::Add,
+            InstKind::FloatBinary {
+                op: FloatBinaryOp::Fadd,
             },
             ty,
         );
@@ -396,10 +437,39 @@ impl Inst {
 
     // HACK: Implement constructors for other instructions.
     pub fn sub(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = match ty.try_deref(ctx).unwrap() {
+            TyData::Float64 => Self::fsub(ctx, lhs, rhs, ty),
+            _ => {
+                let inst = Self::new(
+                    ctx,
+                    InstKind::IntBinary {
+                        op: IntBinaryOp::Sub,
+                    },
+                    ty,
+                );
+                inst.add_operand(ctx, lhs);
+                inst.add_operand(ctx, rhs);
+                inst
+            }
+        };
+        inst
+        // let inst = Self::new(
+        //     ctx,
+        //     InstKind::IntBinary {
+        //         op: IntBinaryOp::Sub,
+        //     },
+        //     ty,
+        // );
+        // inst.add_operand(ctx, lhs);
+        // inst.add_operand(ctx, rhs);
+        // inst
+    }
+
+    pub fn fsub(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
         let inst = Self::new(
             ctx,
-            InstKind::IntBinary {
-                op: IntBinaryOp::Sub,
+            InstKind::FloatBinary {
+                op: FloatBinaryOp::Fsub,
             },
             ty,
         );
@@ -409,10 +479,39 @@ impl Inst {
     }
 
     pub fn mul(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = match ty.try_deref(ctx).unwrap() {
+            TyData::Float64 => Self::fmul(ctx, lhs, rhs, ty),
+            _ => {
+                let inst = Self::new(
+                    ctx,
+                    InstKind::IntBinary {
+                        op: IntBinaryOp::Mul,
+                    },
+                    ty,
+                );
+                inst.add_operand(ctx, lhs);
+                inst.add_operand(ctx, rhs);
+                inst
+            }
+        };
+        inst
+        // let inst = Self::new(
+        //     ctx,
+        //     InstKind::IntBinary {
+        //         op: IntBinaryOp::Mul,
+        //     },
+        //     ty,
+        // );
+        // inst.add_operand(ctx, lhs);
+        // inst.add_operand(ctx, rhs);
+        // inst
+    }
+
+    pub fn fmul(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
         let inst = Self::new(
             ctx,
-            InstKind::IntBinary {
-                op: IntBinaryOp::Mul,
+            InstKind::FloatBinary {
+                op: FloatBinaryOp::Fmul,
             },
             ty,
         );
@@ -422,10 +521,39 @@ impl Inst {
     }
 
     pub fn sdiv(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = match ty.try_deref(ctx).unwrap() {
+            TyData::Float64 => Self::fdiv(ctx, lhs, rhs, ty),
+            _ => {
+                let inst = Self::new(
+                    ctx,
+                    InstKind::IntBinary {
+                        op: IntBinaryOp::SDiv,
+                    },
+                    ty,
+                );
+                inst.add_operand(ctx, lhs);
+                inst.add_operand(ctx, rhs);
+                inst
+            }
+        };
+        inst
+        // let inst = Self::new(
+        //     ctx,
+        //     InstKind::IntBinary {
+        //         op: IntBinaryOp::SDiv,
+        //     },
+        //     ty,
+        // );
+        // inst.add_operand(ctx, lhs);
+        // inst.add_operand(ctx, rhs);
+        // inst
+    }
+
+    pub fn udiv(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
         let inst = Self::new(
             ctx,
             InstKind::IntBinary {
-                op: IntBinaryOp::SDiv,
+                op: IntBinaryOp::UDiv,
             },
             ty,
         );
@@ -434,11 +562,11 @@ impl Inst {
         inst
     }
 
-    pub fn udiv(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+    pub fn fdiv(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
         let inst = Self::new(
             ctx,
-            InstKind::IntBinary {
-                op: IntBinaryOp::UDiv,
+            InstKind::FloatBinary {
+                op: FloatBinaryOp::Fdiv,
             },
             ty,
         );
@@ -963,6 +1091,15 @@ impl fmt::Display for DisplayInst<'_> {
                     write!(f, "{}", arg.display(self.ctx, true))?;
                 }
                 write!(f, ")")?;
+            }
+            InstKind::FloatBinary { op } => {
+                write!(
+                    f,
+                    "{} {}, {}",
+                    op,
+                    self.inst.operand(self.ctx, 0).display(self.ctx, true),
+                    self.inst.operand(self.ctx, 1).display(self.ctx, false)
+                )?;
             }
         }
 

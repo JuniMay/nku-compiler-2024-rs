@@ -99,7 +99,7 @@ impl IrGenContext {
         match val {
             Cv::Bool(a) => ConstantValue::i1(&mut self.ctx, *a),
             Cv::Int(a) => ConstantValue::i32(&mut self.ctx, *a),
-            Cv::Float(a) => ConstantValue::f32(&mut self.ctx, *a),
+            Cv::Float(a) => ConstantValue::f64(&mut self.ctx, *a),//iakkefloattest,origin:f32
             Cv::Array(ty, vals) => {
                 let elem_ty = self.gen_type(ty);
                 let mut elems = Vec::new();
@@ -121,7 +121,7 @@ impl IrGenContext {
             Tk::Void => Ty::void(&mut self.ctx),
             Tk::Bool => Ty::i1(&mut self.ctx),
             Tk::Int => Ty::i32(&mut self.ctx),
-            Tk::Float => Ty::f32(&mut self.ctx),
+            Tk::Float => Ty::f64(&mut self.ctx),//iakkefloattest,origin:f32
             Tk::Array(ty, size) => {
                 let ir_ty = self.gen_type(ty);
                 Ty::array(&mut self.ctx, ir_ty, size.clone())
@@ -146,7 +146,7 @@ impl IrGenContext {
         match val {
             Cv::Bool(a) => Value::i1(&mut self.ctx, *a),
             Cv::Int(a) => Value::i32(&mut self.ctx, *a),
-            Cv::Float(a) => Value::f32(&mut self.ctx, *a),
+            Cv::Float(a) => Value::f64(&mut self.ctx, *a),//iakkefloattest,origin:f32
             Cv::Array(ty, vals) => {
                 let elem_ty = self.gen_type(ty);
                 let mut elems = Vec::new();
@@ -317,7 +317,7 @@ impl IrGenContext {
                     (Tk::Bool, Tk::Float) => {
                         let val = self.gen_local_expr(old_expr).unwrap();
                         let ty = Ty::i1(&mut self.ctx);
-                        let rhs = Value::f32(&mut self.ctx, 0.0);
+                        let rhs = Value::f64(&mut self.ctx, 0.0);//iakkefloattest,origin:f32
                         let inst = Inst::eq(&mut self.ctx, val, rhs, ty);
                         curr_block.push_back(&mut self.ctx, inst).unwrap();
                         Some(inst.result(&self.ctx).unwrap())
@@ -338,14 +338,14 @@ impl IrGenContext {
                     }
                     (Tk::Float, Tk::Bool) => {
                         let val = self.gen_local_expr(old_expr).unwrap();
-                        let ty = Ty::f32(&mut self.ctx);
+                        let ty = Ty::f64(&mut self.ctx);//iakkefloattest,origin:f32
                         let inst = Inst::uitofp(&mut self.ctx, val, ty);
                         curr_block.push_back(&mut self.ctx, inst).unwrap();
                         Some(inst.result(&self.ctx).unwrap())
                     }
                     (Tk::Float, Tk::Int) => {
                         let val = self.gen_local_expr(old_expr).unwrap();
-                        let ty = Ty::f32(&mut self.ctx);
+                        let ty = Ty::f64(&mut self.ctx);//iakkefloattest,origin:f32
                         let inst = Inst::sitofp(&mut self.ctx, val, ty);
                         curr_block.push_back(&mut self.ctx, inst).unwrap();
                         Some(inst.result(&self.ctx).unwrap())
@@ -580,7 +580,7 @@ impl IrGen for FuncDef {
             }
             Tk::Bool => ConstantValue::i1(&mut irgen.ctx, false),
             Tk::Int => ConstantValue::i32(&mut irgen.ctx, 0),
-            Tk::Float => ConstantValue::f32(&mut irgen.ctx, 0.0),
+            Tk::Float => ConstantValue::f64(&mut irgen.ctx, 0.0),
             _ => unreachable!("function type should be handled separately"),
         };
 

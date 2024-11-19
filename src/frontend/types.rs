@@ -163,7 +163,7 @@ impl Type {
             TypeKind::Void => 0,
             TypeKind::Bool => 1,
             TypeKind::Int => 4,
-            TypeKind::Float => 4,
+            TypeKind::Float => 4,//iakke?
             TypeKind::Array(ty, size) => ty.bytewidth() * size,
             TypeKind::Func(_, _) => unreachable!(),
         }

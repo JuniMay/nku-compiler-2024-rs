@@ -12,8 +12,8 @@ pub enum TyData {
     Int8,
     /// The `i32` type.
     Int32,
-    /// The `f32` type.
-    Float32,
+    /// The `f32` type.iakke:f64
+    Float64,
     /// The pointer type.
     Ptr,
     /// The array type.
@@ -41,7 +41,7 @@ impl<'ctx> std::fmt::Display for DisplayTy<'ctx> {
             TyData::Int1 => write!(f, "i1"),
             TyData::Int8 => write!(f, "i8"),
             TyData::Int32 => write!(f, "i32"),
-            TyData::Float32 => write!(f, "float"),
+            TyData::Float64 => write!(f, "float"),//iakkefloattest,origin:f32
             TyData::Ptr => write!(f, "ptr"),
             TyData::Array { elem, len } => write!(
                 f,
@@ -69,8 +69,8 @@ impl Ty {
     /// Fetch a type representing `i32`.
     pub fn i32(ctx: &mut Context) -> Self { ctx.alloc(TyData::Int32) }
 
-    /// Fetch a type representing `f32`.
-    pub fn f32(ctx: &mut Context) -> Self { ctx.alloc(TyData::Float32) }
+    /// Fetch a type representing `f32`.iakke:f64
+    pub fn f64(ctx: &mut Context) -> Self { ctx.alloc(TyData::Float64) }//iakkefloattest,origin:f32
 
     /// Fetch a type representing a pointer.
     pub fn ptr(ctx: &mut Context) -> Self { ctx.alloc(TyData::Ptr) }
@@ -91,7 +91,7 @@ impl Ty {
             TyData::Int1 => 1,
             TyData::Int8 => 8,
             TyData::Int32 => 32,
-            TyData::Float32 => 32,
+            TyData::Float64 => 64,//iakkefloattest,origin:f32
             TyData::Ptr => ctx.target.ptr_size as usize * 8,
             TyData::Array { elem, len } => elem.bitwidth(ctx) * len,
         }
@@ -135,6 +135,8 @@ impl Arena<Ty> for Context {
 
 #[cfg(test)]
 mod tests {
+    use crate::ir::Value;
+
     use super::*;
 
     #[test]
@@ -144,6 +146,9 @@ mod tests {
         let i1 = Ty::i1(&mut ctx);
         let i8 = Ty::i8(&mut ctx);
         let i32 = Ty::i32(&mut ctx);
+
+        let f64_ty = Ty::f64(&mut ctx);
+
         let ptr = Ty::ptr(&mut ctx);
         let arr = Ty::array(&mut ctx, i32, 10);
 
@@ -156,6 +161,12 @@ mod tests {
 
         assert_eq!(i32.as_array(&ctx), None);
         assert_eq!(arr.as_array(&ctx), Some((i32, 10)));
+
+        assert_eq!(f64_ty.bitwidth(&ctx), 64);
+
+        let f64_value = Value::f64(&mut ctx, 3.14159265358979323846264338327950288);
+        assert_eq!(f64_value.ty(&ctx).bitwidth(&ctx), 64);
+        assert_eq!(f64_value.display(&ctx, true).to_string(), "float 0x400921fb54442d18");
     }
 
     #[test]
@@ -168,11 +179,41 @@ mod tests {
         let ptr = Ty::ptr(&mut ctx);
         let arr = Ty::array(&mut ctx, i32, 10);
 
+        let f64_ty = Ty::f64(&mut ctx);
+
         assert_eq!(void.display(&ctx).to_string(), "void");
         assert_eq!(i1.display(&ctx).to_string(), "i1");
         assert_eq!(i8.display(&ctx).to_string(), "i8");
         assert_eq!(i32.display(&ctx).to_string(), "i32");
         assert_eq!(ptr.display(&ctx).to_string(), "ptr");
         assert_eq!(arr.display(&ctx).to_string(), "[10 x i32]");
+
+        assert_eq!(f64_ty.display(&ctx).to_string(), "float");
     }
+
+    #[test]
+    fn test_various_f64_values() {
+        let mut ctx = Context::new(8);
+
+        let pi = Value::f64(&mut ctx, 3.141592653589793);
+        let small = Value::f64(&mut ctx, 0.00000001);
+        let scientific = Value::f64(&mut ctx, 1.23e-4);
+
+        let pi_e: f64 = 3.141592653589793;
+        let small_e: f64 = 0.00000001;      
+        let scientific_e: f64 = 1.23e-4;    
+
+        assert_eq!(pi.ty(&ctx).bitwidth(&ctx), 64);
+        let pi_bits = pi_e.to_bits(); 
+        assert_eq!(pi.display(&ctx, true).to_string(), format!("float 0x{:x}", pi_bits));
+
+        let small_bits = small_e.to_bits();
+        assert_eq!(small.ty(&ctx).bitwidth(&ctx), 64);
+        assert_eq!(small.display(&ctx, true).to_string(), format!("float 0x{:x}", small_bits));
+
+        let scientific_bits = scientific_e.to_bits();
+        assert_eq!(scientific.ty(&ctx).bitwidth(&ctx), 64);
+        assert_eq!(scientific.display(&ctx, true).to_string(), format!("float 0x{:x}", scientific_bits));
+    }
+
 }

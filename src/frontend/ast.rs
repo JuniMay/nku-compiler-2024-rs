@@ -10,7 +10,7 @@ use super::types::{Type, TypeKind as Tk};
 pub enum ComptimeVal {
     Bool(bool),
     Int(i32),
-    Float(f32),
+    Float(f64), //iakkefloattest origin:f32,
     Array(Type, Vec<ComptimeVal>),
     Undef(Type),
     // TODO: Add more types, like float, list, etc.
@@ -35,7 +35,8 @@ impl ComptimeVal {
         Self::Int(i)
     }
 
-    pub fn float(f: f32) -> Self {
+    pub fn float(f: f64) -> Self {
+        //iakkefloattest origin:f32,
         Self::Float(f)
     }
 
@@ -43,7 +44,9 @@ impl ComptimeVal {
         Self::Array(ty, elems)
     }
 
-    pub fn undef(ty: Type) -> Self { Self::Undef(ty) }
+    pub fn undef(ty: Type) -> Self {
+        Self::Undef(ty)
+    }
 
     /// Get the type of the comptime value.
     pub fn get_type(&self) -> Type {
@@ -113,30 +116,45 @@ impl ComptimeVal {
     pub fn add(&self, other: &Self) -> Self {
         match (self, other) {
             (Self::Int(a), Self::Int(b)) => Self::Int(a + b),
+            (Self::Float(a), Self::Float(b)) => Self::Float(a + b),
+            (Self::Int(a), Self::Float(b)) => Self::Float(*a as f64 + b),
+            (Self::Float(a), Self::Int(b)) => Self::Float(a + *b as f64),
             _ => panic!("unsupported operation: {:?} + {:?}", self, other),
         }
     }
     pub fn sub(&self, other: &Self) -> Self {
         match (self, other) {
             (Self::Int(a), Self::Int(b)) => Self::Int(a - b),
+            (Self::Float(a), Self::Float(b)) => Self::Float(a - b),
+            (Self::Int(a), Self::Float(b)) => Self::Float(*a as f64 - b),
+            (Self::Float(a), Self::Int(b)) => Self::Float(a - *b as f64),
             _ => panic!("unsupported operation: {:?} - {:?}", self, other),
         }
     }
     pub fn mul(&self, other: &Self) -> Self {
         match (self, other) {
             (Self::Int(a), Self::Int(b)) => Self::Int(a * b),
+            (Self::Float(a), Self::Float(b)) => Self::Float(a * b),
+            (Self::Int(a), Self::Float(b)) => Self::Float(*a as f64 * b),
+            (Self::Float(a), Self::Int(b)) => Self::Float(a * *b as f64),
             _ => panic!("unsupported operation: {:?} * {:?}", self, other),
         }
     }
     pub fn sdiv(&self, other: &Self) -> Self {
         match (self, other) {
             (Self::Int(a), Self::Int(b)) => Self::Int(a / b),
+            (Self::Float(a), Self::Float(b)) => Self::Float(a / b),
+            (Self::Int(a), Self::Float(b)) => Self::Float(*a as f64 / b),
+            (Self::Float(a), Self::Int(b)) => Self::Float(a / *b as f64),
             _ => panic!("unsupported operation: {:?} / {:?}", self, other),
         }
     }
     pub fn srem(&self, other: &Self) -> Self {
         match (self, other) {
             (Self::Int(a), Self::Int(b)) => Self::Int(a % b),
+            (Self::Float(a), Self::Float(b)) => Self::Float(a % b), // question:浮点数取余？没见过qaq??
+            (Self::Int(a), Self::Float(b)) => Self::Float(*a as f64 % b),
+            (Self::Float(a), Self::Int(b)) => Self::Float(a % *b as f64),
             _ => panic!("unsupported operation: {:?} % {:?}", self, other),
         }
     }
@@ -155,30 +173,43 @@ impl ComptimeVal {
     pub fn eq(&self, other: &Self) -> Self {
         match (self, other) {
             (Self::Int(a), Self::Int(b)) => Self::Bool(a == b),
+            (Self::Float(a), Self::Float(b)) => Self::Bool(a == b),
+            (Self::Int(a), Self::Float(b)) => Self::Bool(*a as f64 == *b),
+            (Self::Float(a), Self::Int(b)) => Self::Bool(*a == *b as f64),
             _ => panic!("unsupported operation: {:?} == {:?}", self, other),
         }
     }
     pub fn ne(&self, other: &Self) -> Self {
         match (self, other) {
             (Self::Int(a), Self::Int(b)) => Self::Bool(a != b),
+            (Self::Float(a), Self::Float(b)) => Self::Bool(a != b),
+            (Self::Int(a), Self::Float(b)) => Self::Bool(*a as f64 != *b),
+            (Self::Float(a), Self::Int(b)) => Self::Bool(*a != *b as f64),
             _ => panic!("unsupported operation: {:?} != {:?}", self, other),
         }
     }
     pub fn lt(&self, other: &Self) -> Self {
         match (self, other) {
             (Self::Int(a), Self::Int(b)) => Self::Bool(a < b),
+            (Self::Float(a), Self::Float(b)) => Self::Bool(a < b),
+            (Self::Int(a), Self::Float(b)) => Self::Bool((*a as f64) < *b),
+            (Self::Float(a), Self::Int(b)) => Self::Bool(*a < *b as f64),
             _ => panic!("unsupported operation: {:?} < {:?}", self, other),
         }
     }
     pub fn le(&self, other: &Self) -> Self {
         match (self, other) {
             (Self::Int(a), Self::Int(b)) => Self::Bool(a <= b),
+            (Self::Float(a), Self::Float(b)) => Self::Bool(a <= b),
+            (Self::Int(a), Self::Float(b)) => Self::Bool(*a as f64 <= *b),
+            (Self::Float(a), Self::Int(b)) => Self::Bool(*a <= *b as f64),
             _ => panic!("unsupported operation: {:?} <= {:?}", self, other),
         }
     }
     pub fn neg(&self) -> Self {
         match self {
             Self::Int(a) => Self::Int(-a),
+            Self::Float(a) => Self::Float(-a),
             _ => panic!("unsupported operation: -{:?}", self),
         }
     }
@@ -196,10 +227,14 @@ impl PartialEq for ComptimeVal {
         match (self, other) {
             (Cv::Bool(a), Cv::Bool(b)) => a == b,
             (Cv::Int(a), Cv::Int(b)) => a == b,
+            (Cv::Float(a), Cv::Float(b)) => a == b,
 
             // Coercion situations, bool -> int
             (Cv::Bool(a), Cv::Int(b)) => (*a as i32) == *b,
             (Cv::Int(a), Cv::Bool(b)) => *a == (*b as i32),
+
+            (Cv::Int(a), Cv::Float(b)) => (*a as f64) == *b,
+            (Cv::Float(a), Cv::Int(b)) => *a == (*b as f64),
 
             _ => false,
         }
@@ -214,10 +249,14 @@ impl PartialOrd for ComptimeVal {
         match (self, other) {
             (Cv::Bool(a), Cv::Bool(b)) => a.partial_cmp(b),
             (Cv::Int(a), Cv::Int(b)) => a.partial_cmp(b),
+            (Cv::Float(a), Cv::Float(b)) => a.partial_cmp(b),
 
             // Coercion situations, bool -> int
             (Cv::Bool(a), Cv::Int(b)) => (*a as i32).partial_cmp(b),
             (Cv::Int(a), Cv::Bool(b)) => a.partial_cmp(&(*b as i32)),
+
+            (Cv::Int(a), Cv::Float(b)) => (*a as f64).partial_cmp(b),
+            (Cv::Float(a), Cv::Int(b)) => a.partial_cmp(&(*b as f64)),
 
             _ => None,
         }
@@ -232,7 +271,9 @@ impl std::ops::Neg for ComptimeVal {
         match self {
             Cv::Bool(a) => Cv::Int(-(a as i32)),
             Cv::Int(a) => Cv::Int(-a),
+            Cv::Float(a) => Cv::Float(-a),
             Cv::Undef(_) => panic!("negating undefined comptime value"),
+
             _ => unreachable!("array"),
         }
     }
@@ -260,11 +301,15 @@ impl std::ops::Add for ComptimeVal {
         use ComptimeVal as Cv;
         match (self, other) {
             (Cv::Int(a), Cv::Int(b)) => Cv::Int(a + b),
+            (Cv::Float(a), Cv::Float(b)) => Cv::Float(a + b),
 
             // coercion situations, bool -> int
             (Cv::Bool(a), Cv::Int(b)) => Cv::Int(a as i32 + b),
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a + b as i32),
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 + b as i32),
+
+            (Cv::Int(a), Cv::Float(b)) => Cv::Float(a as f64 + b),
+            (Cv::Float(a), Cv::Int(b)) => Cv::Float(a + b as f64),
 
             _ => panic!("unsupported addition"),
         }
@@ -282,11 +327,15 @@ impl std::ops::Sub for ComptimeVal {
                 println!("integer overflow");
                 0 // 或者其他默认值
             })),
+            (Cv::Float(a), Cv::Float(b)) => Cv::Float(a - b),
 
             // coercion situations, bool -> int
             (Cv::Bool(a), Cv::Int(b)) => Cv::Int(a as i32 - b),
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a - b as i32),
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 - b as i32),
+
+            (Cv::Int(a), Cv::Float(b)) => Cv::Float(a as f64 - b),
+            (Cv::Float(a), Cv::Int(b)) => Cv::Float(a - b as f64),
 
             _ => panic!("unsupported subtraction"),
         }
@@ -300,12 +349,15 @@ impl std::ops::Mul for ComptimeVal {
         use ComptimeVal as Cv;
         match (self, other) {
             (Cv::Int(a), Cv::Int(b)) => Cv::Int(a * b),
+            (Cv::Float(a), Cv::Float(b)) => Cv::Float(a * b),
 
             // coercion situations, bool -> int
             (Cv::Bool(a), Cv::Int(b)) => Cv::Int(a as i32 * b),
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a * b as i32),
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 * b as i32),
 
+            (Cv::Int(a), Cv::Float(b)) => Cv::Float(a as f64 * b),
+            (Cv::Float(a), Cv::Int(b)) => Cv::Float(a * b as f64),
             _ => panic!("unsupported multiplication"),
         }
     }
@@ -318,11 +370,15 @@ impl std::ops::Div for ComptimeVal {
         use ComptimeVal as Cv;
         match (self, other) {
             (Cv::Int(a), Cv::Int(b)) => Cv::Int(a / b),
+            (Cv::Float(a), Cv::Float(b)) => Cv::Float(a / b),
 
             // coercion situations, bool -> int
             (Cv::Bool(a), Cv::Int(b)) => Cv::Int(a as i32 / b),
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a / b as i32),
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 / b as i32),
+
+            (Cv::Int(a), Cv::Float(b)) => Cv::Float(a as f64 / b),
+            (Cv::Float(a), Cv::Int(b)) => Cv::Float(a / b as f64),
 
             _ => panic!("unsupported division"),
         }
@@ -336,11 +392,15 @@ impl std::ops::Rem for ComptimeVal {
         use ComptimeVal as Cv;
         match (self, other) {
             (Cv::Int(a), Cv::Int(b)) => Cv::Int(a % b),
+            (Cv::Float(a), Cv::Float(b)) => Cv::Float(a % b),
 
             // bool -> int
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 % b as i32),
             (Cv::Bool(a), Cv::Int(b)) => Cv::Int(a as i32 % b),
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a % b as i32),
+
+            (Cv::Int(a), Cv::Float(b)) => Cv::Float(a as f64 % b),
+            (Cv::Float(a), Cv::Int(b)) => Cv::Float(a % b as f64),
 
             _ => panic!("unsupported remainder"),
         }
@@ -897,7 +957,7 @@ impl ConstDecl {
                     );
 
                     *init = full_array;
-                    
+
                     new_defs.push(def);
                 }
             }
@@ -1340,8 +1400,8 @@ impl Expr {
                     }
                     Tk::Float => {
                         let expr = match expr {
-                            ComptimeVal::Bool(val) => val as i32 as f32,
-                            ComptimeVal::Int(val) => val as f32,
+                            ComptimeVal::Bool(val) => val as i32 as f64, //iakkefloattest origin:f32,
+                            ComptimeVal::Int(val) => val as f64, //iakkefloattest origin:f32,
                             ComptimeVal::Float(val) => val,
                             _ => unreachable!("array"),
                         };
@@ -1382,6 +1442,18 @@ impl Expr {
                     }
                     (Tk::Int, Tk::Bool) => {
                         rhs = Expr::coercion(rhs, Type::int());
+                    }
+                    (Tk::Float, Tk::Int) => {
+                        rhs = Expr::coercion(rhs, Type::float());
+                    }
+                    (Tk::Int, Tk::Float) => {
+                        lhs = Expr::coercion(lhs, Type::float());
+                    }
+                    (Tk::Float, Tk::Bool) => {
+                        rhs = Expr::coercion(rhs, Type::float());
+                    }
+                    (Tk::Bool, Tk::Float) => {
+                        lhs = Expr::coercion(lhs, Type::float());
                     }
                     _ => {
                         if lhs_ty != rhs_ty {
@@ -1499,19 +1571,15 @@ impl Expr {
 
         // Coerce the expression to the expected type if needed
         if let Some(ty) = expect {
-            if ty.is_int() || ty.is_bool() {
-                match ty.kind() {
-                    Tk::Bool => expr = Expr::coercion(expr, Type::bool()),
-                    Tk::Int => expr = Expr::coercion(expr, Type::int()),
-                    Tk::Float => expr = Expr::coercion(expr, Type::float()),
-                    Tk::Func(..) | Tk::Void | Tk::Array(_, _) => {
-                        unreachable!()
-                    }
+            match ty.kind() {
+                Tk::Bool => expr = Expr::coercion(expr, Type::bool()),
+                Tk::Int => expr = Expr::coercion(expr, Type::int()),
+                Tk::Float => expr = Expr::coercion(expr, Type::float()),
+                Tk::Func(..) | Tk::Void | Tk::Array(_, _) => {
+                    panic!("unsupported type coercion: {:?}", ty);
                 }
-                expr.ty = Some(ty.clone());
-            } else if ty != expr.ty() {
-                panic!("unsupported type coercion: {:?}", ty);
             }
+            expr.ty = Some(ty.clone());
         }
 
         // try to fold the expression into a constant value
@@ -1544,18 +1612,16 @@ pub fn get_comptime_array(
         return array_entry.clone();
     }
     match array_entry {
-        ComptimeVal::Array(_, vals) => {
-            match &indices[pos] {
-                ComptimeVal::Int(index) => {
-                    let index = *index as usize;
-                    if index >= vals.len() {
-                        panic!("array index out of bounds");
-                    }
-                    get_comptime_array(&vals[index], indices, pos + 1)
+        ComptimeVal::Array(_, vals) => match &indices[pos] {
+            ComptimeVal::Int(index) => {
+                let index = *index as usize;
+                if index >= vals.len() {
+                    panic!("array index out of bounds");
                 }
-                _ => unreachable!("non-constant array index"),
+                get_comptime_array(&vals[index], indices, pos + 1)
             }
-        }
+            _ => unreachable!("non-constant array index"),
+        },
         _ => unreachable!("not an array"),
     }
 }
