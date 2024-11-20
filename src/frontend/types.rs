@@ -14,6 +14,8 @@ pub enum TypeKind {
     ///
     /// There is no `bool` type, but the intermediate result might be boolean.
     Bool,
+    /// The char type.
+    Char,
     /// The integer type.
     Int,
     /// The float type.
@@ -22,6 +24,10 @@ pub enum TypeKind {
     Array(Type, usize),
     /// The function type, with params and return type.
     Func(Vec<Type>, Type),
+    /// The pointer type.
+    Ptr(Type),
+    /// The args type.
+    Args,
 }
 
 // The type in AST
@@ -53,6 +59,7 @@ impl fmt::Display for Type {
         match self.kind() {
             TypeKind::Void => write!(f, "void"),
             TypeKind::Bool => write!(f, "bool"),
+            TypeKind::Char => write!(f, "char"),
             TypeKind::Int => write!(f, "int"),
             TypeKind::Float => write!(f, "float"),
             TypeKind::Array(ty, size) => write!(f, "{}[{:?}]", ty, size),
@@ -66,6 +73,8 @@ impl fmt::Display for Type {
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
+            TypeKind::Ptr(ty) => write!(f, "{}*", ty),
+            TypeKind::Args => write!(f, "..."),
         }
     }
 }
@@ -110,6 +119,11 @@ impl Type {
         Self::make(TypeKind::Bool)
     }
 
+    /// Create a new char type.
+    pub fn char() -> Self {
+        Self::make(TypeKind::Char)
+    }
+
     /// Create a new integer type.
     pub fn int() -> Self {
         Self::make(TypeKind::Int)
@@ -120,6 +134,7 @@ impl Type {
         Self::make(TypeKind::Float)
     }
 
+    /// Create a new array type.
     pub fn array(ty: Type, size: usize) -> Self {
         Self::make(TypeKind::Array(ty, size))
     }
@@ -127,6 +142,16 @@ impl Type {
     /// Create a new function type.
     pub fn func(params: Vec<Type>, ret: Type) -> Self {
         Self::make(TypeKind::Func(params, ret))
+    }
+
+    /// Create a new pointer type.
+    pub fn ptr(ty: Type) -> Self {
+        Self::make(TypeKind::Ptr(ty))
+    }
+
+    /// Create a new args type.
+    pub fn args() -> Self {
+        Self::make(TypeKind::Args)
     }
 
     /// Check if the type is a int type.
@@ -142,6 +167,36 @@ impl Type {
     /// Check if the type is a void type.
     pub fn is_void(&self) -> bool {
         matches!(self.kind(), TypeKind::Void)
+    }
+
+    /// Check if the type is a char type.
+    pub fn is_char(&self) -> bool {
+        matches!(self.kind(), TypeKind::Char)
+    }
+
+    /// Check if the type is a float type.
+    pub fn is_float(&self) -> bool {
+        matches!(self.kind(), TypeKind::Float)
+    }
+
+    /// Check if the type is a array type.
+    pub fn is_array(&self) -> bool {
+        matches!(self.kind(), TypeKind::Array(_, _))
+    }
+
+    /// Check if the type is a function type.
+    pub fn is_func(&self) -> bool {
+        matches!(self.kind(), TypeKind::Func(_, _))
+    }
+
+    /// Check if the type is a pointer type.
+    pub fn is_ptr(&self) -> bool {
+        matches!(self.kind(), TypeKind::Ptr(_))
+    }
+
+    /// Check if the type is a args type.
+    pub fn is_args(&self) -> bool {
+        matches!(self.kind(), TypeKind::Args)
     }
 
     /// Get the parameters and return type of a function type.
@@ -162,10 +217,36 @@ impl Type {
         match self.kind() {
             TypeKind::Void => 0,
             TypeKind::Bool => 1,
+            TypeKind::Char => 1,
             TypeKind::Int => 4,
-            TypeKind::Float => 4,//iakke?
+            TypeKind::Float => 4, //iakke?
             TypeKind::Array(ty, size) => ty.bytewidth() * size,
-            TypeKind::Func(_, _) => unreachable!(),
+            TypeKind::Func(_, _) | TypeKind::Ptr(_) => unreachable!(),
+            TypeKind::Args => 0,
+        }
+    }
+    pub fn is_equal(&self, other: &Self) -> bool {
+        let mut this = self.0.as_ref();
+        let mut other = other.0.as_ref();
+        loop {
+            match (this, other) {
+                (TypeKind::Array(t1, _), TypeKind::Array(t2, _)) => {
+                    // if s1 != s2 {
+                    //     return false;
+                    // }
+                    this = t1.0.as_ref();
+                    other = t2.0.as_ref();
+                }
+                (TypeKind::Int, TypeKind::Int)
+                | (TypeKind::Char, TypeKind::Char)
+                | (TypeKind::Float, TypeKind::Float)
+                | (TypeKind::Bool, TypeKind::Bool) => {
+                    return true;
+                }
+                _ => {
+                    return this == other;
+                }
+            }
         }
     }
 }
@@ -177,6 +258,7 @@ mod tests {
     #[test]
     fn test_type_display() {
         assert_eq!(Type::void().to_string(), "void");
+        assert_eq!(Type::char().to_string(), "char");
         assert_eq!(Type::bool().to_string(), "bool");
         assert_eq!(Type::int().to_string(), "int");
         assert_eq!(Type::float().to_string(), "float");

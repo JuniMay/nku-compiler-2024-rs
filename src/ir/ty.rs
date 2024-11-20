@@ -13,9 +13,9 @@ pub enum TyData {
     /// The `i32` type.
     Int32,
     /// The `f32` type.iakke:f64
-    Float64,
+    Float32,
     /// The pointer type.
-    Ptr,
+    Ptr { ty: Option<Ty> },
     /// The array type.
     Array {
         /// The element type.
@@ -23,6 +23,15 @@ pub enum TyData {
         /// The length of the array.
         len: usize,
     },
+    /// The function type.
+    Func {
+        /// The return type.
+        ret: Ty,
+        /// The parameter types.
+        params: Vec<Ty>,
+    },
+    /// The variable args type.
+    Args,
 }
 
 /// A handle to a type in IR.
@@ -41,8 +50,18 @@ impl<'ctx> std::fmt::Display for DisplayTy<'ctx> {
             TyData::Int1 => write!(f, "i1"),
             TyData::Int8 => write!(f, "i8"),
             TyData::Int32 => write!(f, "i32"),
-            TyData::Float64 => write!(f, "float"),//iakkefloattest,origin:f32
-            TyData::Ptr => write!(f, "ptr"),
+            TyData::Float32 => write!(f, "float"), //iakkefloattest,origin:f32
+            TyData::Ptr { ty } => match ty {
+                Some(t) => write!(
+                    f,
+                    "{}*",
+                    DisplayTy {
+                        ctx: self.ctx,
+                        ty: *t
+                    }
+                ),
+                None => write!(f, "ptr"),
+            },
             TyData::Array { elem, len } => write!(
                 f,
                 "[{} x {}]",
@@ -52,32 +71,58 @@ impl<'ctx> std::fmt::Display for DisplayTy<'ctx> {
                     ty: *elem
                 }
             ),
+            TyData::Func { ret, params } => write! {
+                f, "{} ({})*", ret.display(self.ctx), params.iter().map(|ty| ty.display(self.ctx).to_string()).collect::<Vec<String>>().join(", ")
+            },
+            TyData::Args => write!(f, "..."),
         }
     }
 }
 
 impl Ty {
     /// Fetch a type representing `void`.
-    pub fn void(ctx: &mut Context) -> Self { ctx.alloc(TyData::Void) }
+    pub fn void(ctx: &mut Context) -> Self {
+        ctx.alloc(TyData::Void)
+    }
 
     /// Fetch a type representing `i1`.
-    pub fn i1(ctx: &mut Context) -> Self { ctx.alloc(TyData::Int1) }
+    pub fn i1(ctx: &mut Context) -> Self {
+        ctx.alloc(TyData::Int1)
+    }
 
     /// Fetch a type representing `i8`.
-    pub fn i8(ctx: &mut Context) -> Self { ctx.alloc(TyData::Int8) }
+    pub fn i8(ctx: &mut Context) -> Self {
+        ctx.alloc(TyData::Int8)
+    }
 
     /// Fetch a type representing `i32`.
-    pub fn i32(ctx: &mut Context) -> Self { ctx.alloc(TyData::Int32) }
+    pub fn i32(ctx: &mut Context) -> Self {
+        ctx.alloc(TyData::Int32)
+    }
 
     /// Fetch a type representing `f32`.iakke:f64
-    pub fn f64(ctx: &mut Context) -> Self { ctx.alloc(TyData::Float64) }//iakkefloattest,origin:f32
+    pub fn f32(ctx: &mut Context) -> Self {
+        ctx.alloc(TyData::Float32)
+    } //iakkefloattest,origin:f32
 
     /// Fetch a type representing a pointer.
-    pub fn ptr(ctx: &mut Context) -> Self { ctx.alloc(TyData::Ptr) }
+    pub fn ptr(ctx: &mut Context, ty: Option<Ty>) -> Self {
+        ctx.alloc(TyData::Ptr { ty })
+    }
 
     /// Fetch a type representing an array.
     pub fn array(ctx: &mut Context, elem: Ty, len: usize) -> Self {
         ctx.alloc(TyData::Array { elem, len })
+    }
+
+    /// Fetch a type representing a function.
+    pub fn func(ctx: &mut Context, ret: Ty, params: Vec<Ty>) -> Self {
+        ctx.alloc(TyData::Func { ret, params })
+    }
+
+    /// Fetch a type representing variable arguments.
+    pub fn args(ctx: &mut Context) -> Self {
+        ctx.alloc(TyData::Args)
     }
 
     pub fn is_void(&self, ctx: &Context) -> bool {
@@ -91,9 +136,11 @@ impl Ty {
             TyData::Int1 => 1,
             TyData::Int8 => 8,
             TyData::Int32 => 32,
-            TyData::Float64 => 64,//iakkefloattest,origin:f32
-            TyData::Ptr => ctx.target.ptr_size as usize * 8,
+            TyData::Float32 => 64, //iakkefloattest,origin:f32
+            TyData::Ptr { .. } => 64,
             TyData::Array { elem, len } => elem.bitwidth(ctx) * len,
+            TyData::Func { .. } => 0, // XXX：函数类型的bitwidth是多少？
+            TyData::Args => 0,
         }
     }
 
@@ -105,10 +152,14 @@ impl Ty {
         }
     }
 
-    pub fn kind(&self, ctx: &Context) -> TyData { self.try_deref(ctx).unwrap().clone() }
+    pub fn kind(&self, ctx: &Context) -> TyData {
+        self.try_deref(ctx).unwrap().clone()
+    }
 
     /// Get the displayable type.
-    pub fn display(self, ctx: &Context) -> DisplayTy { DisplayTy { ctx, ty: self } }
+    pub fn display(self, ctx: &Context) -> DisplayTy {
+        DisplayTy { ctx, ty: self }
+    }
 }
 
 impl ArenaPtr for Ty {
@@ -124,13 +175,21 @@ impl Arena<Ty> for Context {
         panic!("types cannot be allocated with a closure");
     }
 
-    fn alloc(&mut self, data: TyData) -> Ty { Ty(self.tys.alloc(data)) }
+    fn alloc(&mut self, data: TyData) -> Ty {
+        Ty(self.tys.alloc(data))
+    }
 
-    fn try_dealloc(&mut self, ptr: Ty) -> Option<TyData> { self.tys.try_dealloc(ptr.0) }
+    fn try_dealloc(&mut self, ptr: Ty) -> Option<TyData> {
+        self.tys.try_dealloc(ptr.0)
+    }
 
-    fn try_deref(&self, ptr: Ty) -> Option<&TyData> { self.tys.try_deref(ptr.0) }
+    fn try_deref(&self, ptr: Ty) -> Option<&TyData> {
+        self.tys.try_deref(ptr.0)
+    }
 
-    fn try_deref_mut(&mut self, ptr: Ty) -> Option<&mut TyData> { self.tys.try_deref_mut(ptr.0) }
+    fn try_deref_mut(&mut self, ptr: Ty) -> Option<&mut TyData> {
+        self.tys.try_deref_mut(ptr.0)
+    }
 }
 
 #[cfg(test)]
@@ -147,9 +206,9 @@ mod tests {
         let i8 = Ty::i8(&mut ctx);
         let i32 = Ty::i32(&mut ctx);
 
-        let f64_ty = Ty::f64(&mut ctx);
+        let f64_ty = Ty::f32(&mut ctx);
 
-        let ptr = Ty::ptr(&mut ctx);
+        let ptr = Ty::ptr(&mut ctx, None);
         let arr = Ty::array(&mut ctx, i32, 10);
 
         assert_eq!(void.bitwidth(&ctx), 0);
@@ -164,9 +223,12 @@ mod tests {
 
         assert_eq!(f64_ty.bitwidth(&ctx), 64);
 
-        let f64_value = Value::f64(&mut ctx, 3.14159265358979323846264338327950288);
+        let f64_value = Value::f32(&mut ctx, 3.14159265358979323846264338327950288);
         assert_eq!(f64_value.ty(&ctx).bitwidth(&ctx), 64);
-        assert_eq!(f64_value.display(&ctx, true).to_string(), "float 0x400921fb54442d18");
+        assert_eq!(
+            f64_value.display(&ctx, true).to_string(),
+            "float 0x400921fb54442d18"
+        );
     }
 
     #[test]
@@ -176,10 +238,10 @@ mod tests {
         let i1 = Ty::i1(&mut ctx);
         let i8 = Ty::i8(&mut ctx);
         let i32 = Ty::i32(&mut ctx);
-        let ptr = Ty::ptr(&mut ctx);
+        let ptr = Ty::ptr(&mut ctx, None);
         let arr = Ty::array(&mut ctx, i32, 10);
 
-        let f64_ty = Ty::f64(&mut ctx);
+        let f64_ty = Ty::f32(&mut ctx);
 
         assert_eq!(void.display(&ctx).to_string(), "void");
         assert_eq!(i1.display(&ctx).to_string(), "i1");
@@ -195,25 +257,33 @@ mod tests {
     fn test_various_f64_values() {
         let mut ctx = Context::new(8);
 
-        let pi = Value::f64(&mut ctx, 3.141592653589793);
-        let small = Value::f64(&mut ctx, 0.00000001);
-        let scientific = Value::f64(&mut ctx, 1.23e-4);
+        let pi = Value::f32(&mut ctx, 3.141592653589793);
+        let small = Value::f32(&mut ctx, 0.00000001);
+        let scientific = Value::f32(&mut ctx, 1.23e-4);
 
         let pi_e: f64 = 3.141592653589793;
-        let small_e: f64 = 0.00000001;      
-        let scientific_e: f64 = 1.23e-4;    
+        let small_e: f64 = 0.00000001;
+        let scientific_e: f64 = 1.23e-4;
 
         assert_eq!(pi.ty(&ctx).bitwidth(&ctx), 64);
-        let pi_bits = pi_e.to_bits(); 
-        assert_eq!(pi.display(&ctx, true).to_string(), format!("float 0x{:x}", pi_bits));
+        let pi_bits = pi_e.to_bits();
+        assert_eq!(
+            pi.display(&ctx, true).to_string(),
+            format!("float 0x{:x}", pi_bits)
+        );
 
         let small_bits = small_e.to_bits();
         assert_eq!(small.ty(&ctx).bitwidth(&ctx), 64);
-        assert_eq!(small.display(&ctx, true).to_string(), format!("float 0x{:x}", small_bits));
+        assert_eq!(
+            small.display(&ctx, true).to_string(),
+            format!("float 0x{:x}", small_bits)
+        );
 
         let scientific_bits = scientific_e.to_bits();
         assert_eq!(scientific.ty(&ctx).bitwidth(&ctx), 64);
-        assert_eq!(scientific.display(&ctx, true).to_string(), format!("float 0x{:x}", scientific_bits));
+        assert_eq!(
+            scientific.display(&ctx, true).to_string(),
+            format!("float 0x{:x}", scientific_bits)
+        );
     }
-
 }

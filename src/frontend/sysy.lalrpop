@@ -133,6 +133,23 @@ pub FuncFParam: FuncFParam = {
     <ty: BType> <ident: Ident> => {
         FuncFParam { ty, ident }
     },
+    <ty: BType> <ident: Ident> <indices: ("[" Int? "]")+> => {
+        let mut ty = {
+            if let Some(index) = indices[0].1 {
+              Type::array(ty, index as usize)
+            } else {
+              Type::array(ty, 0)
+            }
+        };
+        for (_, index, _) in indices.into_iter().skip(1) {
+            if let Some(index) = index {
+              ty = Type::array(ty, index as usize);
+            } else {
+              ty = Type::array(ty, 0);
+            }
+        }
+        FuncFParam { ty, ident }
+    },
 }
 
 // Block -> '{' { BlockItem } '}'
@@ -169,58 +186,7 @@ Int: i32 = {
     })
   },
 }
-//iakke:改成f64??
-// Float: f32 = {
-//   r"\.[0-9]+" => {
-//     let string = <>;
-//     string.parse::<f32>().unwrap_or_else(|err| {
-//         println!("{}", err);
-//         string.parse::<f64>().unwrap() as f32
-//     })
-//   },
-//   r"[0-9]+\." => {
-//     let string = <>;
-//     string.parse::<f32>().unwrap_or_else(|err| {
-//         println!("{}", err);
-//         string.parse::<f64>().unwrap() as f32
-//     })
-//   },
-//   r"[0-9]+\.[0-9]+" => {
-//     let string = <>;
-//     string.parse::<f32>().unwrap_or_else(|err| {
-//         println!("{}", err);
-//         string.parse::<f64>().unwrap() as f32
-//     })
-//   },
-//   r"[0-9]+(\.[0-9]*)?([eE][+-]?[0-9]+)" => {
-//     let string = <>;
-//     string.parse::<f32>().unwrap_or_else(|err| {
-//         println!("{}", err);
-//         string.parse::<f64>().unwrap() as f32
-//     })
-//   },
-//   "inf" => {
-//     let string = <>;
-//     string.parse::<f32>().unwrap_or_else(|err| {
-//         println!("{}", err);
-//         string.parse::<f64>().unwrap() as f32
-//     })
-//   },
-//   "infinity" => {
-//     let string = <>;
-//     string.parse::<f32>().unwrap_or_else(|err| {
-//         println!("{}", err);
-//         string.parse::<f64>().unwrap() as f32
-//     })
-//   },
-//   "Nan" => {
-//     let string = <>;
-//     string.parse::<f32>().unwrap_or_else(|err| {
-//         println!("{}", err);
-//         string.parse::<f64>().unwrap() as f32
-//     })
-//   },
-// }
+
 //iakkefloattest,original is above
 Float: f64 = {
   r"\.[0-9]+" => {

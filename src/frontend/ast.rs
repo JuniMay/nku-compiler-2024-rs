@@ -1,6 +1,7 @@
 //! Abstract Syntax Tree (AST) for the SysY language.
 
 use std::collections::HashMap;
+use std::process::id;
 
 use super::irgen::IrGenResult;
 use super::types::{Type, TypeKind as Tk};
@@ -9,6 +10,7 @@ use super::types::{Type, TypeKind as Tk};
 #[derive(Debug, Clone)]
 pub enum ComptimeVal {
     Bool(bool),
+    Char(char),
     Int(i32),
     Float(f64), //iakkefloattest origin:f32,
     Array(Type, Vec<ComptimeVal>),
@@ -29,6 +31,10 @@ impl ComptimeVal {
 
     pub fn bool(b: bool) -> Self {
         Self::Bool(b)
+    }
+
+    pub fn char(c: char) -> Self {
+        Self::Char(c)
     }
 
     pub fn int(i: i32) -> Self {
@@ -52,6 +58,7 @@ impl ComptimeVal {
     pub fn get_type(&self) -> Type {
         match self {
             Self::Bool(_) => Type::bool(),
+            Self::Char(_) => Type::char(),
             Self::Int(_) => Type::int(),
             Self::Float(_) => Type::float(),
             Self::Array(ty, _) => ty.clone(),
@@ -324,7 +331,7 @@ impl std::ops::Sub for ComptimeVal {
 
         match (self, other) {
             (Cv::Int(a), Cv::Int(b)) => Cv::Int(a.checked_sub(b).unwrap_or_else(|| {
-                println!("integer overflow");
+                // println!("integer overflow");
                 0 // 或者其他默认值
             })),
             (Cv::Float(a), Cv::Float(b)) => Cv::Float(a - b),
@@ -822,8 +829,27 @@ impl SymbolTable {
         let sysy_funcs = vec![
             ("getint", Type::func(vec![], Type::int())),
             ("getch", Type::func(vec![], Type::int())),
+            ("getfloat", Type::func(vec![], Type::float())),
+            (
+                "getarray",
+                Type::func(vec![Type::array(Type::int(), 0)], Type::int()),
+            ),
+            (
+                "getfarray",
+                Type::func(vec![Type::array(Type::float(), 0)], Type::int()),
+            ),
             ("putint", Type::func(vec![Type::int()], Type::void())),
             ("putch", Type::func(vec![Type::int()], Type::void())),
+            ("putfloat", Type::func(vec![Type::float()], Type::void())),
+            (
+                "putarray",
+                Type::func(vec![Type::int(), Type::ptr(Type::float())], Type::void()),
+            ),
+            (
+                "putfarray",
+                Type::func(vec![Type::int(), Type::ptr(Type::float())], Type::void()),
+            ),
+            // ("putf", Type::func(vec![Type::array(Type::char(), 0), ],Type::void())),
             ("starttime", Type::func(vec![], Type::void())),
             ("stoptime", Type::func(vec![], Type::void())),
         ];
@@ -847,6 +873,7 @@ impl CompUnit {
         for item in self.items.iter_mut() {
             item.type_check(&mut symtable);
         }
+        // println!("{:#?}", symtable);
 
         symtable.leave_scope();
     }
@@ -946,11 +973,22 @@ impl ConstDecl {
                     let mut full_array = ArrayVal::new_array(&ty, &size);
                     new_init.fix_size(&mut full_array, &size);
 
+                    let arr_ty = make_array(
+                        ty.clone(),
+                        0,
+                        &size
+                            .clone()
+                            .into_iter()
+                            .map(|x| Expr::const_(ComptimeVal::int(x as i32)))
+                            .collect::<Vec<_>>(),
+                    )
+                    .unwrap();
+
                     // Insert the variable into the symbol table
                     symtable.insert(
                         arr_ident.ident.clone(),
                         SymbolEntry {
-                            ty: ty.clone(),
+                            ty: arr_ty,
                             comptime: Some(full_array.to_comptimeval(&ty)),
                             ir_value: None,
                         },
@@ -1002,6 +1040,7 @@ impl VarDecl {
                     new_defs.push(def);
                 }
                 VarDef::Array(ident, init) => {
+                    // println!("{:#?}", ident);
                     // Type check the init expression, and fold it if possible
                     let new_init = std::mem::replace(init, Some(ArrayVal::default()))
                         .map(|init| {
@@ -1041,7 +1080,17 @@ impl VarDecl {
                     // println!("{:#?}", init);
 
                     // Insert the variable into the symbol table
-                    symtable.insert(ident.ident.clone(), SymbolEntry::from_ty(ty));
+                    let arr_ty = make_array(
+                        ty,
+                        0,
+                        &size
+                            .clone()
+                            .into_iter()
+                            .map(|x| Expr::const_(ComptimeVal::int(x as i32)))
+                            .collect::<Vec<_>>(),
+                    )
+                    .unwrap();
+                    symtable.insert(ident.ident.clone(), SymbolEntry::from_ty(arr_ty));
                     new_defs.push(def);
                 }
             }
@@ -1219,6 +1268,8 @@ impl Block {
         symtable.enter_scope();
         let mut new_items = Vec::new();
 
+        // println!("------------------");
+        // println!("BeforeBLOCK{:#?}", symtable);
         // Type check each block item in the block
         for item in self.items.drain(..) {
             let item = match item {
@@ -1239,6 +1290,7 @@ impl Block {
             };
             new_items.push(item);
         }
+        // println!("AfterBLOCK{:#?}", symtable);
         self.items = new_items;
         symtable.leave_scope();
     }
@@ -1259,7 +1311,19 @@ impl Stmt {
             }
             Stmt::ArrayAssign(ArrayIdent { ident, size }, expr) => {
                 let entry = symtable.lookup(&ident).expect("variable not found");
-                let ty = &entry.ty;
+                let mut ty = &entry.ty;
+                let mut inner_ty = Type::make(ty.kind().clone());
+                for _ in &size {
+                    match ty.kind() {
+                        Tk::Array(inner_ty, _) => {
+                            ty = inner_ty;
+                        }
+                        _ => {
+                            inner_ty = Type::make(ty.kind().clone());
+                            ty = &inner_ty;
+                        }
+                    }
+                }
 
                 // Type check the expression
                 let expr = expr.type_check(Some(ty), symtable);
@@ -1381,33 +1445,46 @@ impl Expr {
                     Tk::Bool => {
                         let expr = match expr {
                             ComptimeVal::Bool(val) => val,
+                            ComptimeVal::Char(val) => val as u8 != 0,
                             ComptimeVal::Int(val) => val != 0,
                             ComptimeVal::Float(val) => val != 0.0,
                             ComptimeVal::Undef(_) => unreachable!(),
-                            _ => unreachable!("array"),
+                            _ => unreachable!("invalid type"),
                         };
                         Some(ComptimeVal::bool(expr))
+                    }
+                    Tk::Char => {
+                        let expr = match expr {
+                            ComptimeVal::Bool(val) => val as u8 as char,
+                            ComptimeVal::Char(val) => val,
+                            ComptimeVal::Int(val) => val as u8 as char,
+                            ComptimeVal::Undef(_) => unreachable!(),
+                            _ => unreachable!("invalid type"),
+                        };
+                        Some(ComptimeVal::char(expr))
                     }
                     Tk::Int => {
                         let expr = match expr {
                             ComptimeVal::Bool(val) => val as i32,
+                            ComptimeVal::Char(val) => val as i32,
                             ComptimeVal::Int(val) => val,
                             ComptimeVal::Float(val) => val as i32,
                             ComptimeVal::Undef(_) => unreachable!(),
-                            _ => unreachable!("array"),
+                            _ => unreachable!("invalid type"),
                         };
                         Some(ComptimeVal::int(expr))
                     }
                     Tk::Float => {
                         let expr = match expr {
                             ComptimeVal::Bool(val) => val as i32 as f64, //iakkefloattest origin:f32,
+                            ComptimeVal::Char(val) => val as i32 as f64,
                             ComptimeVal::Int(val) => val as f64, //iakkefloattest origin:f32,
                             ComptimeVal::Float(val) => val,
-                            _ => unreachable!("array"),
+                            _ => unreachable!("invalid type"),
                         };
                         Some(ComptimeVal::float(expr))
                     }
-                    Tk::Void | Tk::Func(..) | Tk::Array(_, _) => {
+                    Tk::Void | Tk::Func(..) | Tk::Array(_, _) | Tk::Ptr(_) | Tk::Args => {
                         panic!("unsupported type coercion")
                     }
                 }
@@ -1508,7 +1585,6 @@ impl Expr {
             ExprKind::LVal(LVal { ident }) => {
                 // Lookup the variable in the symbol table
                 let entry = symtable.lookup(&ident).unwrap();
-
                 // Create the left value expression
                 let mut expr = Expr::lval(LVal { ident });
                 expr.ty = Some(entry.ty.clone());
@@ -1518,13 +1594,25 @@ impl Expr {
                 // Lookup the variable in the symbol table
                 if let ExprKind::LVal(LVal { ident: id }) = &ident.as_ref().kind {
                     let entry = symtable.lookup(id).unwrap();
-                    let ty = entry.ty.clone();
+                    let mut ty = &entry.ty;
+                    let mut inner_ty = Type::make(ty.kind().clone());
+                    for _ in &indices {
+                        match ty.kind() {
+                            Tk::Array(inner_ty, _) => {
+                                ty = inner_ty;
+                            }
+                            _ => {
+                                inner_ty = Type::make(ty.kind().clone());
+                                ty = &inner_ty;
+                            }
+                        }
+                    }
                     let indices = indices
                         .into_iter()
-                        .map(|index| index.type_check(None, symtable))
+                        .map(|index| index.type_check(Some(ty), symtable))
                         .collect();
                     let mut expr = Expr::array_access(*ident, indices);
-                    expr.ty = Some(ty);
+                    expr.ty = Some(ty.clone());
                     expr
                 } else {
                     unreachable!("array access");
@@ -1573,9 +1661,24 @@ impl Expr {
         if let Some(ty) = expect {
             match ty.kind() {
                 Tk::Bool => expr = Expr::coercion(expr, Type::bool()),
+                Tk::Char => expr = Expr::coercion(expr, Type::char()),
                 Tk::Int => expr = Expr::coercion(expr, Type::int()),
                 Tk::Float => expr = Expr::coercion(expr, Type::float()),
-                Tk::Func(..) | Tk::Void | Tk::Array(_, _) => {
+                Tk::Array(_, _) => {
+                    // println!("------------");
+                    // println!("{:#?}", ty);
+                    // println!("{:#?}", expr.ty());
+                    if !ty.is_equal(expr.ty()) {
+                        unreachable!("unsupported type coercion: {:?}", ty);
+                    } else {
+                        expr = Expr::coercion(expr, ty.clone());
+                    }
+                }
+                Tk::Ptr(_) => {
+                    // 指针类型允许任意转换，不做操作
+                    // expr = Expr::coercion(expr, ty.clone());
+                }
+                Tk::Func(..) | Tk::Void | Tk::Args => {
                     panic!("unsupported type coercion: {:?}", ty);
                 }
             }

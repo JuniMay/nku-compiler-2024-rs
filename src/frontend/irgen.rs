@@ -26,7 +26,10 @@ use super::types::{Type, TypeKind as Tk};
 use super::{ArrayIdent, ArrayVal};
 use crate::frontend::ast::{FuncCall, LVal, UnaryOp};
 use crate::infra::linked_list::{LinkedListContainer, LinkedListCursor, LinkedListNode};
-use crate::ir::{Block, ConstantValue, Context, Func, Global, Inst, TargetInfo, Ty, TyData, Value};
+use crate::infra::storage::ArenaPtr;
+use crate::ir::{
+    Block, ConstantValue, Context, Func, Global, Inst, TargetInfo, Ty, TyData, Value, ValueKind,
+};
 
 /// Generate IR from the AST.
 pub fn irgen(ast: &CompUnit, pointer_width: u8) -> Context {
@@ -61,7 +64,7 @@ impl IrGenResult {
     pub fn unwrap_value(self) -> Value {
         match self {
             IrGenResult::Value(val) => val,
-            IrGenResult::Global(_) => unreachable!("expected value"),//?iakke
+            IrGenResult::Global(_) => unreachable!("expected value"), //?iakke
         }
     }
 }
@@ -95,11 +98,13 @@ impl IrGenContext {
     }
 
     // Generate a new global constant value in ir given a comptime value in AST.
-    fn gen_global_comptime(&mut self, val: &Cv) -> ConstantValue {//从const里面提取value
+    fn gen_global_comptime(&mut self, val: &Cv) -> ConstantValue {
+        //从const里面提取value
         match val {
             Cv::Bool(a) => ConstantValue::i1(&mut self.ctx, *a),
+            Cv::Char(a) => ConstantValue::i8(&mut self.ctx, *a as i8),
             Cv::Int(a) => ConstantValue::i32(&mut self.ctx, *a),
-            Cv::Float(a) => ConstantValue::f64(&mut self.ctx, *a),//iakkefloattest,origin:f32
+            Cv::Float(a) => ConstantValue::f32(&mut self.ctx, *a), //iakkefloattest,origin:f32
             Cv::Array(ty, vals) => {
                 let elem_ty = self.gen_type(ty);
                 let mut elems = Vec::new();
@@ -120,13 +125,26 @@ impl IrGenContext {
         match ty.kind() {
             Tk::Void => Ty::void(&mut self.ctx),
             Tk::Bool => Ty::i1(&mut self.ctx),
+            Tk::Char => Ty::i8(&mut self.ctx),
             Tk::Int => Ty::i32(&mut self.ctx),
-            Tk::Float => Ty::f64(&mut self.ctx),//iakkefloattest,origin:f32
+            Tk::Float => Ty::f32(&mut self.ctx), //iakkefloattest,origin:f32
             Tk::Array(ty, size) => {
                 let ir_ty = self.gen_type(ty);
                 Ty::array(&mut self.ctx, ir_ty, size.clone())
             }
-            Tk::Func(..) => unreachable!("function type should be handled separately"),
+            Tk::Func(params, ret) => {
+                let mut ir_params = Vec::new();
+                for param in params {
+                    ir_params.push(self.gen_type(param));
+                }
+                let ir_ret = self.gen_type(ret);
+                Ty::func(&mut self.ctx, ir_ret, ir_params)
+            }
+            Tk::Ptr(ty) => {
+                let ir_ty = self.gen_type(ty);
+                Ty::ptr(&mut self.ctx, Some(ir_ty))
+            }
+            Tk::Args => Ty::args(&mut self.ctx),
         }
     }
 
@@ -146,7 +164,8 @@ impl IrGenContext {
         match val {
             Cv::Bool(a) => Value::i1(&mut self.ctx, *a),
             Cv::Int(a) => Value::i32(&mut self.ctx, *a),
-            Cv::Float(a) => Value::f64(&mut self.ctx, *a),//iakkefloattest,origin:f32
+            Cv::Char(a) => Value::i8(&mut self.ctx, *a as i8),
+            Cv::Float(a) => Value::f32(&mut self.ctx, *a), //iakkefloattest,origin:f32
             Cv::Array(ty, vals) => {
                 let elem_ty = self.gen_type(ty);
                 let mut elems = Vec::new();
@@ -227,6 +246,8 @@ impl IrGenContext {
             }
             // LValues -> Get the value
             ExprKind::LVal(LVal { ident }) => {
+                println!("ident: {}", ident);
+                println!("{:#?}", self.symtable);
                 // Look up the symbol in the symbol table to get the IR value
                 let entry = self.symtable.lookup(ident).unwrap();
                 let ir_value = entry.ir_value.unwrap();
@@ -249,10 +270,20 @@ impl IrGenContext {
                     // If the value is a parameter, just return the value
                     Some(slot)
                 } else {
-                    // Otherwise, we need to load the value, generate a load instruction
-                    let load = Inst::load(&mut self.ctx, slot, ir_base_ty);
-                    curr_block.push_back(&mut self.ctx, load).unwrap();
-                    Some(load.result(&self.ctx).unwrap())
+                    let zero = Value::i32(&mut self.ctx, 0);
+                    let indices = vec![zero, zero.clone()];
+                    if let TyData::Array { .. } = ir_base_ty.kind(&self.ctx) {
+                        println!("array access");
+                        let getelmentptr =
+                            Inst::getelementptr(&mut self.ctx, ir_base_ty, slot, indices);
+                        curr_block.push_back(&mut self.ctx, getelmentptr).unwrap();
+                        Some(getelmentptr.result(&self.ctx).unwrap())
+                    } else {
+                        // Otherwise, we need to load the value, generate a load instruction
+                        let load = Inst::load(&mut self.ctx, slot, ir_base_ty);
+                        curr_block.push_back(&mut self.ctx, load).unwrap();
+                        Some(load.result(&self.ctx).unwrap())
+                    }
                 }
             }
             ExprKind::ArrayAccess(ident, pos) => {
@@ -317,12 +348,26 @@ impl IrGenContext {
                     (Tk::Bool, Tk::Float) => {
                         let val = self.gen_local_expr(old_expr).unwrap();
                         let ty = Ty::i1(&mut self.ctx);
-                        let rhs = Value::f64(&mut self.ctx, 0.0);//iakkefloattest,origin:f32
+                        let rhs = Value::f32(&mut self.ctx, 0.0); //iakkefloattest,origin:f32
                         let inst = Inst::eq(&mut self.ctx, val, rhs, ty);
                         curr_block.push_back(&mut self.ctx, inst).unwrap();
                         Some(inst.result(&self.ctx).unwrap())
                     }
+                    (Tk::Char, Tk::Int) => {
+                        let val = self.gen_local_expr(old_expr).unwrap();
+                        let ty = Ty::i8(&mut self.ctx);
+                        let inst = Inst::trunc(&mut self.ctx, val, ty);
+                        curr_block.push_back(&mut self.ctx, inst).unwrap();
+                        Some(inst.result(&self.ctx).unwrap())
+                    }
                     (Tk::Int, Tk::Bool) => {
+                        let val = self.gen_local_expr(old_expr).unwrap();
+                        let ty = Ty::i32(&mut self.ctx);
+                        let inst = Inst::zext(&mut self.ctx, val, ty);
+                        curr_block.push_back(&mut self.ctx, inst).unwrap();
+                        Some(inst.result(&self.ctx).unwrap())
+                    }
+                    (Tk::Int, Tk::Char) => {
                         let val = self.gen_local_expr(old_expr).unwrap();
                         let ty = Ty::i32(&mut self.ctx);
                         let inst = Inst::zext(&mut self.ctx, val, ty);
@@ -338,19 +383,22 @@ impl IrGenContext {
                     }
                     (Tk::Float, Tk::Bool) => {
                         let val = self.gen_local_expr(old_expr).unwrap();
-                        let ty = Ty::f64(&mut self.ctx);//iakkefloattest,origin:f32
+                        let ty = Ty::f32(&mut self.ctx); //iakkefloattest,origin:f32
                         let inst = Inst::uitofp(&mut self.ctx, val, ty);
                         curr_block.push_back(&mut self.ctx, inst).unwrap();
                         Some(inst.result(&self.ctx).unwrap())
                     }
                     (Tk::Float, Tk::Int) => {
                         let val = self.gen_local_expr(old_expr).unwrap();
-                        let ty = Ty::f64(&mut self.ctx);//iakkefloattest,origin:f32
+                        let ty = Ty::f32(&mut self.ctx); //iakkefloattest,origin:f32
                         let inst = Inst::sitofp(&mut self.ctx, val, ty);
                         curr_block.push_back(&mut self.ctx, inst).unwrap();
                         Some(inst.result(&self.ctx).unwrap())
                     }
                     _ => {
+                        println!("expr: {:#?}", expr);
+                        println!("expect_ty: {:#?}", expect_ty);
+                        println!("origin_ty: {:#?}", origin_ty);
                         unreachable!("invalid coercion");
                     }
                 }
@@ -358,19 +406,19 @@ impl IrGenContext {
             ExprKind::FuncCall(FuncCall { ident, args }) => {
                 // HACK: Implement function call generation
                 let entry = self.symtable.lookup(ident).unwrap();
-                let ir_value = entry.ir_value.unwrap();
                 let ret_ty = expr.ty.as_ref().unwrap();
 
-                let func = if let IrGenResult::Global(slot) = ir_value {
-                    let name = slot.name(&self.ctx).to_string();
-                    let value_ty = slot.ty(&self.ctx);
-                    // println!("{}", slot.ty(&self.ctx).display(&self.ctx));
-                    Value::global_ref(&mut self.ctx, name, value_ty)
-                } else {
-                    unreachable!()
+                let value_ty = {
+                    let entry_ty = entry.ty.clone();
+                    if let Tk::Func(params, ret) = entry_ty.kind() {
+                        let params = params.iter().map(|ty| self.gen_type(ty)).collect();
+                        let ret = self.gen_type(ret);
+                        Ty::func(&mut self.ctx, ret, params)
+                    } else {
+                        unreachable!("invalid function type");
+                    }
                 };
-
-                // println!("{}", func.display(&self.ctx, true));
+                let func = Value::global_ref(&mut self.ctx, ident.clone(), value_ty);
 
                 let mut ir_args = Vec::new();
                 for arg in args {
@@ -399,7 +447,7 @@ impl IrGenContext {
         match arr {
             ArrayVal::Val(val) => {
                 let val = self.gen_local_expr(val).unwrap();
-                println!("{}", val.display(&self.ctx, true));
+                // println!("{}", val.display(&self.ctx, true));
                 (ty, val)
             }
             ArrayVal::Vals(arr) => {
@@ -412,7 +460,7 @@ impl IrGenContext {
                     elems[0].0.clone(),
                     elems.iter().map(|(_, val)| val.clone()).collect(),
                 );
-                println!("{}", arr.display(&self.ctx, true));
+                // println!("{}", arr.display(&self.ctx, true));
                 let ty = Ty::array(&mut self.ctx, elems[0].0.clone(), elems.len());
                 (ty, arr)
             }
@@ -424,6 +472,58 @@ impl IrGenContext {
         // TODO: Implement gen_sysylib
         // Since the system library is linked in the linking phase, we just need
         // to generate declarations here.
+
+        let sysy_funcs = {
+            vec![
+                ("getint", Type::func(vec![], Type::int())),
+                ("getch", Type::func(vec![], Type::char())),
+                ("getfloat", Type::func(vec![], Type::float())),
+                (
+                    "getarray",
+                    Type::func(vec![Type::ptr(Type::int())], Type::int()),
+                ),
+                (
+                    "getfarray",
+                    Type::func(vec![Type::ptr(Type::float())], Type::int()),
+                ),
+                ("putint", Type::func(vec![Type::int()], Type::void())),
+                ("putch", Type::func(vec![Type::int()], Type::void())),
+                ("putfloat", Type::func(vec![Type::float()], Type::void())),
+                (
+                    "putarray",
+                    Type::func(vec![Type::int(), Type::ptr(Type::int())], Type::void()),
+                ),
+                (
+                    "putfarray",
+                    Type::func(vec![Type::int(), Type::ptr(Type::float())], Type::void()),
+                ),
+                (
+                    "putf",
+                    Type::func(vec![Type::ptr(Type::char()), Type::args()], Type::void()),
+                ),
+                ("starttime", Type::func(vec![], Type::void())),
+                ("stoptime", Type::func(vec![], Type::void())),
+            ]
+        };
+
+        for (name, ty) in sysy_funcs {
+            if let Tk::Func(params, ret_ty) = ty.kind() {
+                let ir_ret_ty = self.gen_type(&ret_ty);
+                let func = Func::new(&mut self.ctx, name.to_string(), ir_ret_ty, Some(false));
+                for param in params {
+                    let ir_param_ty = self.gen_type(param);
+                    func.add_param(&mut self.ctx, ir_param_ty);
+                }
+                self.symtable.insert(
+                    name,
+                    SymbolEntry {
+                        ty,
+                        comptime: None,
+                        ir_value: None,
+                    },
+                );
+            }
+        }
     }
 }
 
@@ -575,29 +675,14 @@ impl IrGen for FuncDef {
         let func_ty = Type::func(param_tys.clone(), self.ret_ty.clone());
 
         let ir_ret_ty = irgen.gen_type(&self.ret_ty);
-        let func = Func::new(&mut irgen.ctx, self.ident.clone(), ir_ret_ty);
-
-        let func_ref = match &self.ret_ty.kind() {
-            Tk::Void => {
-                let ty = Ty::void(&mut irgen.ctx);
-                ConstantValue::undef(&mut irgen.ctx, ty)
-            }
-            Tk::Bool => ConstantValue::i1(&mut irgen.ctx, false),
-            Tk::Int => ConstantValue::i32(&mut irgen.ctx, 0),
-            Tk::Float => ConstantValue::f64(&mut irgen.ctx, 0.0),
-            _ => unreachable!("function type should be handled separately"),
-        };
-
-       // let is_const = irgen.ctx.is_static_function(&self.ident);
-        let ir_value =
-            IrGenResult::Global(Global::new(&mut irgen.ctx, self.ident.clone(), func_ref,false));//questionediakke:函数都是const？
+        let func = Func::new(&mut irgen.ctx, self.ident.clone(), ir_ret_ty, Some(true));
 
         irgen.symtable.insert_upper(
             self.ident.clone(),
             SymbolEntry {
                 ty: func_ty,
                 comptime: None,
-                ir_value: Some(ir_value),
+                ir_value: None,
             },
             1,
         );
@@ -673,6 +758,12 @@ impl IrGen for FuncDef {
 
         // generate body
         self.body.irgen(irgen);
+
+        // generate br to return block
+        if self.ret_ty.is_void() {
+            let br_inst = Inst::br(&mut irgen.ctx, ret_block);
+            block.push_back(&mut irgen.ctx, br_inst).unwrap();
+        }
 
         // append return block
         func.push_back(&mut irgen.ctx, ret_block).unwrap();
@@ -761,7 +852,7 @@ impl IrGen for Decl {
                             );
 
                             let init = irgen.gen_local_array(ty, init).unwrap();
-                            println!("{}", init.display(&irgen.ctx, true));
+                            // println!("{}", init.display(&irgen.ctx, true));
                             let slot = stack_slot.result(&irgen.ctx).unwrap();
                             let store = Inst::store(&mut irgen.ctx, init, slot);
                             curr_block.push_back(&mut irgen.ctx, store).unwrap();
@@ -814,7 +905,7 @@ impl IrGen for Decl {
                             );
 
                             let init = irgen.gen_local_array(ty, init).unwrap();
-                            println!("{}", init.display(&irgen.ctx, true));
+                            // println!("{}", init.display(&irgen.ctx, true));
                             let slot = stack_slot.result(&irgen.ctx).unwrap();
                             let store = Inst::store(&mut irgen.ctx, init, slot);
                             curr_block.push_back(&mut irgen.ctx, store).unwrap();
@@ -865,7 +956,7 @@ impl IrGen for Stmt {
                     unreachable!()
                 };
 
-                let mut pos_values = Vec::new();
+                let mut pos_values = vec![Value::i32(&mut irgen.ctx, 0)];
                 let entry_ty = entry.ty.clone();
                 let value_ty = irgen.gen_type(&entry_ty);
                 for p in pos.iter() {
@@ -890,10 +981,10 @@ impl IrGen for Stmt {
                     let then_block = Block::new(&mut irgen.ctx);
                     let else_block = else_stmt.as_ref().map(|_| Block::new(&mut irgen.ctx));
                     let exit_block = Block::new(&mut irgen.ctx);
-            
+
                     let curr_block = irgen.curr_block.unwrap();
                     let curr_func = irgen.curr_func.unwrap();
-            
+
                     let cond_value = irgen.gen_local_expr(cond_expr).unwrap();
                     let cond_br = Inst::cond_br(
                         &mut irgen.ctx,
@@ -902,34 +993,33 @@ impl IrGen for Stmt {
                         else_block.unwrap_or(exit_block),
                     );
                     curr_block.push_back(&mut irgen.ctx, cond_br).unwrap();
-            
+
                     curr_func.push_back(&mut irgen.ctx, then_block).unwrap();
                     irgen.curr_block = Some(then_block);
                     then_stmt.irgen(irgen);
-            
+
                     let then_exit_br = Inst::br(&mut irgen.ctx, exit_block);
                     then_block.push_back(&mut irgen.ctx, then_exit_br).unwrap();
-            
+
                     if let Some(else_block) = else_block {
                         curr_func.push_back(&mut irgen.ctx, else_block).unwrap();
                         irgen.curr_block = Some(else_block);
-            
+
                         if let Some(else_stmt) = else_stmt {
                             else_stmt.irgen(irgen);
                         }
-            
+
                         let else_exit_br = Inst::br(&mut irgen.ctx, exit_block);
                         else_block.push_back(&mut irgen.ctx, else_exit_br).unwrap();
                     }
-            
+
                     curr_func.push_back(&mut irgen.ctx, exit_block).unwrap();
                     irgen.curr_block = Some(exit_block);
                 } else {
                     panic!("if condition must be a boolean expression");
                 }
             }
-            
-            
+
             Stmt::While(expr, stmt) => {
                 if let Tk::Bool = expr.ty().kind() {
                     let cond_block = Block::new(&mut irgen.ctx);

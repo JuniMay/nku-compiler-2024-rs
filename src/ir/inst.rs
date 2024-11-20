@@ -329,16 +329,25 @@ impl Inst {
             container: None,
         });
 
-        let result = Value::new_inst_result(ctx, inst, ty);
-        inst.try_deref_mut(ctx)
-            .unwrap_or_else(|| unreachable!())
-            .result = Some(result);
+        if !ty.is_void(ctx) {
+            let result = Value::new_inst_result(ctx, inst, ty);
+            inst.try_deref_mut(ctx)
+                .unwrap_or_else(|| unreachable!())
+                .result = Some(result);
+        } else {
+            let void_ty = Ty::void(ctx);
+            let result = Value::new_inst_result(ctx, inst, void_ty);
+            inst.try_deref_mut(ctx)
+                .unwrap_or_else(|| unreachable!())
+                .result = Some(result);
+        }
+
         inst
     }
 
     /// Create a new `alloca` instruction.
     pub fn alloca(ctx: &mut Context, alloca_ty: Ty) -> Self {
-        let ptr = Ty::ptr(ctx);
+        let ptr = Ty::ptr(ctx, None);
         Self::new(ctx, InstKind::Alloca { ty: alloca_ty }, ptr)
     }
 
@@ -365,7 +374,7 @@ impl Inst {
 
     /// Create a new `getelementptr` instruction.
     pub fn getelementptr(ctx: &mut Context, bound_ty: Ty, ptr: Value, indices: Vec<Value>) -> Self {
-        let ptr_ty = Ty::ptr(ctx);
+        let ptr_ty = Ty::ptr(ctx, None);
         let inst = Self::new(ctx, InstKind::GetElementPtr { bound_ty }, ptr_ty);
         inst.add_operand(ctx, ptr);
         for idx in indices {
@@ -377,7 +386,7 @@ impl Inst {
     /// Create a new `add` instruction.
     pub fn add(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
         let inst = match ty.try_deref(ctx).unwrap() {
-            TyData::Float64 => Self::fadd(ctx, lhs, rhs, ty),
+            TyData::Float32 => Self::fadd(ctx, lhs, rhs, ty),
             _ => {
                 let inst = Self::new(
                     ctx,
@@ -438,7 +447,7 @@ impl Inst {
     // HACK: Implement constructors for other instructions.
     pub fn sub(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
         let inst = match ty.try_deref(ctx).unwrap() {
-            TyData::Float64 => Self::fsub(ctx, lhs, rhs, ty),
+            TyData::Float32 => Self::fsub(ctx, lhs, rhs, ty),
             _ => {
                 let inst = Self::new(
                     ctx,
@@ -480,7 +489,7 @@ impl Inst {
 
     pub fn mul(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
         let inst = match ty.try_deref(ctx).unwrap() {
-            TyData::Float64 => Self::fmul(ctx, lhs, rhs, ty),
+            TyData::Float32 => Self::fmul(ctx, lhs, rhs, ty),
             _ => {
                 let inst = Self::new(
                     ctx,
@@ -522,7 +531,7 @@ impl Inst {
 
     pub fn sdiv(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
         let inst = match ty.try_deref(ctx).unwrap() {
-            TyData::Float64 => Self::fdiv(ctx, lhs, rhs, ty),
+            TyData::Float32 => Self::fdiv(ctx, lhs, rhs, ty),
             _ => {
                 let inst = Self::new(
                     ctx,
@@ -968,8 +977,10 @@ pub struct DisplayInst<'ctx> {
 impl fmt::Display for DisplayInst<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if let Some(result) = self.inst.result(self.ctx) {
-            write!(f, "{}", result.display(self.ctx, false))?;
-            write!(f, " = ")?;
+            if !result.ty(self.ctx).is_void(self.ctx) {
+                write!(f, "{}", result.display(self.ctx, false))?;
+                write!(f, " = ")?;
+            }
         }
 
         // match kind to decide the instruction format

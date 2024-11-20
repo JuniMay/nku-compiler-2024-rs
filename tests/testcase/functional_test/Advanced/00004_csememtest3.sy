@@ -5,11 +5,12 @@ int D[100] = {};
 const int p = 234145;
 void f(int A[],int B[],int C[],int D[],int n)
 {
-    if(n == 0){
-        return;
-    }
-    int i = 0;
-    while(i < 100){
+     if(n == 0){
+         return;
+     }
+     int i = 0;
+     while(i < 100){
+        A[i] = 1;
         A[i] = C[i] + B[i] + D[i];
         B[i] = A[i] + C[i] + D[i];
         C[i] = B[i] + A[i] + D[i];
@@ -17,8 +18,8 @@ void f(int A[],int B[],int C[],int D[],int n)
         B[i] = B[i]%p;
         C[i] = C[i]%p;
         i = i + 1;
-    }
-    f(B,C,A,D,n-1);
+     }
+     f(B,C,A,D,n-1);
 }
 int sum(int A[])
 {

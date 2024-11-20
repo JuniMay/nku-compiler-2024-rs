@@ -212,7 +212,7 @@ def test(config: Config) -> None:
 
                 # Use LLVM to compile to assembly
                 compile_command = (
-                    f"clang -mllvm -opaque-pointers -fno-addrsig -S --target=riscv64-linux-gnu-gcc -mabi=lp64d {ir_path} -o {asm_path}"
+                    f"clang -fno-addrsig -S --target=riscv64-linux-gnu-gcc -mabi=lp64d {ir_path} -o {asm_path}"
                 )
 
                 log_file.write(f"Executing: {compile_command}\n")

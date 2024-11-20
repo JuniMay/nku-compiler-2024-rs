@@ -22,7 +22,7 @@ pub enum ConstantValue {
     /// A 32-bit integer constant.
     Int32 { ty: Ty, value: i32 },
     /// A 32-bit floating-point constant.
-    Float64 { ty: Ty, value: i64 },
+    Float32 { ty: Ty, value: i64 },
     /// An array constant.
     Array { ty: Ty, elems: Vec<ConstantValue> },
     /// Global variables/functions are treated as constants, because their
@@ -45,7 +45,7 @@ impl ConstantValue {
             ConstantValue::Int1 { ty, .. } => *ty,
             ConstantValue::Int8 { ty, .. } => *ty,
             ConstantValue::Int32 { ty, .. } => *ty,
-            ConstantValue::Float64 { ty, .. } => *ty,
+            ConstantValue::Float32 { ty, .. } => *ty,
             ConstantValue::Array { ty, .. } => *ty,
             ConstantValue::GlobalRef { ty, .. } => *ty,
         }
@@ -66,12 +66,12 @@ impl ConstantValue {
         ConstantValue::Int32 { ty: i32, value }
     }
 
-    pub fn f64(ctx: &mut Context, value: f64) -> ConstantValue {//iakkefloattest origin:f32
-        let f64_ty = Ty::f64(ctx);
+    pub fn f32(ctx: &mut Context, value: f64) -> ConstantValue {//iakkefloattest origin:f32
+        let f64_ty = Ty::f32(ctx);
         // XXX:此处应该用f32还是int32，取决与LLVM IR中的实现
-        ConstantValue::Float64 {
+        ConstantValue::Float32 {
             ty: f64_ty,
-            value: value.to_bits() as i64,
+            value: (value as f32 as f64).to_bits() as i64,
         }
     }
 
@@ -85,7 +85,7 @@ impl ConstantValue {
     }
 
     pub fn global_ref(ctx: &mut Context, name: String, value_ty: Ty) -> ConstantValue {
-        let ty = Ty::ptr(ctx);
+        let ty = Ty::ptr(ctx, None);
         ConstantValue::GlobalRef { ty, name, value_ty }
     }
 
@@ -97,12 +97,12 @@ impl ConstantValue {
         };
 
         match self {
-            ConstantValue::Undef { .. } => s.push_str("undef"),
+            ConstantValue::Undef { ty } => s.push_str(&format!("{} undef", ty.display(ctx))),
             ConstantValue::AggregateZero { .. } => s.push_str("zeroinitializer"),
             ConstantValue::Int1 { value, .. } => s.push_str(&value.to_string()),
             ConstantValue::Int8 { value, .. } => s.push_str(&value.to_string()),
             ConstantValue::Int32 { value, .. } => s.push_str(&value.to_string()),
-            ConstantValue::Float64 { value, .. } => s.push_str(&format!("0x{:01$x}", value, 16)),//
+            ConstantValue::Float32 { value, .. } => s.push_str(&format!("0x{:01$x}", value, 16)),//
             ConstantValue::Array { elems, .. } => {
                 s.push('[');
                 for (i, elem) in elems.iter().enumerate() {
@@ -258,8 +258,8 @@ impl Value {
         Self::new(ctx, ValueKind::Constant { value })
     }
 
-    pub fn f64(ctx: &mut Context, value: f64) -> Self {//iakkefloattest origin:f32
-        let value = ConstantValue::f64(ctx, value);
+    pub fn f32(ctx: &mut Context, value: f64) -> Self {//iakkefloattest origin:f32
+        let value = ConstantValue::f32(ctx, value);
         Self::new(ctx, ValueKind::Constant { value })
     }
 
