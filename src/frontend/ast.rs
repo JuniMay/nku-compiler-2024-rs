@@ -13,7 +13,7 @@ pub enum ComptimeVal {
     Float(f64), //iakkefloattest origin:f32,
     Array(Type, Vec<ComptimeVal>),
     Undef(Type),
-    // TODO: Add more types, like float, list, etc.
+    // TOD?: Add more types, like float, list, etc.
 }
 
 impl ComptimeVal {
@@ -112,7 +112,7 @@ impl ComptimeVal {
     // efficient.
     //
     // HACK: Implement other operations for ComptimeVal
-    // TODO: 完成float的其他操作
+    // TOD?: 完成float的其他操作
     pub fn add(&self, other: &Self) -> Self {
         match (self, other) {
             (Self::Int(a), Self::Int(b)) => Self::Int(a + b),

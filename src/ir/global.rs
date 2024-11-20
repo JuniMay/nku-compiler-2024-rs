@@ -7,17 +7,19 @@ pub struct GlobalData {
     pub(super) self_ptr: Global,
     name: String,
     value: ConstantValue,
+    is_const:bool
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Global(GenericPtr<GlobalData>);
 
 impl Global {
-    pub fn new(ctx: &mut Context, name: String, value: ConstantValue) -> Self {
+    pub fn new(ctx: &mut Context, name: String, value: ConstantValue,is_const:bool) -> Self {
         ctx.alloc_with(|self_ptr| GlobalData {
             self_ptr,
             name,
             value,
+            is_const,
         })
     }
 
@@ -26,6 +28,10 @@ impl Global {
     pub fn value(self, ctx: &Context) -> &ConstantValue { &self.deref(ctx).value }
 
     pub fn ty(self, ctx: &Context) -> Ty { self.value(ctx).ty() }
+
+    pub fn is_const(self, ctx: &Context) -> bool {
+        self.deref(ctx).is_const
+    }
 }
 
 pub struct DisplayGlobal<'ctx> {
@@ -37,16 +43,29 @@ impl Global {
     pub fn display(self, ctx: &Context) -> DisplayGlobal { DisplayGlobal { ctx, global: self } }
 }
 
+// impl fmt::Display for DisplayGlobal<'_> {
+//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//         write!(
+//             f,
+//             "@{} = global {}",
+//             self.global.name(self.ctx),
+//             self.global.value(self.ctx).to_string(self.ctx, true)
+//         )
+//     }
+// }
 impl fmt::Display for DisplayGlobal<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let kind = if self.global.is_const(self.ctx) { "constant" } else { "global" };
         write!(
             f,
-            "@{} = global {}",
+            "@{} = {} {}",
             self.global.name(self.ctx),
+            kind,
             self.global.value(self.ctx).to_string(self.ctx, true)
         )
     }
 }
+
 
 impl ArenaPtr for Global {
     type Arena = Context;

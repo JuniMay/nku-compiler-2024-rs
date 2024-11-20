@@ -61,7 +61,7 @@ impl IrGenResult {
     pub fn unwrap_value(self) -> Value {
         match self {
             IrGenResult::Value(val) => val,
-            IrGenResult::Global(_) => unreachable!("expected value"),
+            IrGenResult::Global(_) => unreachable!("expected value"),//?iakke
         }
     }
 }
@@ -95,7 +95,7 @@ impl IrGenContext {
     }
 
     // Generate a new global constant value in ir given a comptime value in AST.
-    fn gen_global_comptime(&mut self, val: &Cv) -> ConstantValue {
+    fn gen_global_comptime(&mut self, val: &Cv) -> ConstantValue {//从const里面提取value
         match val {
             Cv::Bool(a) => ConstantValue::i1(&mut self.ctx, *a),
             Cv::Int(a) => ConstantValue::i32(&mut self.ctx, *a),
@@ -218,7 +218,7 @@ impl IrGenContext {
                 let ty = self.gen_type(expr.ty.as_ref().unwrap());
                 let expr = self.gen_local_expr(expr).unwrap();
                 let inst = match op {
-                    // TODO: Implement unary operations
+                    // TOD?: Implement unary operations
                     UnaryOp::Neg => Inst::neg(&mut self.ctx, expr, ty),
                     UnaryOp::Not => Inst::not(&mut self.ctx, expr, ty),
                 };
@@ -464,6 +464,7 @@ impl IrGen for Item {
                                     &mut irgen.ctx,
                                     format!("__GLOBAL_CONST_{}", ident),
                                     constant,
+                                    true,
                                 );
                                 irgen.symtable.insert(
                                     ident.clone(),
@@ -486,6 +487,7 @@ impl IrGen for Item {
                                     &mut irgen.ctx,
                                     format!("__GLOBAL_CONST_{}", arr_ident.ident),
                                     value,
+                                    true,
                                 );
 
                                 irgen.symtable.insert(
@@ -514,6 +516,7 @@ impl IrGen for Item {
                                     &mut irgen.ctx,
                                     format!("__GLOBAL_VAR_{}", ident),
                                     constant,
+                                    false,
                                 );
                                 irgen.symtable.insert(
                                     ident.clone(),
@@ -538,6 +541,7 @@ impl IrGen for Item {
                                     &mut irgen.ctx,
                                     format!("__GLOBAL_VAR_{}", arr_ident.ident),
                                     value,
+                                    false,
                                 );
 
                                 irgen.symtable.insert(
@@ -584,8 +588,9 @@ impl IrGen for FuncDef {
             _ => unreachable!("function type should be handled separately"),
         };
 
+       // let is_const = irgen.ctx.is_static_function(&self.ident);
         let ir_value =
-            IrGenResult::Global(Global::new(&mut irgen.ctx, self.ident.clone(), func_ref));
+            IrGenResult::Global(Global::new(&mut irgen.ctx, self.ident.clone(), func_ref,false));//questionediakke:函数都是const？
 
         irgen.symtable.insert_upper(
             self.ident.clone(),
@@ -880,9 +885,51 @@ impl IrGen for Stmt {
                 }
             }
             Stmt::Block(block) => block.irgen(irgen),
-            Stmt::If(..) => {
-                todo!("implement if statement");
+            Stmt::If(cond_expr, then_stmt, else_stmt) => {
+                if let Tk::Bool = cond_expr.ty().kind() {
+                    let then_block = Block::new(&mut irgen.ctx);
+                    let else_block = else_stmt.as_ref().map(|_| Block::new(&mut irgen.ctx));
+                    let exit_block = Block::new(&mut irgen.ctx);
+            
+                    let curr_block = irgen.curr_block.unwrap();
+                    let curr_func = irgen.curr_func.unwrap();
+            
+                    let cond_value = irgen.gen_local_expr(cond_expr).unwrap();
+                    let cond_br = Inst::cond_br(
+                        &mut irgen.ctx,
+                        cond_value,
+                        then_block,
+                        else_block.unwrap_or(exit_block),
+                    );
+                    curr_block.push_back(&mut irgen.ctx, cond_br).unwrap();
+            
+                    curr_func.push_back(&mut irgen.ctx, then_block).unwrap();
+                    irgen.curr_block = Some(then_block);
+                    then_stmt.irgen(irgen);
+            
+                    let then_exit_br = Inst::br(&mut irgen.ctx, exit_block);
+                    then_block.push_back(&mut irgen.ctx, then_exit_br).unwrap();
+            
+                    if let Some(else_block) = else_block {
+                        curr_func.push_back(&mut irgen.ctx, else_block).unwrap();
+                        irgen.curr_block = Some(else_block);
+            
+                        if let Some(else_stmt) = else_stmt {
+                            else_stmt.irgen(irgen);
+                        }
+            
+                        let else_exit_br = Inst::br(&mut irgen.ctx, exit_block);
+                        else_block.push_back(&mut irgen.ctx, else_exit_br).unwrap();
+                    }
+            
+                    curr_func.push_back(&mut irgen.ctx, exit_block).unwrap();
+                    irgen.curr_block = Some(exit_block);
+                } else {
+                    panic!("if condition must be a boolean expression");
+                }
             }
+            
+            
             Stmt::While(expr, stmt) => {
                 if let Tk::Bool = expr.ty().kind() {
                     let cond_block = Block::new(&mut irgen.ctx);

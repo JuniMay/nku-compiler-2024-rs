@@ -83,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // println!("lexer test passed");
     // Ok(())
 
-    let src = std::fs::read_to_string("tests/testcase/functional_test/Advanced/005_float_defn.sy")?;
+    let src = std::fs::read_to_string("tests/testcase/functional_test/Advanced/000000const.sy")?;
     let src = preprocess(&src);
 
     let mut ast = SysYParser::new().parse(&src).unwrap();

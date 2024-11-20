@@ -166,7 +166,7 @@ impl<'ctx> fmt::Display for DisplayValue<'ctx> {
                 }
             }
             ValueKind::Constant { ref value } => {
-                write!(f, "{}", value.to_string(self.ctx, self.with_type))
+                write!(f, "{}", value.to_string(self.ctx, self.with_type))//非全局变量处设置const输出---iakke
             }
             ValueKind::Array { ty, ref elems } => {
                 write!(f, "{} ", ty.display(self.ctx))?;
