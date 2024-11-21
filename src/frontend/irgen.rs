@@ -28,8 +28,9 @@ use crate::frontend::ast::{FuncCall, LVal, UnaryOp};
 use crate::infra::linked_list::{LinkedListContainer, LinkedListCursor, LinkedListNode};
 use crate::infra::storage::ArenaPtr;
 use crate::ir::{
-    Block, ConstantValue, Context, Func, Global, Inst, TargetInfo, Ty, TyData, Value, ValueKind,
+    Block, ConstantValue, Context, Func, Global, Inst, TargetInfo, Ty, TyData, Value, ValueKind,InstKind,
 };
+
 
 /// Generate IR from the AST.
 pub fn irgen(ast: &CompUnit, pointer_width: u8) -> Context {
@@ -976,15 +977,30 @@ impl IrGen for Stmt {
                 }
             }
             Stmt::Block(block) => block.irgen(irgen),
+            //If实现
             Stmt::If(cond_expr, then_stmt, else_stmt) => {
+                fn block_has_terminator(block: Block, ctx: &Context) -> bool {
+                    let mut inst = block.head(ctx); // 从 head 开始
+                    while let Some(current_inst) = inst {
+                        if matches!(current_inst.kind(ctx), InstKind::Br | InstKind::Ret) {
+                            return true;
+                        }
+                        inst = current_inst.next(ctx); // 遍历到下一条指令
+                    }
+                    false
+                }
+            
                 if let Tk::Bool = cond_expr.ty().kind() {
+                    // 创建基本块
                     let then_block = Block::new(&mut irgen.ctx);
                     let else_block = else_stmt.as_ref().map(|_| Block::new(&mut irgen.ctx));
                     let exit_block = Block::new(&mut irgen.ctx);
-
+            
+                    // 当前基本块和函数
                     let curr_block = irgen.curr_block.unwrap();
                     let curr_func = irgen.curr_func.unwrap();
-
+            
+                    // 生成条件表达式的值
                     let cond_value = irgen.gen_local_expr(cond_expr).unwrap();
                     let cond_br = Inst::cond_br(
                         &mut irgen.ctx,
@@ -993,32 +1009,47 @@ impl IrGen for Stmt {
                         else_block.unwrap_or(exit_block),
                     );
                     curr_block.push_back(&mut irgen.ctx, cond_br).unwrap();
-
+            
+                    // Then 分支处理
                     curr_func.push_back(&mut irgen.ctx, then_block).unwrap();
                     irgen.curr_block = Some(then_block);
                     then_stmt.irgen(irgen);
-
-                    let then_exit_br = Inst::br(&mut irgen.ctx, exit_block);
-                    then_block.push_back(&mut irgen.ctx, then_exit_br).unwrap();
-
-                    if let Some(else_block) = else_block {
+            
+                    // 如果 then_block 是空块，或者没有终止指令，添加跳转
+                    if !block_has_terminator(then_block, &irgen.ctx) {
+                        let then_exit_br = Inst::br(&mut irgen.ctx, exit_block);
+                        then_block.push_back(&mut irgen.ctx, then_exit_br).unwrap();
+                    }
+            
+                    // Else 分支处理
+                    if let Some(else_stmt) = else_stmt {
+                        let else_block = else_block.unwrap();
                         curr_func.push_back(&mut irgen.ctx, else_block).unwrap();
                         irgen.curr_block = Some(else_block);
-
-                        if let Some(else_stmt) = else_stmt {
-                            else_stmt.irgen(irgen);
+            
+                        else_stmt.irgen(irgen);
+            
+                        // 如果 else_block 是空块，或者没有终止指令，添加跳转
+                        if !block_has_terminator(else_block, &irgen.ctx) {
+                            let else_exit_br = Inst::br(&mut irgen.ctx, exit_block);
+                            else_block.push_back(&mut irgen.ctx, else_exit_br).unwrap();
                         }
-
-                        let else_exit_br = Inst::br(&mut irgen.ctx, exit_block);
-                        else_block.push_back(&mut irgen.ctx, else_exit_br).unwrap();
                     }
-
+            
+                    // 确保 exit_block 存在并链接
+                    if exit_block.head(&irgen.ctx).is_none() {
+                        // 如果 exit_block 是空的，添加占位指令
+                        let unreachable_inst = Inst::br(&mut irgen.ctx, exit_block);
+                        exit_block.push_back(&mut irgen.ctx, unreachable_inst).unwrap();
+                    }
                     curr_func.push_back(&mut irgen.ctx, exit_block).unwrap();
                     irgen.curr_block = Some(exit_block);
                 } else {
                     panic!("if condition must be a boolean expression");
                 }
             }
+            
+            
 
             Stmt::While(expr, stmt) => {
                 if let Tk::Bool = expr.ty().kind() {

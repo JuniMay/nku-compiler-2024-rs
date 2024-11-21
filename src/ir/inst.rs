@@ -1061,7 +1061,7 @@ impl fmt::Display for DisplayInst<'_> {
                 write!(
                     f,
                     "br i1 {}, label {}, label {}",
-                    self.inst.operand(self.ctx, 0).display(self.ctx, true),
+                    self.inst.operand(self.ctx, 0).display(self.ctx, false),
                     self.inst.successor(self.ctx, 0).name(self.ctx),
                     self.inst.successor(self.ctx, 1).name(self.ctx)
                 )?;

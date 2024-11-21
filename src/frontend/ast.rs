@@ -1557,9 +1557,9 @@ impl Expr {
                     | BinaryOp::Ge
                     | BinaryOp::Eq
                     | BinaryOp::Ne => {
-                        expr.ty = Some(lhs_ty.clone());
+                        expr.ty = Some(Type::bool());
                     }
-                    BinaryOp::And | BinaryOp::Or => expr.ty = Some(lhs_ty.clone()),
+                    BinaryOp::And | BinaryOp::Or => expr.ty = Some(Type::bool()),
                 }
                 expr
             }

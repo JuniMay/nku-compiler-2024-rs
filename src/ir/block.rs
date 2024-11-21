@@ -55,6 +55,8 @@ impl Block {
     }
 
     pub fn display(self, ctx: &Context) -> DisplayBlock { DisplayBlock { ctx, block: self } }
+
+    
 }
 
 impl fmt::Display for DisplayBlock<'_> {
