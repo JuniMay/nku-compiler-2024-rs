@@ -77,7 +77,7 @@ mod tests {
     #[test]
     fn test_parse_arguments() {
         let src = std::fs::read_to_string(
-            "tests/testcase/functional_test/Advanced/00001_csememtest1.sy",
+            "tests/testcase/functional_test/Advanced/000000dumbass.sy",
         ).unwrap();
         let src = preprocess(&src);
 

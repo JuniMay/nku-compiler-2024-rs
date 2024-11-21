@@ -1,16 +1,13 @@
-const float f=2.2*99;
-float norm=8.3;
-int testnorm(int l){
-        return l;
-    }
-int testconst(int k){
-        return k;
-    }
 int main()
 {
-    const int i=7;
-    int j=77;
-    int ans=testnorm(i)+testconst(j);
-    float fk=f+norm;
+int i = 2;
+if (i < 0) 
+    putint(0);
+else if (i < 114515)
+    putint(1);
+else if(i>-1)
+    putint(22);
+else
+    putint(2);
     return 0;
 }
