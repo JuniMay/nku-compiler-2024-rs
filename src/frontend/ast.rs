@@ -1724,7 +1724,10 @@ impl Expr {
                         } else if ty.is_int() {
                             // HACK: How do we convert int to bool?
                             expr = Expr::coercion(expr, Type::bool());
-                        } else {
+                        } else if ty.is_float() {//iakkefloattest
+                            // HACK: How do we convert int to bool?
+                            expr = Expr::coercion(expr, Type::bool());
+                        }else {
                             panic!("unsupported type for logical not: {:?}", ty);
                         }
                         Type::bool()

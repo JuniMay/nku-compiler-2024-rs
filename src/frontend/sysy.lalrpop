@@ -2,8 +2,6 @@ use crate::frontend::{
     ast::*,
     types::*,
 };
-use lexical::parse_with_options;
-use lexical::options::ParseFloatOptions;
 
 grammar;
 
@@ -216,16 +214,66 @@ Float: f64 = {
         panic!("Failed to parse f64: {}", err);
     })
   },
-  r"0[xX][0-9a-fA-F]+(\.[0-9a-fA-F]+)?p[+-]?[0-9]+" => {
+  // r"0[xX][0-9a-fA-F]+(\.[0-9a-fA-F]+)?p[+-]?[0-9]+" => {
+  //   let string = <>;
+  //   // TODO: 浮点数的16进制表示解析
+  //   // let options = ParseFloatOptions::builder().build().unwrap();
+  //   // parse_with_options::<f64, _>(&string, &options).unwrap_or_else(|err| {
+  //   //   println!("{}", err);
+  //   //   panic!("Failed to parse f64: {}", err);
+  //   // })
+  //   0.0
+  // },
+  r"0[xX]([0-9a-fA-F]*)(?:\.([0-9a-fA-F]+))?[pP]([+-]?[0-9]+)" => {
     let string = <>;
-    // TODO: 浮点数的16进制表示解析
-    // let options = ParseFloatOptions::builder().build().unwrap();
-    // parse_with_options::<f64, _>(&string, &options).unwrap_or_else(|err| {
-    //   println!("{}", err);
-    //   panic!("Failed to parse f64: {}", err);
-    // })
-    0.0
-  },
+    let re = regex::Regex::new(r"^\s*0[xX]([0-9a-fA-F]*)(?:\.([0-9a-fA-F]+))?[pP]([+-]?[0-9]+)\s*$")
+        .unwrap_or_else(|err| {
+            println!("Failed to compile regex: {}", err);
+            panic!("Regex compilation error");
+        });
+
+    if let Some(captures) = re.captures(&string) {
+        let int_part = captures.get(1).map(|m| m.as_str()).unwrap_or("");
+        let frac_part = captures.get(2).map(|m| m.as_str()).unwrap_or("");
+        let exponent = captures
+            .get(3)
+            .map(|m| m.as_str().parse::<i32>())
+            .transpose()
+            .unwrap_or_else(|err| {
+                println!("Failed to parse exponent: {}", err);
+                panic!("Exponent parsing error");
+            });
+
+        // 整数部分为空时默认值为 0
+        let mut value: f64 = if int_part.is_empty() {
+            0.0
+        } else {
+            i64::from_str_radix(int_part, 16).unwrap_or(0) as f64
+        };
+
+        // 处理小数部分
+        if !frac_part.is_empty() {
+            let mut fractional_value = 0.0;
+            let mut divisor = 16.0;
+            for c in frac_part.chars() {
+                let digit = c.to_digit(16).unwrap() as f64;
+                fractional_value += digit / divisor;
+                divisor *= 16.0;
+            }
+            value += fractional_value;
+        }
+
+        // 处理指数部分
+        if let Some(exp) = exponent {
+            value *= 2_f64.powi(exp);
+        }
+
+        value
+    } else {
+        println!("Failed to match hexadecimal float: '{}'", string);
+        panic!("Failed to parse hexadecimal float.");
+    }
+},
   "inf" => {
     let string = <>;
     string.parse::<f64>().unwrap_or_else(|err| {
