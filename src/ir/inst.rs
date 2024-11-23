@@ -659,6 +659,11 @@ impl Inst {
             },
             ty,
         );
+        let ret_ty = Ty::i1(ctx);
+        let result = Value::new_inst_result(ctx, inst, ret_ty);
+        inst.try_deref_mut(ctx)
+            .unwrap_or_else(|| unreachable!())
+            .result = Some(result);
         inst.add_operand(ctx, lhs);
         inst.add_operand(ctx, rhs);
         inst
@@ -674,6 +679,11 @@ impl Inst {
             },
             ty,
         );
+        let ret_ty = Ty::i1(ctx);
+        let result = Value::new_inst_result(ctx, inst, ret_ty);
+        inst.try_deref_mut(ctx)
+            .unwrap_or_else(|| unreachable!())
+            .result = Some(result);
         inst.add_operand(ctx, lhs);
         inst.add_operand(ctx, rhs);
         inst
@@ -689,6 +699,11 @@ impl Inst {
             },
             ty,
         );
+        let ret_ty = Ty::i1(ctx);
+        let result = Value::new_inst_result(ctx, inst, ret_ty);
+        inst.try_deref_mut(ctx)
+            .unwrap_or_else(|| unreachable!())
+            .result = Some(result);
         inst.add_operand(ctx, rhs);
         inst.add_operand(ctx, lhs);
         inst
@@ -704,6 +719,11 @@ impl Inst {
             },
             ty,
         );
+        let ret_ty = Ty::i1(ctx);
+        let result = Value::new_inst_result(ctx, inst, ret_ty);
+        inst.try_deref_mut(ctx)
+            .unwrap_or_else(|| unreachable!())
+            .result = Some(result);
         inst.add_operand(ctx, rhs);
         inst.add_operand(ctx, lhs);
         inst
@@ -719,6 +739,11 @@ impl Inst {
             },
             ty,
         );
+        let ret_ty = Ty::i1(ctx);
+        let result = Value::new_inst_result(ctx, inst, ret_ty);
+        inst.try_deref_mut(ctx)
+            .unwrap_or_else(|| unreachable!())
+            .result = Some(result);
         inst.add_operand(ctx, lhs);
         inst.add_operand(ctx, rhs);
         inst
@@ -734,6 +759,11 @@ impl Inst {
             },
             ty,
         );
+        let ret_ty = Ty::i1(ctx);
+        let result = Value::new_inst_result(ctx, inst, ret_ty);
+        inst.try_deref_mut(ctx)
+            .unwrap_or_else(|| unreachable!())
+            .result = Some(result);
         inst.add_operand(ctx, lhs);
         inst.add_operand(ctx, rhs);
         inst
@@ -1069,13 +1099,9 @@ impl fmt::Display for DisplayInst<'_> {
             InstKind::Cast { op } => {
                 write!(
                     f,
-                    "{} {}, {} to {}",
+                    "{} {} to {}",
                     op,
                     self.inst.operand(self.ctx, 0).display(self.ctx, true),
-                    self.inst
-                        .operand(self.ctx, 0)
-                        .ty(self.ctx)
-                        .display(self.ctx),
                     self.inst
                         .result(self.ctx)
                         .unwrap()

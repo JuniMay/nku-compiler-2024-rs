@@ -3,3 +3,5 @@
 /.vscode
 /.idea
 .DS_Store
+
+/tests/testcase/a/

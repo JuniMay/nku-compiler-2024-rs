@@ -230,10 +230,10 @@ impl Type {
         let mut other = other.0.as_ref();
         loop {
             match (this, other) {
-                (TypeKind::Array(t1, _), TypeKind::Array(t2, _)) => {
-                    // if s1 != s2 {
-                    //     return false;
-                    // }
+                (TypeKind::Array(t1, _), TypeKind::Array(t2, _))
+                | (TypeKind::Array(t1, _), TypeKind::Ptr(t2))
+                | (TypeKind::Ptr(t1), TypeKind::Array(t2, _))
+                | (TypeKind::Ptr(t1), TypeKind::Ptr(t2)) => {
                     this = t1.0.as_ref();
                     other = t2.0.as_ref();
                 }

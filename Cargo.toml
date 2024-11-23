@@ -11,6 +11,8 @@ clap = { version = "4.5.8", features = ["string"] }
 
 lalrpop-util = { version = "0.20.2", features = ["lexer"], optional = true }
 
+lexical = "6.1"
+
 [build-dependencies]
 lalrpop = "0.20.2"
 

@@ -1,7 +1,9 @@
 //! Abstract Syntax Tree (AST) for the SysY language.
 
 use std::collections::HashMap;
-use std::process::id;
+use std::process::{id, ExitCode};
+
+use crate::ir::Ty;
 
 use super::irgen::IrGenResult;
 use super::types::{Type, TypeKind as Tk};
@@ -832,18 +834,18 @@ impl SymbolTable {
             ("getfloat", Type::func(vec![], Type::float())),
             (
                 "getarray",
-                Type::func(vec![Type::array(Type::int(), 0)], Type::int()),
+                Type::func(vec![Type::ptr(Type::int())], Type::int()),
             ),
             (
                 "getfarray",
-                Type::func(vec![Type::array(Type::float(), 0)], Type::int()),
+                Type::func(vec![Type::ptr(Type::float())], Type::int()),
             ),
             ("putint", Type::func(vec![Type::int()], Type::void())),
             ("putch", Type::func(vec![Type::int()], Type::void())),
             ("putfloat", Type::func(vec![Type::float()], Type::void())),
             (
                 "putarray",
-                Type::func(vec![Type::int(), Type::ptr(Type::float())], Type::void()),
+                Type::func(vec![Type::int(), Type::ptr(Type::int())], Type::void()),
             ),
             (
                 "putfarray",
@@ -953,7 +955,7 @@ impl ConstDecl {
                     );
                     new_defs.push(def);
                 }
-                ConstDef::Array(arr_ident, init) => {
+                ConstDef::Array(ident, init) => {
                     // Type check the init expression, and fold it if possible
                     let new_init = Some(std::mem::replace(init, ArrayVal::default()))
                         .map(|init| {
@@ -963,12 +965,21 @@ impl ConstDecl {
                         .unwrap()
                         .unwrap_or_else(|| panic!("unable to fold!"));
 
-                    let mut size = Vec::new();
-                    for expr in &arr_ident.size {
-                        if let ExprKind::Const(ComptimeVal::Int(val)) = &expr.kind {
-                            size.push(*val as usize);
-                        }
-                    }
+                    let (expr_size, size): (Vec<Expr>, Vec<usize>) = ident
+                        .size
+                        .drain(..)
+                        .map(|expr| {
+                            let expr = expr.type_check(None, symtable);
+                            if let ExprKind::Const(ComptimeVal::Int(val)) = &expr.kind {
+                                let val = *val;
+                                (expr, val as usize)
+                            } else {
+                                panic!("non-constant array size")
+                            }
+                        })
+                        .unzip();
+
+                    ident.size = expr_size;
 
                     let mut full_array = ArrayVal::new_array(&ty, &size);
                     new_init.fix_size(&mut full_array, &size);
@@ -986,10 +997,10 @@ impl ConstDecl {
 
                     // Insert the variable into the symbol table
                     symtable.insert(
-                        arr_ident.ident.clone(),
+                        ident.ident.clone(),
                         SymbolEntry {
-                            ty: arr_ty,
-                            comptime: Some(full_array.to_comptimeval(&ty)),
+                            ty: arr_ty.clone(),
+                            comptime: Some(full_array.to_comptimeval(&arr_ty)),
                             ir_value: None,
                         },
                     );
@@ -1009,8 +1020,6 @@ impl VarDecl {
     pub fn type_check(&mut self, symtable: &mut SymbolTable) {
         let mut new_defs = Vec::new();
         for mut def in self.defs.drain(..) {
-            // HACK: array type checking
-
             let ty = self.ty.clone();
 
             match &mut def {
@@ -1028,8 +1037,11 @@ impl VarDecl {
                         })
                         .unwrap_or_else(|| match &ty.kind() {
                             // HACK：没有初始化值则指定为0或者false
-                            Tk::Int => Expr::const_(ComptimeVal::int(0)),
                             Tk::Bool => Expr::const_(ComptimeVal::bool(false)),
+                            Tk::Char => Expr::const_(ComptimeVal::char('\0')),
+                            Tk::Int => Expr::const_(ComptimeVal::int(0)),
+                            Tk::Float => Expr::const_(ComptimeVal::float(0.0)),
+
                             _ => panic!("unsupported type"),
                         });
 
@@ -1051,11 +1063,14 @@ impl VarDecl {
                         })
                         .unwrap_or_else(|| match &ty.kind() {
                             // HACK：未初始化则指定为0或者false
-                            Tk::Int => Some(ArrayVal::Vals(vec![ArrayVal::Val(Expr::const_(
-                                ComptimeVal::int(0),
-                            ))])),
                             Tk::Bool => Some(ArrayVal::Vals(vec![ArrayVal::Val(Expr::const_(
                                 ComptimeVal::bool(false),
+                            ))])),
+                            Tk::Char => Some(ArrayVal::Vals(vec![ArrayVal::Val(Expr::const_(
+                                ComptimeVal::Char('\0'),
+                            ))])),
+                            Tk::Int => Some(ArrayVal::Vals(vec![ArrayVal::Val(Expr::const_(
+                                ComptimeVal::int(0),
                             ))])),
                             Tk::Float => Some(ArrayVal::Vals(vec![ArrayVal::Val(Expr::const_(
                                 ComptimeVal::float(0.0),
@@ -1064,14 +1079,23 @@ impl VarDecl {
                         })
                         .unwrap();
 
-                    // println!("{:#?}", new_init);
+                    println!("{:#?}", new_init);
 
-                    let mut size = Vec::new();
-                    for expr in &ident.size {
-                        if let ExprKind::Const(ComptimeVal::Int(val)) = &expr.kind {
-                            size.push(*val as usize);
-                        }
-                    }
+                    let (expr_size, size): (Vec<Expr>, Vec<usize>) = ident
+                        .size
+                        .drain(..)
+                        .map(|expr| {
+                            let expr = expr.type_check(None, symtable);
+                            if let ExprKind::Const(ComptimeVal::Int(val)) = &expr.kind {
+                                let val = *val;
+                                (expr, val as usize)
+                            } else {
+                                panic!("non-constant array size")
+                            }
+                        })
+                        .unzip();
+
+                    ident.size = expr_size;
 
                     let mut full_array = ArrayVal::new_array(&ty, &size);
                     new_init.fix_size(&mut full_array, &size);
@@ -1169,8 +1193,14 @@ impl ArrayVal {
                 }
             }
             ArrayVal::Vals(vals) => {
+                let ty = match ty.kind() {
+                    Tk::Array(ty, _) => ty,
+                    Tk::Ptr(ty) => ty,
+                    _ => panic!("invalid type"),
+                };
+
                 let vals = vals.iter().map(|val| val.to_comptimeval(ty)).collect();
-                ComptimeVal::array(Type::int(), vals)
+                ComptimeVal::array(ty.clone(), vals)
             }
         }
     }
@@ -1315,7 +1345,7 @@ impl Stmt {
                 let mut inner_ty = Type::make(ty.kind().clone());
                 for _ in &size {
                     match ty.kind() {
-                        Tk::Array(inner_ty, _) => {
+                        Tk::Array(inner_ty, _) | Tk::Ptr(inner_ty) => {
                             ty = inner_ty;
                         }
                         _ => {
@@ -1354,11 +1384,12 @@ impl Stmt {
                 let mut expr = expr.unwrap();
                 let ret_ty = symtable.curr_ret_ty.as_ref().unwrap();
 
-                if ret_ty.is_int() {
-                    // Coerce the expression to int if needed
-                    expr = Expr::coercion(expr, Type::int());
-                } else {
-                    panic!("unsupported return type");
+                match ret_ty.kind() {
+                    Tk::Bool => expr = Expr::coercion(expr, Type::bool()),
+                    Tk::Char => expr = Expr::coercion(expr, Type::char()),
+                    Tk::Int => expr = Expr::coercion(expr, Type::int()),
+                    Tk::Float => expr = Expr::coercion(expr, Type::float()),
+                    _ => panic!("unsupported return type"),
                 }
 
                 Stmt::Return(ReturnStmt { expr: Some(expr) })
@@ -1431,8 +1462,8 @@ impl Expr {
                     let array_entry = entry.comptime.as_ref()?;
                     let indices = indices
                         .iter()
-                        .map(|index| index.try_fold(symtable).unwrap())
-                        .collect();
+                        .map(|index| index.try_fold(symtable))
+                        .collect::<Option<Vec<_>>>()?;
                     Some(get_comptime_array(array_entry, indices, 0))
                 } else {
                     unreachable!("array access")
@@ -1506,35 +1537,70 @@ impl Expr {
             ExprKind::Const(_) => self,
             ExprKind::Binary(op, lhs, rhs) => {
                 // Type check the left and right hand side expressions
+                // println!("{:#?}", lhs);
+                // println!("{:#?}", rhs);
+
                 let mut lhs = lhs.type_check(None, symtable);
                 let mut rhs = rhs.type_check(None, symtable);
 
-                let lhs_ty = lhs.ty();
-                let rhs_ty = rhs.ty();
+                let lhs_ty = lhs.ty().clone();
+                let rhs_ty = rhs.ty().clone();
 
                 // Coerce the types if needed
-                match (lhs_ty.kind(), rhs_ty.kind()) {
-                    (Tk::Bool, Tk::Int) => {
-                        lhs = Expr::coercion(lhs, Type::int());
-                    }
-                    (Tk::Int, Tk::Bool) => {
-                        rhs = Expr::coercion(rhs, Type::int());
-                    }
-                    (Tk::Float, Tk::Int) => {
-                        rhs = Expr::coercion(rhs, Type::float());
-                    }
-                    (Tk::Int, Tk::Float) => {
-                        lhs = Expr::coercion(lhs, Type::float());
-                    }
-                    (Tk::Float, Tk::Bool) => {
-                        rhs = Expr::coercion(rhs, Type::float());
-                    }
-                    (Tk::Bool, Tk::Float) => {
-                        lhs = Expr::coercion(lhs, Type::float());
-                    }
-                    _ => {
-                        if lhs_ty != rhs_ty {
-                            panic!("unsupported type coercion: {:?} -> {:?}", lhs_ty, rhs_ty);
+                match op {
+                    BinaryOp::Add
+                    | BinaryOp::Sub
+                    | BinaryOp::Mul
+                    | BinaryOp::Div
+                    | BinaryOp::Mod
+                    | BinaryOp::Lt
+                    | BinaryOp::Le
+                    | BinaryOp::Gt
+                    | BinaryOp::Ge
+                    | BinaryOp::Eq
+                    | BinaryOp::Ne => match (lhs_ty.kind(), rhs_ty.kind()) {
+                        (Tk::Bool, Tk::Int) => {
+                            lhs = Expr::coercion(lhs, Type::int());
+                        }
+                        (Tk::Int, Tk::Bool) => {
+                            rhs = Expr::coercion(rhs, Type::int());
+                        }
+                        (Tk::Float, Tk::Int) => {
+                            rhs = Expr::coercion(rhs, Type::float());
+                        }
+                        (Tk::Int, Tk::Float) => {
+                            lhs = Expr::coercion(lhs, Type::float());
+                        }
+                        (Tk::Float, Tk::Bool) => {
+                            rhs = Expr::coercion(rhs, Type::float());
+                        }
+                        (Tk::Bool, Tk::Float) => {
+                            lhs = Expr::coercion(lhs, Type::float());
+                        }
+                        _ => {
+                            if lhs_ty != rhs_ty {
+                                panic!("unsupported type coercion: {:?} -> {:?}", lhs_ty, rhs_ty);
+                            }
+                        }
+                    },
+                    BinaryOp::And | BinaryOp::Or => {
+                        match lhs_ty.kind() {
+                            Tk::Bool => {}
+                            Tk::Char | Tk::Int | Tk::Float => {
+                                lhs = Expr::coercion(lhs, Type::bool());
+                            }
+                            _ => {
+                                panic!("unsupported type coercion: {:?} -> {:?}", lhs_ty, Tk::Bool);
+                            }
+                        }
+                        match rhs_ty.kind() {
+                            Tk::Bool => {}
+                            Tk::Char | Tk::Int | Tk::Float => {
+                                rhs = Expr::coercion(rhs, Type::bool());
+                            }
+                            _ => {
+                                panic!("unsupported type coercion: {:?} -> {:?}", lhs_ty, Tk::Bool);
+                            }
                         }
                     }
                 }
@@ -1580,6 +1646,14 @@ impl Expr {
                 // Create the function call expression
                 let mut expr = Expr::func_call(ident, args);
                 expr.ty = Some(ret_ty.clone());
+                match expect {
+                    Some(expect) => {
+                        if !expect.is_equal(&entry.ty) {
+                            expr = Expr::coercion(expr, expect.clone());
+                        }
+                    }
+                    None => {}
+                }
                 expr
             }
             ExprKind::LVal(LVal { ident }) => {
@@ -1588,6 +1662,14 @@ impl Expr {
                 // Create the left value expression
                 let mut expr = Expr::lval(LVal { ident });
                 expr.ty = Some(entry.ty.clone());
+                match expect {
+                    Some(expect) => {
+                        if !expect.is_equal(&entry.ty) {
+                            expr = Expr::coercion(expr, expect.clone());
+                        }
+                    }
+                    None => {}
+                }
                 expr
             }
             ExprKind::ArrayAccess(ident, indices) => {
@@ -1598,7 +1680,7 @@ impl Expr {
                     let mut inner_ty = Type::make(ty.kind().clone());
                     for _ in &indices {
                         match ty.kind() {
-                            Tk::Array(inner_ty, _) => {
+                            Tk::Array(inner_ty, _) | Tk::Ptr(inner_ty) => {
                                 ty = inner_ty;
                             }
                             _ => {
@@ -1607,12 +1689,21 @@ impl Expr {
                             }
                         }
                     }
+                    // println!("{:#?}: {:#?}", id, ty.kind());
                     let indices = indices
                         .into_iter()
-                        .map(|index| index.type_check(Some(ty), symtable))
+                        .map(|index| index.type_check(Some(&Type::int()), symtable))
                         .collect();
                     let mut expr = Expr::array_access(*ident, indices);
                     expr.ty = Some(ty.clone());
+                    match expect {
+                        Some(expect) => {
+                            if !expect.is_equal(&ty) {
+                                expr = Expr::coercion(expr, expect.clone());
+                            }
+                        }
+                        None => {}
+                    }
                     expr
                 } else {
                     unreachable!("array access");
