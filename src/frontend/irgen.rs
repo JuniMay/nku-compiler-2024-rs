@@ -237,6 +237,10 @@ impl IrGenContext {
             },
             // Unary operations -> generate the operation
             ExprKind::Unary(op, expr) => {
+                if let None = expr.ty.as_ref() {
+                    // println!("symbol table: {:#?}", self.symtable);
+                    panic!("I'm here {:#?}", expr);
+                }
                 let ty = self.gen_type(expr.ty.as_ref().unwrap());
                 let expr = self.gen_local_expr(expr).unwrap();
                 let inst = match op {
@@ -249,7 +253,7 @@ impl IrGenContext {
             }
             // LValues -> Get the value
             ExprKind::LVal(LVal { ident }) => {
-                println!("ident: {}", ident);
+                // println!("ident: {}", ident);
                 // println!("{:#?}", self.symtable);
                 // Look up the symbol in the symbol table to get the IR value
                 let entry = self.symtable.lookup(ident).unwrap();
@@ -447,20 +451,26 @@ impl IrGenContext {
                         curr_block.push_back(&mut self.ctx, inst).unwrap();
                         Some(inst.result(&self.ctx).unwrap())
                     }
-                    // (Tk::Array(t1, _), Tk::Array(t2, _)) => {
-                    //     let
-                    // }
                     _ => {
-                        println!("expr: {:#?}", expr);
-                        println!("expect_ty: {:#?}", expect_ty);
-                        println!("origin_ty: {:#?}", origin_ty);
-                        unreachable!("invalid coercion");
+                        if expr
+                            .ty
+                            .clone()
+                            .unwrap()
+                            .is_equal(&old_expr.ty.clone().unwrap())
+                        {
+                            self.gen_local_expr(old_expr)
+                        } else {
+                            self.try_coercion(old_expr, expect_ty, origin_ty)
+                        }
                     }
                 }
             }
             ExprKind::FuncCall(FuncCall { ident, args }) => {
                 // HACK: Implement function call generation
                 let entry = self.symtable.lookup(ident).unwrap();
+                if expr.ty.as_ref().is_none() {
+                    println!("funccall ident: {}", ident);
+                }
                 let ret_ty = expr.ty.as_ref().unwrap();
 
                 let value_ty = {
@@ -646,6 +656,38 @@ impl IrGenContext {
                     },
                 );
             }
+        }
+    }
+
+    fn try_coercion(&mut self, expr: &Expr, expect_ty: &Tk, origin_ty: &Tk) -> Option<Value> {
+        let orgin_expect_ty = expect_ty.clone();
+        // let offset_vec: Vec<usize> = vec![];
+        let mut expect_ty = expect_ty.clone();
+        let mut origin_ty = origin_ty.clone();
+        // while let (Tk::Ptr(t1), Tk::Array(t2, size)) = (expect_ty, origin_ty) {
+        //     if let Tk::Ptr(t1_inner) = t1.kind() {
+        //         expect_ty = t1_inner.kind().clone();
+        //         origin_ty = t2.kind().clone();
+        //         offset_vec.push(size);
+        //     } else {
+        //         // 此时Ptr已经到最内层，进行强制转换
+        //         let val = self.gen_local_expr(expr).unwrap();
+        //     }
+        // }
+        if let (Tk::Ptr(t1), Tk::Array(t2, size)) = (expect_ty.clone(), origin_ty.clone()) {
+            let val = self.gen_local_expr(expr).unwrap();
+            let ty = self.gen_type(&Type::ptr(t1.clone()));
+            let inst = Inst::bitcast(&mut self.ctx, val, ty);
+            self.curr_block
+                .unwrap()
+                .push_back(&mut self.ctx, inst)
+                .unwrap();
+            Some(inst.result(&self.ctx).unwrap())
+        } else {
+            println!("expr: {:#?}", expr);
+            println!("expect_ty: {:#?}", expect_ty);
+            println!("origin_ty: {:#?}", origin_ty);
+            unreachable!("invalid coercion");
         }
     }
 }
@@ -836,36 +878,39 @@ impl IrGen for FuncDef {
 
         // create slots for pass-by-value params
         for (FuncFParam { ident, .. }, ty) in self.params.iter().zip(param_tys.iter()) {
-            if ty.is_int() {
-                let ir_ty = irgen.gen_type(ty);
-                let slot = Inst::alloca(&mut irgen.ctx, ir_ty);
+            match &ty.kind() {
+                Tk::Bool | Tk::Char | Tk::Int | Tk::Float => {
+                    let ir_ty = irgen.gen_type(ty);
+                    let slot = Inst::alloca(&mut irgen.ctx, ir_ty);
 
-                block.push_front(&mut irgen.ctx, slot).unwrap();
-                let slot = slot.result(&irgen.ctx).unwrap();
+                    block.push_front(&mut irgen.ctx, slot).unwrap();
+                    let slot = slot.result(&irgen.ctx).unwrap();
 
-                // get old entry
-                let param = irgen
-                    .symtable
-                    .lookup(ident)
-                    .unwrap()
-                    .ir_value
-                    .unwrap()
-                    .unwrap_value();
+                    // get old entry
+                    let param = irgen
+                        .symtable
+                        .lookup(ident)
+                        .unwrap()
+                        .ir_value
+                        .unwrap()
+                        .unwrap_value();
 
-                // store
-                let store = Inst::store(&mut irgen.ctx, param, slot);
+                    // store
+                    let store = Inst::store(&mut irgen.ctx, param, slot);
 
-                block.push_back(&mut irgen.ctx, store).unwrap();
+                    block.push_back(&mut irgen.ctx, store).unwrap();
 
-                // set new entry
-                irgen.symtable.insert(
-                    ident.clone(),
-                    SymbolEntry {
-                        ty: ty.clone(),
-                        comptime: None,
-                        ir_value: Some(IrGenResult::Value(slot)),
-                    },
-                );
+                    // set new entry
+                    irgen.symtable.insert(
+                        ident.clone(),
+                        SymbolEntry {
+                            ty: ty.clone(),
+                            comptime: None,
+                            ir_value: Some(IrGenResult::Value(slot)),
+                        },
+                    );
+                }
+                _ => {}
             }
         }
 
@@ -1113,7 +1158,7 @@ impl IrGen for Stmt {
                         curr_block.push_back(&mut irgen.ctx, store).unwrap();
                     }
                     Tk::Ptr(_) => {
-                        let slot = if let IrGenResult::Global(slot) = ir_value {
+                        let mut slot = if let IrGenResult::Global(slot) = ir_value {
                             let name = slot.name(&irgen.ctx).to_string();
                             let value_ty = slot.ty(&irgen.ctx);
                             Value::global_ref(&mut irgen.ctx, name, value_ty)
@@ -1123,18 +1168,32 @@ impl IrGen for Stmt {
                             unreachable!()
                         };
 
-                        let entry_ty = entry.ty.clone();
-                        let (value_ty, inner_ty) = get_inner_ty(&entry_ty, pos.len());
-                        let value_ty = irgen.gen_type(&value_ty);
-                        let pos_values = pos
+                        let all_ty = get_all_inner_ty(&entry.ty.clone(), pos.len());
+                        let all_ty: Vec<Ty> =
+                            all_ty.into_iter().map(|ty| irgen.gen_type(&ty)).collect();
+                        let pos_values: Vec<Value> = pos
                             .into_iter()
                             .map(|p| irgen.gen_local_expr(p).unwrap())
                             .collect();
 
-                        let ptr_dst =
-                            Inst::getelementptr(&mut irgen.ctx, value_ty, slot, pos_values);
-                        curr_block.push_back(&mut irgen.ctx, ptr_dst).unwrap();
-                        let store_dst = ptr_dst.result(&irgen.ctx).unwrap();
+                        for i in 0..pos.len() {
+                            let bound_ty = all_ty[i + 1].clone();
+                            let pos_values = vec![pos_values[i]];
+                            let ptr_dst =
+                                Inst::getelementptr(&mut irgen.ctx, bound_ty, slot, pos_values);
+                            curr_block.push_back(&mut irgen.ctx, ptr_dst).unwrap();
+                            let ptr_slot = ptr_dst.result(&irgen.ctx).unwrap();
+
+                            if i == pos.len() - 1 {
+                                slot = ptr_slot;
+                            } else {
+                                let load = Inst::load(&mut irgen.ctx, ptr_slot, bound_ty);
+                                curr_block.push_back(&mut irgen.ctx, load).unwrap();
+                                slot = load.result(&irgen.ctx).unwrap()
+                            }
+                        }
+
+                        let store_dst = slot;
 
                         let val = irgen.gen_local_expr(expr).unwrap();
                         let store = Inst::store(&mut irgen.ctx, val, store_dst);
@@ -1314,20 +1373,12 @@ pub fn make_array(ty: Type, index: usize, size: &Vec<Expr>) -> Option<Type> {
 }
 
 pub fn get_inner_ty(ty: &Type, depth: usize) -> (Type, Type) {
-    let mut ty = ty.clone();
+    let ty = ty.clone();
     let mut inner_ty = ty.clone();
-    match inner_ty.kind() {
-        Tk::Array(inner_ty_, _) | Tk::Ptr(inner_ty_) => {
-            inner_ty = inner_ty_.clone();
-        }
-        _ => {
-            unreachable!("invalid array like access");
-        }
-    }
     for _ in 0..depth {
-        match ty.kind() {
-            Tk::Array(inner_ty, _) | Tk::Ptr(inner_ty) => {
-                ty = inner_ty.clone();
+        match inner_ty.kind() {
+            Tk::Array(inner_ty_, _) | Tk::Ptr(inner_ty_) => {
+                inner_ty = inner_ty_.clone();
             }
             _ => {
                 unreachable!("invalid array like access");

@@ -144,6 +144,12 @@ pub struct ValueData {
     users: HashSet<User<Value>>,
 }
 
+impl ValueData {
+    pub fn kind(&self) -> &ValueKind {
+        &self.kind
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Value(GenericPtr<ValueData>);
 

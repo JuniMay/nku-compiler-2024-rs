@@ -5,6 +5,7 @@ use std::process::{id, ExitCode};
 
 use crate::ir::Ty;
 
+use super::get_inner_ty;
 use super::irgen::IrGenResult;
 use super::types::{Type, TypeKind as Tk};
 
@@ -1079,7 +1080,7 @@ impl VarDecl {
                         })
                         .unwrap();
 
-                    println!("{:#?}", new_init);
+                    // println!("{:#?}", new_init);
 
                     let (expr_size, size): (Vec<Expr>, Vec<usize>) = ident
                         .size
@@ -1648,7 +1649,7 @@ impl Expr {
                 expr.ty = Some(ret_ty.clone());
                 match expect {
                     Some(expect) => {
-                        if !expect.is_equal(&entry.ty) {
+                        if !expect.is_equal(&ret_ty) {
                             expr = Expr::coercion(expr, expect.clone());
                         }
                     }
@@ -1676,26 +1677,15 @@ impl Expr {
                 // Lookup the variable in the symbol table
                 if let ExprKind::LVal(LVal { ident: id }) = &ident.as_ref().kind {
                     let entry = symtable.lookup(id).unwrap();
-                    let mut ty = &entry.ty;
-                    let mut inner_ty = Type::make(ty.kind().clone());
-                    for _ in &indices {
-                        match ty.kind() {
-                            Tk::Array(inner_ty, _) | Tk::Ptr(inner_ty) => {
-                                ty = inner_ty;
-                            }
-                            _ => {
-                                inner_ty = Type::make(ty.kind().clone());
-                                ty = &inner_ty;
-                            }
-                        }
-                    }
+                    let ty = &entry.ty;
+                    let (_, inner_ty) = get_inner_ty(ty, indices.len());
                     // println!("{:#?}: {:#?}", id, ty.kind());
                     let indices = indices
                         .into_iter()
                         .map(|index| index.type_check(Some(&Type::int()), symtable))
                         .collect();
                     let mut expr = Expr::array_access(*ident, indices);
-                    expr.ty = Some(ty.clone());
+                    expr.ty = Some(inner_ty.clone());
                     match expect {
                         Some(expect) => {
                             if !expect.is_equal(&ty) {
