@@ -22,7 +22,7 @@ pub enum ConstantValue {
     /// A 32-bit integer constant.
     Int32 { ty: Ty, value: i32 },
     /// A 32-bit floating-point constant.
-    Float32 { ty: Ty, value: i64 },
+    Float32 { ty: Ty, value: u64 },
     /// An array constant.
     Array { ty: Ty, elems: Vec<ConstantValue> },
     /// Global variables/functions are treated as constants, because their
@@ -66,12 +66,13 @@ impl ConstantValue {
         ConstantValue::Int32 { ty: i32, value }
     }
 
-    pub fn f32(ctx: &mut Context, value: f64) -> ConstantValue {//iakkefloattest origin:f32
+    pub fn f32(ctx: &mut Context, value: f32) -> ConstantValue {
+        //iakkefloattest origin:f32
         let f64_ty = Ty::f32(ctx);
         // XXX:此处应该用f32还是int32，取决与LLVM IR中的实现
         ConstantValue::Float32 {
             ty: f64_ty,
-            value: (value as f32 as f64).to_bits() as i64,
+            value: (value as f32 as f64).to_bits(),
         }
     }
 
@@ -102,7 +103,7 @@ impl ConstantValue {
             ConstantValue::Int1 { value, .. } => s.push_str(&value.to_string()),
             ConstantValue::Int8 { value, .. } => s.push_str(&value.to_string()),
             ConstantValue::Int32 { value, .. } => s.push_str(&value.to_string()),
-            ConstantValue::Float32 { value, .. } => s.push_str(&format!("0x{:01$x}", value, 16)),//
+            ConstantValue::Float32 { value, .. } => s.push_str(&format!("0x{:01$x}", value, 16)), //
             ConstantValue::Array { elems, .. } => {
                 s.push('[');
                 for (i, elem) in elems.iter().enumerate() {
@@ -172,10 +173,14 @@ impl<'ctx> fmt::Display for DisplayValue<'ctx> {
                 }
             }
             ValueKind::Constant { ref value } => {
-                write!(f, "{}", value.to_string(self.ctx, self.with_type))//非全局变量处设置const输出---iakke
+                write!(f, "{}", value.to_string(self.ctx, self.with_type)) //非全局变量处设置const输出---iakke
             }
             ValueKind::Array { ty, ref elems } => {
                 write!(f, "{} ", ty.display(self.ctx))?;
+                if elems.len() == 0 {
+                    write!(f, "zeroinitializer")?;
+                    return Ok(());
+                }
                 write!(f, "[")?;
                 for (i, elem) in elems.iter().enumerate() {
                     if i > 0 {
@@ -264,7 +269,8 @@ impl Value {
         Self::new(ctx, ValueKind::Constant { value })
     }
 
-    pub fn f32(ctx: &mut Context, value: f64) -> Self {//iakkefloattest origin:f32
+    pub fn f32(ctx: &mut Context, value: f32) -> Self {
+        //iakkefloattest origin:f32
         let value = ConstantValue::f32(ctx, value);
         Self::new(ctx, ValueKind::Constant { value })
     }
@@ -298,7 +304,6 @@ impl Value {
         let value = ConstantValue::global_ref(ctx, name, value_ty);
         Self::new(ctx, ValueKind::Constant { value })
     }
-
 }
 
 impl ArenaPtr for Value {

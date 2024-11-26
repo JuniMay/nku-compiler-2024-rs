@@ -34,6 +34,8 @@ pub Decl: Decl = {
 // void is actually FuncType, but merge them all to avoid conflicts
 pub BType: Type = {
     "int" => Type::int(),
+    "bool" => Type::bool(),
+    "char" => Type::char(),
     "void" => Type::void(),
     "float" => Type::float(),
 }
@@ -136,15 +138,13 @@ pub FuncFParam: FuncFParam = {
     <ty: BType> <ident: Ident> <indices: ("[" Exp? "]")+> => {
         let mut ty = ty;
         for (_, index, _) in indices.into_iter().skip(1) {
-          ty = Type::ptr(ty);
-          // ty = Type::array(ty, 0);
-          // if let Some(index) = index {
-          //   ty = Type::array(ty, index as usize);
-          // } else {
-          //   ty = Type::array(ty, 0);
-          // }
+          if let Some(index) = index {
+            ty = Type::array(ty, index);
+          } else {
+            panic!("Array must have size");
+          }
         }
-        let ty = Type::ptr(ty);
+        ty = Type::ptr(ty);
         FuncFParam { ty, ident }
     },
 }
@@ -186,21 +186,7 @@ Int: i32 = {
 
 //iakkefloattest,original is above
 Float: f64 = {
-  r"\.[0-9]+" => {
-    let string = <>;
-    string.parse::<f64>().unwrap_or_else(|err| {
-        println!("{}", err);
-        panic!("Failed to parse f64: {}", err);
-    })
-  },
-  r"[0-9]+\." => {
-    let string = <>;
-    string.parse::<f64>().unwrap_or_else(|err| {
-        println!("{}", err);
-        panic!("Failed to parse f64: {}", err);
-    })
-  },
-  r"[0-9]+\.[0-9]+" => {
+  r"[0-9]*\.[0-9]*" => {
     let string = <>;
     string.parse::<f64>().unwrap_or_else(|err| {
         println!("{}", err);
@@ -214,16 +200,13 @@ Float: f64 = {
         panic!("Failed to parse f64: {}", err);
     })
   },
-  // r"0[xX][0-9a-fA-F]+(\.[0-9a-fA-F]+)?p[+-]?[0-9]+" => {
-  //   let string = <>;
-  //   // TODO: 浮点数的16进制表示解析
-  //   // let options = ParseFloatOptions::builder().build().unwrap();
-  //   // parse_with_options::<f64, _>(&string, &options).unwrap_or_else(|err| {
-  //   //   println!("{}", err);
-  //   //   panic!("Failed to parse f64: {}", err);
-  //   // })
-  //   0.0
-  // },
+  r"(\.[0-9]*)([eE][+-]?[0-9]+)" => {
+    let string = <>;
+    string.parse::<f64>().unwrap_or_else(|err| {
+        println!("{}", err);
+        panic!("Failed to parse f64: {}", err);
+    })
+  },
   r"0[xX]([0-9a-fA-F]*)(?:\.([0-9a-fA-F]+))?[pP]([+-]?[0-9]+)" => {
     let string = <>;
     let re = regex::Regex::new(r"^\s*0[xX]([0-9a-fA-F]*)(?:\.([0-9a-fA-F]+))?[pP]([+-]?[0-9]+)\s*$")
@@ -273,14 +256,15 @@ Float: f64 = {
         println!("Failed to match hexadecimal float: '{}'", string);
         panic!("Failed to parse hexadecimal float.");
     }
-},
-  "inf" => {
-    let string = <>;
-    string.parse::<f64>().unwrap_or_else(|err| {
-        println!("{}", err);
-        panic!("Failed to parse f64: {}", err);
-    })
   },
+
+  // "inf" => {
+  //   let string = <>;
+  //   string.parse::<f64>().unwrap_or_else(|err| {
+  //       println!("{}", err);
+  //       panic!("Failed to parse f64: {}", err);
+  //   })
+  // }, // 该项暂时不可用
   "infinity" => {
     let string = <>;
     string.parse::<f64>().unwrap_or_else(|err| {

@@ -1,5 +1,7 @@
 //! IR generation from AST.
 
+use std::array;
+
 use super::ast::{
     self,
     BinaryOp,
@@ -131,7 +133,17 @@ impl IrGenContext {
             Tk::Float => Ty::f32(&mut self.ctx), //iakkefloattest,origin:f32
             Tk::Array(ty, size) => {
                 let ir_ty = self.gen_type(ty);
-                Ty::array(&mut self.ctx, ir_ty, size.clone())
+                Ty::array(
+                    &mut self.ctx,
+                    ir_ty,
+                    if let ExprKind::Const(Cv::Int(size)) = &size.kind {
+                        *size as usize
+                    } else {
+                        println!("symbol table: {:#?}", self.symtable);
+                        println!("size: {:#?}", size);
+                        unreachable!("invalid array size")
+                    },
+                )
             }
             Tk::Func(params, ret) => {
                 let mut ir_params = Vec::new();
@@ -297,55 +309,95 @@ impl IrGenContext {
                 if let ExprKind::LVal(LVal { ident }) = &ident.as_ref().kind {
                     let entry = self.symtable.lookup(ident).unwrap();
                     let ir_value = entry.ir_value.unwrap();
+                    let mut slot = if let IrGenResult::Global(slot) = ir_value {
+                        // If the value is a global, get the global reference
+                        let name = slot.name(&self.ctx).to_string();
+                        let value_ty = slot.ty(&self.ctx);
+                        Value::global_ref(&mut self.ctx, name, value_ty)
+                    } else if let IrGenResult::Value(slot) = ir_value {
+                        // If the value is a local, get the value
+                        slot
+                    } else {
+                        unreachable!()
+                    };
                     match entry.ty.kind() {
                         Tk::Array(_, _) => {
-                            let (ir_ty, ir_base_ty) = self.gen_array_base_type(&entry.ty.clone());
+                            if get_depth(&entry.ty.clone()) == pos.len() {
+                                // 一遍读出数组
+                                let (ir_ty, ir_base_ty) =
+                                    self.gen_array_base_type(&entry.ty.clone());
 
-                            let slot = if let IrGenResult::Global(slot) = ir_value {
-                                // If the value is a global, get the global reference
-                                let name = slot.name(&self.ctx).to_string();
-                                let value_ty = slot.ty(&self.ctx);
-                                Value::global_ref(&mut self.ctx, name, value_ty)
-                            } else if let IrGenResult::Value(slot) = ir_value {
-                                // If the value is a local, get the value
-                                slot
+                                let mut pos_values =
+                                    vec![self.gen_local_expr(&Expr::const_(Cv::Int(0))).unwrap()];
+                                for p in pos.iter() {
+                                    pos_values.push(self.gen_local_expr(p).unwrap());
+                                }
+                                let ptr_dst =
+                                    Inst::getelementptr(&mut self.ctx, ir_ty, slot, pos_values);
+                                curr_block.push_back(&mut self.ctx, ptr_dst).unwrap();
+                                let slot = ptr_dst.result(&self.ctx).unwrap();
+
+                                if slot.is_param(&self.ctx) {
+                                    // If the value is a parameter, just return the value
+                                    Some(slot)
+                                } else {
+                                    // Otherwise, we need to load the value, generate a load instruction
+                                    let load = Inst::load(&mut self.ctx, slot, ir_base_ty);
+                                    curr_block.push_back(&mut self.ctx, load).unwrap();
+                                    Some(load.result(&self.ctx).unwrap())
+                                }
                             } else {
-                                unreachable!()
-                            };
+                                // 获取数组的更高级结构，如二维数组的一行
+                                let all_ty = get_all_inner_ty(
+                                    &entry.ty.clone(),
+                                    get_depth(&entry.ty.clone()),
+                                );
+                                let all_ty: Vec<Ty> =
+                                    all_ty.into_iter().map(|ty| self.gen_type(&ty)).collect();
+                                let mut pos_values: Vec<Value> = pos
+                                    .into_iter()
+                                    .map(|p| self.gen_local_expr(p).unwrap())
+                                    .collect();
+                                // pos_values.insert(0, Value::i32(&mut self.ctx, 0));
 
-                            let mut pos_values =
-                                vec![self.gen_local_expr(&Expr::const_(Cv::Int(0))).unwrap()];
-                            for p in pos.iter() {
-                                pos_values.push(self.gen_local_expr(p).unwrap());
-                            }
-                            let ptr_dst =
-                                Inst::getelementptr(&mut self.ctx, ir_ty, slot, pos_values);
-                            curr_block.push_back(&mut self.ctx, ptr_dst).unwrap();
-                            let slot = ptr_dst.result(&self.ctx).unwrap();
+                                for i in 0..pos.len() {
+                                    let bound_ty = all_ty[i].clone();
+                                    let pos_values = vec![
+                                        self.gen_local_expr(&Expr::const_(Cv::Int(0))).unwrap(),
+                                        pos_values[i],
+                                    ];
+                                    let ptr_dst = Inst::getelementptr(
+                                        &mut self.ctx,
+                                        bound_ty,
+                                        slot,
+                                        pos_values,
+                                    );
+                                    curr_block.push_back(&mut self.ctx, ptr_dst).unwrap();
+                                    slot = ptr_dst.result(&self.ctx).unwrap();
+                                }
 
-                            if slot.is_param(&self.ctx) {
-                                // If the value is a parameter, just return the value
+                                // XXX: 可能会有用，现在不需要
+                                // let mut ptr_ty = all_ty[all_ty.len() - 1].clone();
+                                // for _ in 0..all_ty.len() - pos.len() {
+                                //     ptr_ty = Ty::ptr(&mut self.ctx, Some(ptr_ty));
+                                // }
+
+                                // let bitcast = Inst::bitcast(&mut self.ctx, slot, ptr_ty);
+                                // curr_block.push_back(&mut self.ctx, bitcast).unwrap();
+                                // slot = bitcast.result(&self.ctx).unwrap();
+
+                                // let load = Inst::load(
+                                //     &mut self.ctx,
+                                //     slot,
+                                //     all_ty[pos_values.len() - 1].clone(),
+                                // );
+                                // curr_block.push_back(&mut self.ctx, load).unwrap();
+                                // slot = load.result(&self.ctx).unwrap();
+
                                 Some(slot)
-                            } else {
-                                // Otherwise, we need to load the value, generate a load instruction
-                                let load = Inst::load(&mut self.ctx, slot, ir_base_ty);
-                                curr_block.push_back(&mut self.ctx, load).unwrap();
-                                Some(load.result(&self.ctx).unwrap())
                             }
                         }
                         Tk::Ptr(_) => {
-                            let mut slot = if let IrGenResult::Global(slot) = ir_value {
-                                // If the value is a global, get the global reference
-                                let name = slot.name(&self.ctx).to_string();
-                                let value_ty = slot.ty(&self.ctx);
-                                Value::global_ref(&mut self.ctx, name, value_ty)
-                            } else if let IrGenResult::Value(slot) = ir_value {
-                                // If the value is a local, get the value
-                                slot
-                            } else {
-                                unreachable!()
-                            };
-
                             let all_ty = get_all_inner_ty(&entry.ty.clone(), pos.len());
                             let all_ty: Vec<Ty> =
                                 all_ty.into_iter().map(|ty| self.gen_type(&ty)).collect();
@@ -354,26 +406,22 @@ impl IrGenContext {
                                 .map(|p| self.gen_local_expr(p).unwrap())
                                 .collect();
 
-                            // let value_ty = all_ty[0].clone();
-
                             for i in 0..pos.len() {
                                 let bound_ty = all_ty[i + 1].clone();
                                 let pos_values = vec![pos_values[i]];
-                                let ptr_dst =
-                                    Inst::getelementptr(&mut self.ctx, bound_ty, slot, pos_values);
+                                let ptr_dst = Inst::getelementptr_on_ptr(
+                                    &mut self.ctx,
+                                    bound_ty,
+                                    slot,
+                                    pos_values,
+                                );
                                 curr_block.push_back(&mut self.ctx, ptr_dst).unwrap();
-                                let ptr_slot = ptr_dst.result(&self.ctx).unwrap();
-
-                                // if slot.is_param(&self.ctx) {
-                                //     // If the value is a parameter, just return the value
-                                //     slot = ptr_slot
-                                // } else {
-                                // Otherwise, we need to load the value, generate a load instruction
-                                let load = Inst::load(&mut self.ctx, ptr_slot, bound_ty);
-                                curr_block.push_back(&mut self.ctx, load).unwrap();
-                                slot = load.result(&self.ctx).unwrap()
-                                // }
+                                slot = ptr_dst.result(&self.ctx).unwrap();
                             }
+                            let bound_ty = all_ty[pos.len()].clone();
+                            let load = Inst::load(&mut self.ctx, slot, bound_ty);
+                            curr_block.push_back(&mut self.ctx, load).unwrap();
+                            slot = load.result(&self.ctx).unwrap();
 
                             Some(slot)
                         }
@@ -469,7 +517,11 @@ impl IrGenContext {
                 // HACK: Implement function call generation
                 let entry = self.symtable.lookup(ident).unwrap();
                 if expr.ty.as_ref().is_none() {
+                    println!("--------------");
                     println!("funccall ident: {}", ident);
+                    for arg in args {
+                        println!("arg: {:?}", arg);
+                    }
                 }
                 let ret_ty = expr.ty.as_ref().unwrap();
 
@@ -495,6 +547,26 @@ impl IrGenContext {
                 curr_block.push_back(&mut self.ctx, inst).unwrap();
 
                 inst.result(&self.ctx)
+            }
+        }
+    }
+
+    fn check_zero_array(&mut self, arr: &ArrayVal) -> bool {
+        match arr {
+            ArrayVal::Val(val) => match val.kind {
+                ExprKind::Const(Cv::Bool(false)) => true,
+                ExprKind::Const(Cv::Char('\0')) => true,
+                ExprKind::Const(Cv::Int(0)) => true,
+                ExprKind::Const(Cv::Float(0.0)) => true,
+                _ => false,
+            },
+            ArrayVal::Vals(arr) => {
+                for elem in arr {
+                    if !self.check_zero_array(elem) {
+                        return false;
+                    }
+                }
+                true
             }
         }
     }
@@ -588,6 +660,11 @@ impl IrGenContext {
                 for elem in arr {
                     elems.push(self.dfs(ty, elem));
                 }
+                if elems.len() == 0 {
+                    // 一般碰不到这种情况，先忽略
+                    let arr = Value::array(&mut self.ctx, ty, vec![]);
+                    return (ty, arr);
+                }
                 let arr = Value::array(
                     &mut self.ctx,
                     elems[0].0.clone(),
@@ -636,6 +713,19 @@ impl IrGenContext {
                 ),
                 ("starttime", Type::func(vec![], Type::void())),
                 ("stoptime", Type::func(vec![], Type::void())),
+                // memset函数
+                (
+                    "llvm.memset.p0i8.i32",
+                    Type::func(
+                        vec![
+                            Type::ptr(Type::char()),
+                            Type::char(),
+                            Type::int(),
+                            Type::bool(),
+                        ],
+                        Type::void(),
+                    ),
+                ),
             ]
         };
 
@@ -659,22 +749,54 @@ impl IrGenContext {
         }
     }
 
+    fn gen_local_cond_block(&mut self, cond: Expr, then_block: &Block, else_block: &Block) {
+        let curr_block = self.curr_block.unwrap();
+        let curr_func = self.curr_func.unwrap();
+        match cond.kind {
+            ExprKind::Binary(op, lhs, rhs) => match op {
+                BinaryOp::And => {
+                    let next_block = Block::new(&mut self.ctx);
+                    self.gen_local_cond_block(*lhs, &next_block, else_block);
+
+                    curr_func.push_back(&mut self.ctx, next_block).unwrap();
+                    self.curr_block = Some(next_block);
+
+                    self.gen_local_cond_block(*rhs, then_block, else_block);
+                    return;
+                }
+                BinaryOp::Or => {
+                    let next_block = Block::new(&mut self.ctx);
+                    self.gen_local_cond_block(*lhs, then_block, &next_block);
+
+                    curr_func.push_back(&mut self.ctx, next_block).unwrap();
+                    self.curr_block = Some(next_block);
+
+                    self.gen_local_cond_block(*rhs, then_block, else_block);
+                    return;
+                }
+                _ => {
+                    let cond = Expr::binary(op, *lhs, *rhs);
+                    let cond = self.gen_local_expr(&cond).unwrap();
+                    let cond_branch =
+                        Inst::cond_br(&mut self.ctx, cond, then_block.clone(), else_block.clone());
+                    curr_block.push_back(&mut self.ctx, cond_branch).unwrap();
+                }
+            },
+            _ => {
+                let cond = self.gen_local_expr(&cond).unwrap();
+                let cond_branch =
+                    Inst::cond_br(&mut self.ctx, cond, then_block.clone(), else_block.clone());
+                curr_block.push_back(&mut self.ctx, cond_branch).unwrap();
+            }
+        }
+    }
+
     fn try_coercion(&mut self, expr: &Expr, expect_ty: &Tk, origin_ty: &Tk) -> Option<Value> {
-        let orgin_expect_ty = expect_ty.clone();
         // let offset_vec: Vec<usize> = vec![];
-        let mut expect_ty = expect_ty.clone();
-        let mut origin_ty = origin_ty.clone();
-        // while let (Tk::Ptr(t1), Tk::Array(t2, size)) = (expect_ty, origin_ty) {
-        //     if let Tk::Ptr(t1_inner) = t1.kind() {
-        //         expect_ty = t1_inner.kind().clone();
-        //         origin_ty = t2.kind().clone();
-        //         offset_vec.push(size);
-        //     } else {
-        //         // 此时Ptr已经到最内层，进行强制转换
-        //         let val = self.gen_local_expr(expr).unwrap();
-        //     }
-        // }
-        if let (Tk::Ptr(t1), Tk::Array(t2, size)) = (expect_ty.clone(), origin_ty.clone()) {
+        let expect_ty = expect_ty.clone();
+        let origin_ty = origin_ty.clone();
+
+        if let (Tk::Ptr(t1), Tk::Array(_, _)) = (expect_ty.clone(), origin_ty.clone()) {
             let val = self.gen_local_expr(expr).unwrap();
             let ty = self.gen_type(&Type::ptr(t1.clone()));
             let inst = Inst::bitcast(&mut self.ctx, val, ty);
@@ -1007,10 +1129,8 @@ impl IrGen for Decl {
                                 .try_fold(&irgen.symtable)
                                 .expect("global def expected to have constant initializer");
 
-                            // println!("init:-----------\n{:#?}", init);
                             let array_ty = make_array(ty.clone(), 0, &arr_ident.size).unwrap();
                             let ir_ty = irgen.gen_type(&array_ty);
-                            // TODO: alloca 需要换成 constant，返回的变量应该是@var_name
                             let stack_slot = Inst::alloca(&mut irgen.ctx, ir_ty);
 
                             entry_block.push_front(&mut irgen.ctx, stack_slot).unwrap();
@@ -1025,6 +1145,13 @@ impl IrGen for Decl {
                                 },
                             );
 
+                            let mut init = init;
+
+                            let is_zero = irgen.check_zero_array(init);
+                            let empty_array_val = ArrayVal::Vals(vec![]);
+                            if is_zero {
+                                init = &empty_array_val;
+                            }
                             let (ty, new_init) = irgen.gen_local_array(ty, init);
                             let (ty, new_init) = (ty.unwrap(), new_init.unwrap());
                             // println!("{}", init.display(&irgen.ctx, true));
@@ -1032,6 +1159,11 @@ impl IrGen for Decl {
                             let store = Inst::store(&mut irgen.ctx, new_init, slot);
                             curr_block.push_back(&mut irgen.ctx, store).unwrap();
 
+                            if !is_zero {
+                                // 补充未完成的初始化部分，这部分是运行期间值
+                                let indices = vec![Value::i32(&mut irgen.ctx, 0)];
+                                irgen.gen_local_array_store(&ty, init, &slot, indices);
+                            }
                             // 补充未完成的初始化部分，这部分是运行期间值
                             let indices = vec![Value::i32(&mut irgen.ctx, 0)];
                             irgen.gen_local_array_store(&ty, init, &slot, indices);
@@ -1075,7 +1207,7 @@ impl IrGen for Decl {
                             irgen.symtable.insert(
                                 arr_ident.ident.clone(),
                                 SymbolEntry {
-                                    ty: array_ty,
+                                    ty: array_ty.clone(),
                                     comptime: None,
                                     ir_value: Some(IrGenResult::Value(
                                         stack_slot.result(&irgen.ctx).unwrap(),
@@ -1083,16 +1215,61 @@ impl IrGen for Decl {
                                 },
                             );
 
-                            let (ty, new_init) = irgen.gen_local_array(ty, init);
-                            let (ty, new_init) = (ty.unwrap(), new_init.unwrap());
-                            // println!("{}", init.display(&irgen.ctx, true));
-                            let slot = stack_slot.result(&irgen.ctx).unwrap();
-                            let store = Inst::store(&mut irgen.ctx, new_init, slot);
-                            curr_block.push_back(&mut irgen.ctx, store).unwrap();
+                            let (_, base_ty) = get_inner_ty(&array_ty, arr_ident.size.len());
+                            let is_zero = irgen.check_zero_array(init);
+                            if is_zero {
+                                let array_ptr = stack_slot.result(&irgen.ctx).unwrap();
+                                let cast = {
+                                    let i8_ty = Ty::i8(&mut irgen.ctx);
+                                    let to_ty = Ty::ptr(&mut irgen.ctx, Some(i8_ty));
+                                    Inst::bitcast(&mut irgen.ctx, array_ptr, to_ty)
+                                };
+                                curr_block.push_back(&mut irgen.ctx, cast).unwrap();
 
-                            // 补充未完成的初始化部分，这部分是运行期间值
-                            let indices = vec![Value::i32(&mut irgen.ctx, 0)];
-                            irgen.gen_local_array_store(&ty, init, &slot, indices);
+                                let args = {
+                                    let arg_1 = cast.result(&irgen.ctx).unwrap();
+                                    let arg_2 = Value::i8(&mut irgen.ctx, 0);
+                                    let arg_3 = Value::i32(
+                                        &mut irgen.ctx,
+                                        arr_ident
+                                            .size
+                                            .iter()
+                                            .map(|expr| {
+                                                if let ExprKind::Const(Cv::Int(n)) = expr.kind {
+                                                    n as i32
+                                                } else {
+                                                    1
+                                                }
+                                            })
+                                            .product::<i32>()
+                                            * base_ty.bytewidth() as i32,
+                                    );
+                                    let arg_4 = Value::i1(&mut irgen.ctx, false);
+                                    vec![arg_1, arg_2, arg_3, arg_4]
+                                };
+
+                                let call = {
+                                    let void_ty = Ty::void(&mut irgen.ctx);
+                                    let memset = Value::global_ref(
+                                        &mut irgen.ctx,
+                                        "llvm.memset.p0i8.i32".to_string(),
+                                        void_ty,
+                                    );
+                                    Inst::call(&mut irgen.ctx, memset, args, void_ty)
+                                };
+                                curr_block.push_back(&mut irgen.ctx, call).unwrap();
+                            } else {
+                                let (ty, new_init) = irgen.gen_local_array(ty, init);
+                                let (ty, new_init) = (ty.unwrap(), new_init.unwrap());
+                                // println!("{}", init.display(&irgen.ctx, true));
+                                let slot = stack_slot.result(&irgen.ctx).unwrap();
+                                let store = Inst::store(&mut irgen.ctx, new_init, slot);
+                                curr_block.push_back(&mut irgen.ctx, store).unwrap();
+
+                                // 补充未完成的初始化部分，这部分是运行期间值
+                                let indices = vec![Value::i32(&mut irgen.ctx, 0)];
+                                irgen.gen_local_array_store(&ty, init, &slot, indices);
+                            }
                         }
                     }
                 }
@@ -1182,15 +1359,7 @@ impl IrGen for Stmt {
                             let ptr_dst =
                                 Inst::getelementptr(&mut irgen.ctx, bound_ty, slot, pos_values);
                             curr_block.push_back(&mut irgen.ctx, ptr_dst).unwrap();
-                            let ptr_slot = ptr_dst.result(&irgen.ctx).unwrap();
-
-                            if i == pos.len() - 1 {
-                                slot = ptr_slot;
-                            } else {
-                                let load = Inst::load(&mut irgen.ctx, ptr_slot, bound_ty);
-                                curr_block.push_back(&mut irgen.ctx, load).unwrap();
-                                slot = load.result(&irgen.ctx).unwrap()
-                            }
+                            slot = ptr_dst.result(&irgen.ctx).unwrap();
                         }
 
                         let store_dst = slot;
@@ -1219,12 +1388,9 @@ impl IrGen for Stmt {
                         None => exit_block.clone(),
                     };
 
-                    let curr_block = irgen.curr_block.unwrap();
                     let curr_func = irgen.curr_func.unwrap();
 
-                    let cond = irgen.gen_local_expr(expr).unwrap();
-                    let cond_branch = Inst::cond_br(&mut irgen.ctx, cond, then_block, else_block);
-                    curr_block.push_back(&mut irgen.ctx, cond_branch).unwrap();
+                    irgen.gen_local_cond_block(expr.clone(), &then_block, &else_block);
 
                     curr_func.push_back(&mut irgen.ctx, then_block).unwrap();
                     irgen.curr_block = Some(then_block);
@@ -1280,9 +1446,7 @@ impl IrGen for Stmt {
                     curr_func.push_back(&mut irgen.ctx, cond_block).unwrap();
                     irgen.curr_block = Some(cond_block);
 
-                    let cond = irgen.gen_local_expr(expr).unwrap();
-                    let br = Inst::cond_br(&mut irgen.ctx, cond, body_block, exit_block);
-                    cond_block.push_back(&mut irgen.ctx, br).unwrap();
+                    irgen.gen_local_cond_block(expr.clone(), &body_block, &exit_block);
 
                     irgen.curr_block = Some(body_block);
                     stmt.irgen(irgen);
@@ -1364,7 +1528,7 @@ pub fn make_array(ty: Type, index: usize, size: &Vec<Expr>) -> Option<Type> {
     if let ExprKind::Const(Cv::Int(sz)) = &size[index].kind {
         ty = Type::make(Tk::Array(
             make_array(ty.clone(), index + 1, size).unwrap(),
-            *sz as usize,
+            Expr::const_(Cv::Int(*sz)),
         ));
         return Some(ty);
     }
@@ -1404,4 +1568,21 @@ pub fn get_all_inner_ty(ty: &Type, depth: usize) -> Vec<Type> {
         }
     }
     res
+}
+
+pub fn get_depth(ty: &Type) -> usize {
+    let mut ty = ty.clone();
+    let mut depth = 0;
+    loop {
+        match ty.kind() {
+            Tk::Array(inner_ty, _) | Tk::Ptr(inner_ty) => {
+                ty = inner_ty.clone();
+                depth += 1;
+            }
+            _ => {
+                break;
+            }
+        }
+    }
+    depth
 }

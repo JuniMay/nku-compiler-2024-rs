@@ -6,6 +6,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::{fmt, hash};
 
+use super::{ComptimeVal, Expr, ExprKind};
+
 /// The type in AST
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeKind {
@@ -21,7 +23,7 @@ pub enum TypeKind {
     /// The float type.
     Float,
     /// The array type, with the element type and the size.
-    Array(Type, usize),
+    Array(Type, Expr),
     /// The function type, with params and return type.
     Func(Vec<Type>, Type),
     /// The pointer type.
@@ -135,7 +137,7 @@ impl Type {
     }
 
     /// Create a new array type.
-    pub fn array(ty: Type, size: usize) -> Self {
+    pub fn array(ty: Type, size: Expr) -> Self {
         Self::make(TypeKind::Array(ty, size))
     }
 
@@ -220,7 +222,13 @@ impl Type {
             TypeKind::Char => 1,
             TypeKind::Int => 4,
             TypeKind::Float => 4, //iakke?
-            TypeKind::Array(ty, size) => ty.bytewidth() * size,
+            TypeKind::Array(ty, size) => ty.bytewidth() * {
+                if let ExprKind::Const(ComptimeVal::Int(n)) = size.kind {
+                    n as usize
+                } else {
+                    unreachable!()
+                }
+            },
             TypeKind::Func(_, _) | TypeKind::Ptr(_) => unreachable!(),
             TypeKind::Args => 0,
         }

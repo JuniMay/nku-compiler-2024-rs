@@ -416,6 +416,22 @@ impl Inst {
         inst
     }
 
+    /// Create a new `getelementptr` instruction on ptr type.
+    pub fn getelementptr_on_ptr(
+        ctx: &mut Context,
+        bound_ty: Ty,
+        ptr: Value,
+        indices: Vec<Value>,
+    ) -> Self {
+        let ptr_ty = Ty::ptr(ctx, Some(bound_ty));
+        let inst = Self::new(ctx, InstKind::GetElementPtr { bound_ty }, ptr_ty);
+        inst.add_operand(ctx, ptr);
+        for idx in indices {
+            inst.add_operand(ctx, idx);
+        }
+        inst
+    }
+
     /// Create a new `add` instruction.
     pub fn add(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
         let inst = match ty.try_deref(ctx).unwrap() {
@@ -684,11 +700,15 @@ impl Inst {
 
     pub fn lt(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
         let inst = match ty.try_deref(ctx).unwrap() {
-            TyData::Float32 => Self::new(ctx, InstKind::FloatBinary {
-                op: FloatBinaryOp::FCmp {
-                    cond: FloatCmpCond::Olt,
+            TyData::Float32 => Self::new(
+                ctx,
+                InstKind::FloatBinary {
+                    op: FloatBinaryOp::FCmp {
+                        cond: FloatCmpCond::Olt,
+                    },
                 },
-            }, ty),
+                ty,
+            ),
             _ => Self::new(
                 ctx,
                 InstKind::IntBinary {
@@ -697,7 +717,7 @@ impl Inst {
                     },
                 },
                 ty,
-            )
+            ),
         };
         let ret_ty = Ty::i1(ctx);
         let result = Value::new_inst_result(ctx, inst, ret_ty);
@@ -711,11 +731,15 @@ impl Inst {
 
     pub fn le(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
         let inst = match ty.try_deref(ctx).unwrap() {
-            TyData::Float32 => Self::new(ctx, InstKind::FloatBinary {
-                op: FloatBinaryOp::FCmp {
-                    cond: FloatCmpCond::Ole,
+            TyData::Float32 => Self::new(
+                ctx,
+                InstKind::FloatBinary {
+                    op: FloatBinaryOp::FCmp {
+                        cond: FloatCmpCond::Ole,
+                    },
                 },
-            }, ty),
+                ty,
+            ),
             _ => Self::new(
                 ctx,
                 InstKind::IntBinary {
@@ -724,7 +748,7 @@ impl Inst {
                     },
                 },
                 ty,
-            )
+            ),
         };
         let ret_ty = Ty::i1(ctx);
         let result = Value::new_inst_result(ctx, inst, ret_ty);
@@ -738,11 +762,15 @@ impl Inst {
 
     pub fn gt(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
         let inst = match ty.try_deref(ctx).unwrap() {
-            TyData::Float32 => Self::new(ctx, InstKind::FloatBinary {
-                op: FloatBinaryOp::FCmp {
-                    cond: FloatCmpCond::Olt,
+            TyData::Float32 => Self::new(
+                ctx,
+                InstKind::FloatBinary {
+                    op: FloatBinaryOp::FCmp {
+                        cond: FloatCmpCond::Olt,
+                    },
                 },
-            }, ty),
+                ty,
+            ),
             _ => Self::new(
                 ctx,
                 InstKind::IntBinary {
@@ -751,7 +779,7 @@ impl Inst {
                     },
                 },
                 ty,
-            )
+            ),
         };
         let ret_ty = Ty::i1(ctx);
         let result = Value::new_inst_result(ctx, inst, ret_ty);
@@ -765,11 +793,15 @@ impl Inst {
 
     pub fn ge(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
         let inst = match ty.try_deref(ctx).unwrap() {
-            TyData::Float32 => Self::new(ctx, InstKind::FloatBinary {
-                op: FloatBinaryOp::FCmp {
-                    cond: FloatCmpCond::Ole,
+            TyData::Float32 => Self::new(
+                ctx,
+                InstKind::FloatBinary {
+                    op: FloatBinaryOp::FCmp {
+                        cond: FloatCmpCond::Ole,
+                    },
                 },
-            }, ty),
+                ty,
+            ),
             _ => Self::new(
                 ctx,
                 InstKind::IntBinary {
@@ -778,7 +810,7 @@ impl Inst {
                     },
                 },
                 ty,
-            )
+            ),
         };
         let ret_ty = Ty::i1(ctx);
         let result = Value::new_inst_result(ctx, inst, ret_ty);
@@ -792,11 +824,15 @@ impl Inst {
 
     pub fn eq(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
         let inst = match ty.try_deref(ctx).unwrap() {
-            TyData::Float32 => Self::new(ctx, InstKind::FloatBinary {
-                op: FloatBinaryOp::FCmp {
-                    cond: FloatCmpCond::Oeq,
+            TyData::Float32 => Self::new(
+                ctx,
+                InstKind::FloatBinary {
+                    op: FloatBinaryOp::FCmp {
+                        cond: FloatCmpCond::Oeq,
+                    },
                 },
-            }, ty),
+                ty,
+            ),
             _ => Self::new(
                 ctx,
                 InstKind::IntBinary {
@@ -805,7 +841,7 @@ impl Inst {
                     },
                 },
                 ty,
-            )
+            ),
         };
         let ret_ty = Ty::i1(ctx);
         let result = Value::new_inst_result(ctx, inst, ret_ty);
@@ -819,11 +855,15 @@ impl Inst {
 
     pub fn ne(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
         let inst = match ty.try_deref(ctx).unwrap() {
-            TyData::Float32 => Self::new(ctx, InstKind::FloatBinary {
-                op: FloatBinaryOp::FCmp {
-                    cond: FloatCmpCond::One,
+            TyData::Float32 => Self::new(
+                ctx,
+                InstKind::FloatBinary {
+                    op: FloatBinaryOp::FCmp {
+                        cond: FloatCmpCond::One,
+                    },
                 },
-            }, ty),
+                ty,
+            ),
             _ => Self::new(
                 ctx,
                 InstKind::IntBinary {
@@ -832,7 +872,7 @@ impl Inst {
                     },
                 },
                 ty,
-            )
+            ),
         };
         let ret_ty = Ty::i1(ctx);
         let result = Value::new_inst_result(ctx, inst, ret_ty);
@@ -1131,7 +1171,7 @@ impl fmt::Display for DisplayInst<'_> {
             InstKind::GetElementPtr { bound_ty } => {
                 write!(
                     f,
-                    "getelementptr {}, {}",
+                    "getelementptr inbounds {}, {}",
                     bound_ty.display(self.ctx),
                     self.inst.operand(self.ctx, 0).display(self.ctx, true)
                 )?;
