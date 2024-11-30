@@ -5,7 +5,12 @@ use crate::infra::{
     storage::{Arena, ArenaPtr, GenericPtr},
 };
 
-use super::{block::MBlock, context::MContext, imm::Imm12, operand::Reg};
+use super::{
+    block::MBlock,
+    context::MContext,
+    imm::Imm12,
+    operand::{MemLoc, Reg},
+};
 
 pub struct MInstData {
     kind: MInstKind,
@@ -17,20 +22,41 @@ pub struct MInstData {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MInst(GenericPtr<MInstData>);
 
+/// Kinds of machine instructions.
+///
+/// The instructions are classified with its format. This classification is
+/// derived from cranelift.
 pub enum MInstKind {
+    /// ALU instructions with two registers (rd and rs) and an immediate.
     AluRRI {
         op: AluOpRRI,
         rd: Reg,
         rs: Reg,
         imm: Imm12,
     },
+    /// ALU instructions with three registers (rd, and two rs-s).
     AluRRR {
         op: AluOpRRR,
         rd: Reg,
         rs1: Reg,
         rs2: Reg,
     },
+    /// Load instructions.
+    Load { op: LoadOp, rd: Reg, loc: MemLoc },
     // TODO: add more instructions as you need.
+}
+
+#[derive(Copy, Clone)]
+pub enum LoadOp {
+    Lb,
+    Lh,
+    Lw,
+    Ld,
+    Lbu,
+    Lhu,
+    Lwu,
+    Flw,
+    Fld,
 }
 
 #[derive(Copy, Clone)]

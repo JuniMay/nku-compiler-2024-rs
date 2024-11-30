@@ -2,4 +2,5 @@
 /output
 /.vscode
 /.idea
+.venv/
 .DS_Store
