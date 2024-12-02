@@ -10,7 +10,7 @@ use super::{
     block::MBlock,
     context::MContext,
     func::{MFunc, MLabel},
-    operand::MOperand,
+    operand::{MOperand, MOperandKind, MemLoc},
 };
 
 pub struct CodegenContext<'s> {
@@ -92,6 +92,7 @@ impl<'s> CodegenContext<'s> {
 
             for func in self.ctx.funcs() {
                 self.curr_func = Some(self.funcs[func.name(self.ctx)]);
+                let mfunc = self.curr_func.unwrap();
 
                 // TODO: Incoming parameters can be handled here.
 
@@ -99,12 +100,57 @@ impl<'s> CodegenContext<'s> {
 
                 for block in func.iter(self.ctx) {
                     self.curr_block = Some(self.blocks[&block]);
+                    let mblock = self.curr_block.unwrap();
 
                     for inst in block.iter(self.ctx) {
                         // TODO: Translate the instruction.
+                        match inst.kind(self.ctx) {
+                            ir::InstKind::Alloca { ty } => {
+                                let size = (ty.bitwidth(self.ctx) + 7) / 8;
+                                mfunc.add_storage_stack_size(&mut self.mctx, size as u64);
+                                // because the stack grows downward, we need to use negative offset
+                                let offset = -(mfunc.storage_stack_size(&self.mctx) as i64);
+                                let mem_loc = MemLoc::Slot { offset };
+                                let ty = inst.result(self.ctx).unwrap().ty(self.ctx);
+                                let mopd = MOperand {
+                                    ty,
+                                    kind: MOperandKind::Mem(mem_loc),
+                                };
+                                self.lowered.insert(inst.result(self.ctx).unwrap(), mopd);
+                            }
+                            ir::InstKind::Store => {
+                                todo!()
+                            }
+                            ir::InstKind::Load => {
+                                todo!()
+                            }
+                            ir::InstKind::IntBinary { op } => {
+                                todo!()
+                            }
+                            ir::InstKind::Br => {
+                                todo!()
+                            }
+                            &ir::InstKind::Ret => {
+                                todo!()
+                            }
+                            _ => todo!("MORE!!!!"),
+                        }
                     }
                 }
             }
         }
+    }
+
+    pub fn regalloc(&mut self) {
+        // TODO: Register allocation.
+    }
+
+    pub fn after_regalloc(&mut self) {
+        // TODO: The stack frame is determined after register allocation, so
+        // we need to add instructions to adjust the stack frame.
+    }
+
+    pub fn emit(&mut self) {
+        // TODO: Emit the assembly code.
     }
 }

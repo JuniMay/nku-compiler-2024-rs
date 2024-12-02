@@ -22,9 +22,9 @@ pub enum MOperandKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MOperand {
     /// Tracker for the corresponding type in IR.
-    ty: ir::Ty,
+    pub(super) ty: ir::Ty,
     /// Kind of this operand.
-    kind: MOperandKind,
+    pub(super) kind: MOperandKind,
 }
 
 /// A memory location
