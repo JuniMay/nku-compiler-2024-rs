@@ -71,6 +71,8 @@ impl ComptimeVal {
         Self::Undef(ty)
     }
 
+    pub fn undef(ty: Type) -> Self { Self::Undef(ty) }
+
     /// Get the type of the comptime value.
     pub fn get_type(&self) -> Type {
         match self {
