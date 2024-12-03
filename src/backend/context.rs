@@ -2,11 +2,13 @@ use core::fmt;
 
 use super::block::MBlockData;
 use super::func::{MFuncData, MLabel};
-use super::inst::{DisplayMInst, MInst};
-use super::{RegKind, VReg};
+use super::inst::MInstData;
+use super::operand::{RegKind, VReg};
 use crate::infra::linked_list::LinkedListContainer;
 use crate::infra::storage::GenericArena;
 
+/// The raw data of the machine code.
+/// e.g. the data section, the bss section.
 pub enum RawData {
     /// Bytes of the data, declared in the data section.
     Bytes(Vec<u8>),
@@ -16,71 +18,67 @@ pub enum RawData {
     Bss(usize),
 }
 
-pub struct MContext<I>
-where
-    I: MInst,
-{
-    pub(super) insts: GenericArena<I::Data>,
-    pub(super) blocks: GenericArena<MBlockData<I>>,
-    pub(super) funcs: GenericArena<MFuncData<I>>,
+/// The context of the machine code.
+#[derive(Default)]
+pub struct MContext {
+    /// The arena of the instructions.
+    pub(super) insts: GenericArena<MInstData>,
 
+    /// The arena of the blocks.
+    pub(super) blocks: GenericArena<MBlockData>,
+
+    /// The arena of the functions.
+    pub(super) funcs: GenericArena<MFuncData>,
+
+    /// raw data sections
     raw_data: Vec<(MLabel, RawData)>,
 
+    /// The counter of the virtual registers.
     vreg_counter: u32,
 
+    /// The architecture string.
     arch: String,
 }
 
-impl<I> Default for MContext<I>
-where
-    I: MInst,
-{
-    fn default() -> Self {
-        Self {
-            insts: GenericArena::default(),
-            blocks: GenericArena::default(),
-            funcs: GenericArena::default(),
-            raw_data: Vec::new(),
-            vreg_counter: 0,
-            arch: String::new(),
-        }
+
+impl MContext {
+    /// Create a new machine code context.
+    pub fn new() -> Self {
+        Self::default()
     }
-}
 
-impl<I> MContext<I>
-where
-    I: MInst,
-{
-    pub fn new() -> Self { Self::default() }
-
+    /// Create a new virtual register.
     pub fn new_vreg(&mut self, kind: RegKind) -> VReg {
         let vreg = VReg::new(self.vreg_counter, kind);
         self.vreg_counter += 1;
         vreg
     }
 
+    /// Add a piece of raw data to the context.
     pub fn add_raw_data(&mut self, label: impl Into<MLabel>, data: RawData) {
         self.raw_data.push((label.into(), data));
     }
 
-    pub fn set_arch(&mut self, arch: impl Into<String>) { self.arch = arch.into(); }
+    /// Set the architecture string to `arch`.
+    pub fn set_arch(&mut self, arch: impl Into<String>) {
+        self.arch = arch.into();
+    }
 
-    pub fn arch(&self) -> &str { &self.arch }
+    /// Get the architecture string.
+    pub fn arch(&self) -> &str {
+        &self.arch
+    }
 
-    pub fn display(&self) -> DisplayMContext<I> { DisplayMContext { mctx: self } }
+    pub fn display(&self) -> DisplayMContext {
+        DisplayMContext { mctx: self }
+    }
 }
 
-pub struct DisplayMContext<'a, I>
-where
-    I: MInst,
-{
-    mctx: &'a MContext<I>,
+pub struct DisplayMContext<'a> {
+    mctx: &'a MContext,
 }
 
-impl<'a, I> fmt::Display for DisplayMContext<'a, I>
-where
-    I: DisplayMInst<'a>,
-{
+impl<'a> fmt::Display for DisplayMContext<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "\t.attribute arch, \"{}\"", self.mctx.arch())?;
 

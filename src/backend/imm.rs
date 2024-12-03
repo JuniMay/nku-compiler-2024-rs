@@ -1,14 +1,20 @@
+//! Immediates in RISC-V ISA.
+
 use core::fmt;
 
+/// 12-bit immediate used in some instructions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Imm12(u16);
 
 impl Imm12 {
+    /// Sign-extend imm12 to i16.
     pub fn as_i16(&self) -> i16 {
-        // signext
-        (self.0 << 4) as i16 >> 4
+        (self.0 << 4) as i16 >> 4 // signext
     }
 
+    /// Try to create an Imm12 from an i64.
+    /// 
+    /// Returns None if the value is out of range.
     pub fn try_from_i64(x: i64) -> Option<Self> {
         if (-2048..=2047).contains(&x) {
             Some(Imm12(x as u16 & 0xfff))
@@ -17,8 +23,12 @@ impl Imm12 {
         }
     }
 
+    /// Try to create an Imm12 from a u64.
+    /// 
+    /// Returns None if the value is out of range.
     pub fn try_from_u64(x: u64) -> Option<Self> { Self::try_from_i64(x as i64) }
 
+    /// Get the raw bits.
     pub fn bits(&self) -> u16 { self.0 }
 }
 
