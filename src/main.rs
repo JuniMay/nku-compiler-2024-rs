@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     ast.type_check();
 
-    println!("{:#?}", ast);
+    // println!("{:#?}", ast);
 
     let ir = irgen(&ast, 8);
 
@@ -68,4 +68,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use nkucc::frontend::{irgen, preprocess, SysYParser};
+
+    #[test]
+    fn test_parse_arguments() {
+        let src = std::fs::read_to_string(
+            "tests/testcase/functional_test/Advanced/000000dumbass.sy",
+        ).unwrap();
+        let src = preprocess(&src);
+
+        let mut ast = SysYParser::new().parse(&src).unwrap();
+
+        ast.type_check();
+
+        println!("{:#?}", ast);
+
+        // Ok(());
+
+        // let ir = irgen(&ast, 8);
+
+        // println!("{}", ir);
+    }
 }

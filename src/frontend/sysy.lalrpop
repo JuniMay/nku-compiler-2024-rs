@@ -34,20 +34,50 @@ pub Decl: Decl = {
 // void is actually FuncType, but merge them all to avoid conflicts
 pub BType: Type = {
     "int" => Type::int(),
+    "bool" => Type::bool(),
+    "char" => Type::char(),
     "void" => Type::void(),
+    "float" => Type::float(),
 }
 
 // ConstDecl -> 'const' BType ConstDef { ',' ConstDef } ';'
 pub ConstDecl: ConstDecl = {
     "const" <ty: BType> <def: ConstDef> <mut defs: ("," <ConstDef>)*> ";" => {
-        defs.insert(0, def);
+        let mut defs: Vec<ConstDef> = defs.into_iter().map(|def| { def.unwrap() }).collect();
+        defs.insert(0, def.unwrap());
         ConstDecl { ty, defs }
     }
 }
 
+pub ArrayVal: ArrayVal = {
+    <e: Exp> => ArrayVal::Val(e),
+    "{" "}" => ArrayVal::empty(),
+    "{" <e: ArrayVal> <mut vals: ("," <ArrayVal>)*> "}" => {
+        vals.insert(0, e);
+        ArrayVal::Vals(vals)
+    },
+}
+
+pub ArrayIdent: ArrayIdent = {
+    <ident: Ident> "[" <sz: Exp> "]" <mut size: ("[" <Exp> "]")*> => {
+        let mut new_size = vec![sz];
+        for s in size {
+            new_size.push(s);
+        }
+        ArrayIdent { ident, size: new_size }
+    },
+}
+
 // ConstDef -> Ident '=' ConstInitVal
-pub ConstDef: ConstDef = {
-    <ident: Ident> "=" <init: ConstInitVal> => ConstDef { ident, init }
+// XXX：这里貌似有点问题，const的定义不一定要有初始值
+pub ConstDef: Result<ConstDef, &'static str> = {
+    <ident: Ident> "=" <init: ConstInitVal> => Ok(ConstDef::Val( ident, init )),
+    <ident: ArrayIdent> "=" <init: ArrayVal> => {
+      if let ArrayVal::Val(_) = init {
+        return Err("Array must be initialized with array value");
+      }
+      Ok(ConstDef::Array( ident, init ))
+    },
 }
 
 // ConstInitVal -> ConstExp
@@ -58,15 +88,25 @@ pub ConstInitVal: Expr = {
 // VarDecl -> BType VarDef { ',' VarDef } ';'
 pub VarDecl: VarDecl = {
     <ty: BType> <def: VarDef> <mut defs: ("," <VarDef>)*> ";" => {
-        defs.insert(0, def);
-        VarDecl { ty, defs }
+      let mut defs: Vec<VarDef> = defs.into_iter().map(|def| { def.unwrap() }).collect();
+      defs.insert(0, def.unwrap());
+      VarDecl { ty, defs }
     }
 }
 
 // VarDef -> Ident
 //         | Ident '=' InitVal
-pub VarDef: VarDef = {
-    <ident: Ident> <init: ("=" <InitVal>)?> => VarDef { ident, init }
+pub VarDef: Result<VarDef, &'static str> = {
+    <ident: Ident> <init: ("=" <InitVal>)?> => Ok(VarDef::Val ( ident, init )),
+    <ident: ArrayIdent> <init: ("=" <ArrayVal>)?> => {
+      if let Some(ref init) = init {
+        if let ArrayVal::Val(_) = init {
+          return Err("Array must be initialized with array value");
+        }
+      }
+
+      Ok(VarDef::Array ( ident, init ))
+    },
 }
 
 // InitVal -> Exp
@@ -95,6 +135,18 @@ pub FuncFParam: FuncFParam = {
     <ty: BType> <ident: Ident> => {
         FuncFParam { ty, ident }
     },
+    <ty: BType> <ident: Ident> <indices: ("[" Exp? "]")+> => {
+        let mut ty = ty;
+        for (_, index, _) in indices.into_iter().skip(1) {
+          if let Some(index) = index {
+            ty = Type::array(ty, index);
+          } else {
+            panic!("Array must have size");
+          }
+        }
+        ty = Type::ptr(ty);
+        FuncFParam { ty, ident }
+    },
 }
 
 // Block -> '{' { BlockItem } '}'
@@ -109,15 +161,131 @@ pub BlockItem: BlockItem = {
 }
 
 Int: i32 = {
-  r"[1-9][0-9]*" => i32::from_str_radix(<>, 10).unwrap(),
-  r"0[0-7]*" => i32::from_str_radix(<>, 8).unwrap(),
-  r"0[xX][0-9a-fA-F]+" => i32::from_str_radix(&<>[2..], 16).unwrap(),
+  r"[1-9][0-9]*" => {
+    let string = <>;
+    i32::from_str_radix(string, 10).unwrap_or_else(|err|{
+        println!("{}",err);
+        i64::from_str_radix(string, 10).unwrap() as i32
+    })
+  },
+  r"0[0-7]*" => {
+    let string = <>;
+    i32::from_str_radix(string, 8).unwrap_or_else(|err|{
+        println!("{}",err);
+        i64::from_str_radix(string, 8).unwrap() as i32
+    })
+  },
+  r"0[xX][0-9a-fA-F]+" => {
+    let string = <>;
+    i32::from_str_radix(&string[2..], 16).unwrap_or_else(|err|{
+        println!("{}",err);
+        i64::from_str_radix(&string[2..], 16).unwrap() as i32
+    })
+  },
+}
+
+//iakkefloattest,original is above
+Float: f64 = {
+  r"[0-9]*\.[0-9]*" => {
+    let string = <>;
+    string.parse::<f64>().unwrap_or_else(|err| {
+        println!("{}", err);
+        panic!("Failed to parse f64: {}", err);
+    })
+  },
+  r"[0-9]+(\.[0-9]*)?([eE][+-]?[0-9]+)" => {
+    let string = <>;
+    string.parse::<f64>().unwrap_or_else(|err| {
+        println!("{}", err);
+        panic!("Failed to parse f64: {}", err);
+    })
+  },
+  r"(\.[0-9]*)([eE][+-]?[0-9]+)" => {
+    let string = <>;
+    string.parse::<f64>().unwrap_or_else(|err| {
+        println!("{}", err);
+        panic!("Failed to parse f64: {}", err);
+    })
+  },
+  r"0[xX]([0-9a-fA-F]*)(?:\.([0-9a-fA-F]+))?[pP]([+-]?[0-9]+)" => {
+    let string = <>;
+    let re = regex::Regex::new(r"^\s*0[xX]([0-9a-fA-F]*)(?:\.([0-9a-fA-F]+))?[pP]([+-]?[0-9]+)\s*$")
+        .unwrap_or_else(|err| {
+            println!("Failed to compile regex: {}", err);
+            panic!("Regex compilation error");
+        });
+
+    if let Some(captures) = re.captures(&string) {
+        let int_part = captures.get(1).map(|m| m.as_str()).unwrap_or("");
+        let frac_part = captures.get(2).map(|m| m.as_str()).unwrap_or("");
+        let exponent = captures
+            .get(3)
+            .map(|m| m.as_str().parse::<i32>())
+            .transpose()
+            .unwrap_or_else(|err| {
+                println!("Failed to parse exponent: {}", err);
+                panic!("Exponent parsing error");
+            });
+
+        // 整数部分为空时默认值为 0
+        let mut value: f64 = if int_part.is_empty() {
+            0.0
+        } else {
+            i64::from_str_radix(int_part, 16).unwrap_or(0) as f64
+        };
+
+        // 处理小数部分
+        if !frac_part.is_empty() {
+            let mut fractional_value = 0.0;
+            let mut divisor = 16.0;
+            for c in frac_part.chars() {
+                let digit = c.to_digit(16).unwrap() as f64;
+                fractional_value += digit / divisor;
+                divisor *= 16.0;
+            }
+            value += fractional_value;
+        }
+
+        // 处理指数部分
+        if let Some(exp) = exponent {
+            value *= 2_f64.powi(exp);
+        }
+
+        value
+    } else {
+        println!("Failed to match hexadecimal float: '{}'", string);
+        panic!("Failed to parse hexadecimal float.");
+    }
+  },
+
+  // "inf" => {
+  //   let string = <>;
+  //   string.parse::<f64>().unwrap_or_else(|err| {
+  //       println!("{}", err);
+  //       panic!("Failed to parse f64: {}", err);
+  //   })
+  // }, // 该项暂时不可用
+  "infinity" => {
+    let string = <>;
+    string.parse::<f64>().unwrap_or_else(|err| {
+        println!("{}", err);
+        panic!("Failed to parse f64: {}", err);
+    })
+  },
+  "Nan" => {
+    let string = <>;
+    string.parse::<f64>().unwrap_or_else(|err| {
+        println!("{}", err);
+        panic!("Failed to parse f64: {}", err);
+    })
+  },
 }
 
 
 // Number -> IntConst | floatConst
 pub Number: ComptimeVal = {
   <n: Int> => ComptimeVal::int(n),
+  <n: Float> => ComptimeVal::float(n),
 }
 
 // LVal -> Ident
@@ -129,6 +297,7 @@ pub LVal: LVal = {
 pub PrimaryExp: Expr = {
     "(" <e: Exp> ")" => e,
     <v: LVal> => Expr::lval(v),
+    <arr: ArrayIdent> => Expr::array_access(Expr::lval(LVal{ ident: arr.ident }), arr.size),
     <n: Number> => Expr::const_(n),
 }
 
@@ -143,6 +312,12 @@ pub UnaryExp: Expr = {
         Expr::func_call(ident, args)
     },
     "+" <e: UnaryExp> => e,
+    "-" <e: UnaryExp> => {
+        let zero = Expr::const_(ComptimeVal::int(0));
+        Expr::binary(BinaryOp::Sub, zero, e)
+    },
+    "!" <e: UnaryExp> => Expr::unary(UnaryOp::Not, e),
+    // "~" <e: UnaryExp> => Expr::unary(UnaryOp::BitNot, e),
 }
 
 // MulExp -> UnaryExp | MulExp ('*' | '/' | '%') UnaryExp
@@ -150,7 +325,7 @@ pub MulExp: Expr = {
   UnaryExp => <>,
   <lhs: MulExp> "*" <rhs: UnaryExp> => Expr::binary(BinaryOp::Mul, lhs, rhs),
   <lhs: MulExp> "/" <rhs: UnaryExp> => Expr::binary(BinaryOp::Div, lhs, rhs),
-  // TODO: Support modulo operator
+  <lhs: MulExp> "%" <rhs: UnaryExp> => Expr::binary(BinaryOp::Mod, lhs, rhs),
 }
 
 // AddExp -> MulExp | AddExp ('+' | '−') MulExp
@@ -163,25 +338,29 @@ pub AddExp: Expr = {
 // RelExp -> AddExp | RelExp ('<' | '>' | '<=' | '>=') AddExp
 pub RelExp: Expr = {
   AddExp => <>,
-  // TODO: Suppoert relational operators
+  <lhs: RelExp> "<" <rhs: AddExp> => Expr::binary(BinaryOp::Lt, lhs, rhs),
+  <lhs: RelExp> ">" <rhs: AddExp> => Expr::binary(BinaryOp::Gt, lhs, rhs),
+  <lhs: RelExp> "<=" <rhs: AddExp> => Expr::binary(BinaryOp::Le, lhs, rhs),
+  <lhs: RelExp> ">=" <rhs: AddExp> => Expr::binary(BinaryOp::Ge, lhs, rhs),
 }
 
 // EqExp -> RelExp | EqExp ('==' | '!=') RelExp
 pub EqExp: Expr = {
   RelExp => <>,
-  // TODO: Support equality operators
+  <lhs: EqExp> "==" <rhs: RelExp> => Expr::binary(BinaryOp::Eq, lhs, rhs),
+  <lhs: EqExp> "!=" <rhs: RelExp> => Expr::binary(BinaryOp::Ne, lhs, rhs),
 }
 
 // LAndExp -> EqExp | LAndExp '&&' EqExp
 LAndExp: Expr = {
   EqExp => <>,
-  // TODO: Support logical and operator
+  <lhs: LAndExp> "&&" <rhs: EqExp> => Expr::binary(BinaryOp::And, lhs, rhs),
 }
 
 // LOrExp -> LAndExp | LOrExp '||' LAndExp
 LOrExp: Expr = {
   LAndExp => <>,
-  // TODO: Support logical or operator
+  <lhs: LOrExp> "||" <rhs: LAndExp> => Expr::binary(BinaryOp::Or, lhs, rhs),
 }
 
 // Exp -> AddExp
@@ -209,6 +388,7 @@ pub Stmt: Stmt = {
 
 pub MatchedStmt: Stmt = {
   <lval: LVal> "=" <exp: Exp> ";" => Stmt::Assign(lval, exp),
+  <idnet: ArrayIdent> "=" <exp: Exp> ";" => Stmt::ArrayAssign(idnet, exp),
   <expr: (Exp)?> ";" => Stmt::Expr(ExprStmt { expr }),
   <b: Block> => Stmt::Block(b),
   "if" "(" <c: Cond> ")" <s1: MatchedStmt> "else" <s2: MatchedStmt> => {

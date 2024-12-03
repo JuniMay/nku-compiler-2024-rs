@@ -16,6 +16,7 @@ pub struct FuncData {
     head: Option<Block>,
     tail: Option<Block>,
     // TODO: Distinguish `define` and `declare`.
+    is_define: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -27,7 +28,7 @@ pub struct DisplayFunc<'ctx> {
 }
 
 impl Func {
-    pub fn new(ctx: &mut Context, name: String, ret_ty: Ty) -> Self {
+    pub fn new(ctx: &mut Context, name: String, ret_ty: Ty, is_define: Option<bool>) -> Self {
         ctx.alloc_with(|self_ptr| FuncData {
             self_ptr,
             name,
@@ -35,6 +36,7 @@ impl Func {
             ret_ty,
             head: None,
             tail: None,
+            is_define: is_define.unwrap_or(true),
         })
     }
 
@@ -45,38 +47,64 @@ impl Func {
         param
     }
 
-    pub fn name(self, ctx: &Context) -> &str { &self.deref(ctx).name }
+    pub fn name(self, ctx: &Context) -> &str {
+        &self.deref(ctx).name
+    }
 
-    pub fn params(self, ctx: &Context) -> &[Value] { &self.deref(ctx).params }
+    pub fn params(self, ctx: &Context) -> &[Value] {
+        &self.deref(ctx).params
+    }
 
-    pub fn ret_ty(self, ctx: &Context) -> Ty { self.deref(ctx).ret_ty }
+    pub fn ret_ty(self, ctx: &Context) -> Ty {
+        self.deref(ctx).ret_ty
+    }
 
-    pub fn display(self, ctx: &Context) -> DisplayFunc { DisplayFunc { ctx, func: self } }
+    pub fn display(self, ctx: &Context) -> DisplayFunc {
+        DisplayFunc { ctx, func: self }
+    }
 }
 
 impl fmt::Display for DisplayFunc<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "define {} @{}(",
-            self.func.ret_ty(self.ctx).display(self.ctx),
-            self.func.name(self.ctx)
-        )?;
+        if self.func.deref(self.ctx).is_define {
+            write!(
+                f,
+                "define {} @{}(",
+                self.func.ret_ty(self.ctx).display(self.ctx),
+                self.func.name(self.ctx)
+            )?;
 
-        for (i, param) in self.func.params(self.ctx).iter().enumerate() {
-            if i != 0 {
-                write!(f, ", ")?;
+            for (i, param) in self.func.params(self.ctx).iter().enumerate() {
+                if i != 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}", param.display(self.ctx, true))?;
             }
-            write!(f, "{}", param.ty(self.ctx).display(self.ctx))?;
+
+            write!(f, ") {{")?;
+
+            for block in self.func.iter(self.ctx) {
+                write!(f, "\n{}", block.display(self.ctx))?;
+            }
+
+            write!(f, "\n}}")?;
+        } else {
+            write!(
+                f,
+                "declare {} @{}(",
+                self.func.ret_ty(self.ctx).display(self.ctx),
+                self.func.name(self.ctx)
+            )?;
+
+            for (i, param) in self.func.params(self.ctx).iter().enumerate() {
+                if i != 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}", param.ty(self.ctx).display(self.ctx))?;
+            }
+
+            write!(f, ")")?;
         }
-
-        write!(f, ") {{")?;
-
-        for block in self.func.iter(self.ctx) {
-            write!(f, "\n{}", block.display(self.ctx))?;
-        }
-
-        write!(f, "\n}}")?;
 
         Ok(())
     }
@@ -95,9 +123,13 @@ impl Arena<Func> for Context {
         Func(self.funcs.alloc_with(|ptr| f(Func(ptr))))
     }
 
-    fn try_dealloc(&mut self, ptr: Func) -> Option<FuncData> { self.funcs.try_dealloc(ptr.0) }
+    fn try_dealloc(&mut self, ptr: Func) -> Option<FuncData> {
+        self.funcs.try_dealloc(ptr.0)
+    }
 
-    fn try_deref(&self, ptr: Func) -> Option<&FuncData> { self.funcs.try_deref(ptr.0) }
+    fn try_deref(&self, ptr: Func) -> Option<&FuncData> {
+        self.funcs.try_deref(ptr.0)
+    }
 
     fn try_deref_mut(&mut self, ptr: Func) -> Option<&mut FuncData> {
         self.funcs.try_deref_mut(ptr.0)
@@ -107,9 +139,13 @@ impl Arena<Func> for Context {
 impl LinkedListContainer<Block> for Func {
     type Ctx = Context;
 
-    fn head(self, ctx: &Self::Ctx) -> Option<Block> { self.try_deref(ctx).unwrap().head }
+    fn head(self, ctx: &Self::Ctx) -> Option<Block> {
+        self.try_deref(ctx).unwrap().head
+    }
 
-    fn tail(self, ctx: &Self::Ctx) -> Option<Block> { self.try_deref(ctx).unwrap().tail }
+    fn tail(self, ctx: &Self::Ctx) -> Option<Block> {
+        self.try_deref(ctx).unwrap().tail
+    }
 
     fn set_head(self, ctx: &mut Self::Ctx, head: Option<Block>) {
         self.try_deref_mut(ctx).unwrap().head = head;
