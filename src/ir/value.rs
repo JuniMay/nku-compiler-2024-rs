@@ -112,7 +112,7 @@ pub enum ValueKind {
 
 pub struct ValueData {
     _self_ptr: Value,
-    kind: ValueKind,
+    pub kind: ValueKind,
     /// The user of this value.
     ///
     /// This is only useful when the value is an instruction result or a

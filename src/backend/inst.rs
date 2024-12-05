@@ -1,17 +1,14 @@
 use std::fmt;
 
-use crate::infra::{
-    linked_list::LinkedListNode,
-    storage::{Arena, ArenaPtr, GenericPtr},
-};
+use super::block::MBlock;
+use super::context::MContext;
+use super::imm::Imm12;
+use super::operand::MemLoc;
+use super::regs::{Reg, RegKind};
+use crate::infra::linked_list::LinkedListNode;
+use crate::infra::storage::{Arena, ArenaPtr, GenericPtr};
 
-use super::{
-    block::MBlock,
-    context::MContext,
-    imm::Imm12,
-    operand::{MemLoc, Reg},
-};
-
+/// The data of the machine instruction.
 pub struct MInstData {
     kind: MInstKind,
     next: Option<MInst>,
@@ -19,6 +16,7 @@ pub struct MInstData {
     parent: Option<MBlock>,
 }
 
+/// The machine instruction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MInst(GenericPtr<MInstData>);
 
@@ -43,6 +41,12 @@ pub enum MInstKind {
     },
     /// Load instructions.
     Load { op: LoadOp, rd: Reg, loc: MemLoc },
+    /// Store instructions.
+    Store { op: StoreOp, rs: Reg, loc: MemLoc },
+    /// Load immediate pseudo instruction.
+    Li { rd: Reg, imm: u64 },
+    /// Jump instructions.
+    J { target: MBlock },
     // TODO: add more instructions as you need.
 }
 
@@ -57,6 +61,45 @@ pub enum LoadOp {
     Lwu,
     Flw,
     Fld,
+}
+
+impl fmt::Display for LoadOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            LoadOp::Lb => write!(f, "lb"),
+            LoadOp::Lh => write!(f, "lh"),
+            LoadOp::Lw => write!(f, "lw"),
+            LoadOp::Ld => write!(f, "ld"),
+            LoadOp::Lbu => write!(f, "lbu"),
+            LoadOp::Lhu => write!(f, "lhu"),
+            LoadOp::Lwu => write!(f, "lwu"),
+            LoadOp::Flw => write!(f, "flw"),
+            LoadOp::Fld => write!(f, "fld"),
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub enum StoreOp {
+    Sb,
+    Sh,
+    Sw,
+    Sd,
+    Fsw,
+    Fsd,
+}
+
+impl fmt::Display for StoreOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            StoreOp::Sb => write!(f, "sb"),
+            StoreOp::Sh => write!(f, "sh"),
+            StoreOp::Sw => write!(f, "sw"),
+            StoreOp::Sd => write!(f, "sd"),
+            StoreOp::Fsw => write!(f, "fsw"),
+            StoreOp::Fsd => write!(f, "fsd"),
+        }
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -166,20 +209,195 @@ impl fmt::Display for AluOpRRR {
     }
 }
 
+// TODO: add more instruction kinds as you need.
+
 pub struct DisplayMInst<'a> {
     mctx: &'a MContext,
     inst: MInst,
 }
 
 impl MInst {
-    pub fn display(self, mctx: &MContext) -> DisplayMInst {
-        DisplayMInst { mctx, inst: self }
+    pub fn kind(self, mctx: &MContext) -> &MInstKind { &self.deref(mctx).kind }
+
+    pub fn kind_mut(self, mctx: &mut MContext) -> &mut MInstKind { &mut self.deref_mut(mctx).kind }
+
+    pub fn display(self, mctx: &MContext) -> DisplayMInst { DisplayMInst { mctx, inst: self } }
+
+    // XXX: These instruction creation methods are just for demonstration.
+    // You can refactor them as you need.
+
+    /// Create a new `li` instruction.
+    ///
+    /// imm: The immediate value.
+    ///
+    /// Returns (inst, rd).
+    pub fn li(mctx: &mut MContext, imm: u64) -> (Self, Reg) {
+        let rd = mctx.new_vreg(RegKind::General).into();
+        let kind = MInstKind::Li { rd, imm };
+        let data = MInstData {
+            kind,
+            next: None,
+            prev: None,
+            parent: None,
+        };
+        let inst = mctx.alloc(data);
+        (inst, rd)
     }
+
+    /// Create a new `load` instruction.
+    ///
+    /// op: LoadOp
+    /// loc: The memory location.
+    ///
+    /// Returns (inst, rd).
+    pub fn load(mctx: &mut MContext, op: LoadOp, loc: MemLoc) -> (Self, Reg) {
+        let rd = mctx.new_vreg(RegKind::General).into();
+        let kind = MInstKind::Load { op, rd, loc };
+        let data = MInstData {
+            kind,
+            next: None,
+            prev: None,
+            parent: None,
+        };
+        let inst = mctx.alloc(data);
+        (inst, rd)
+    }
+
+    /// Create a new `store` instruction.
+    ///
+    /// op: StoreOp
+    /// rs: The source register.
+    /// loc: The memory location.
+    ///
+    /// Returns the instruction.
+    pub fn store(mctx: &mut MContext, op: StoreOp, rs: Reg, loc: MemLoc) -> Self {
+        let kind = MInstKind::Store { op, rs, loc };
+        let data = MInstData {
+            kind,
+            next: None,
+            prev: None,
+            parent: None,
+        };
+        mctx.alloc(data)
+    }
+
+    /// Create a new `alu_rrr` instruction.
+    ///
+    /// op: AluOpRRI
+    /// rs1: The first source register.
+    /// rs2: The second source register.
+    ///
+    /// Returns (inst, rd).
+    pub fn alu_rrr(mctx: &mut MContext, op: AluOpRRR, rs1: Reg, rs2: Reg) -> (Self, Reg) {
+        let rd = mctx.new_vreg(RegKind::General).into();
+        let kind = MInstKind::AluRRR { op, rd, rs1, rs2 };
+        let data = MInstData {
+            kind,
+            next: None,
+            prev: None,
+            parent: None,
+        };
+        let inst = mctx.alloc(data);
+        (inst, rd)
+    }
+
+    /// Create a new `alu_rri` instruction.
+    ///
+    /// op: AluOpRRI
+    /// rs: The source register.
+    /// imm: The immediate value.
+    ///
+    /// Returns (inst, rd).
+    pub fn alu_rri(mctx: &mut MContext, op: AluOpRRI, rs: Reg, imm: Imm12) -> (Self, Reg) {
+        let rd = mctx.new_vreg(RegKind::General).into();
+        let kind = MInstKind::AluRRI { op, rd, rs, imm };
+        let data = MInstData {
+            kind,
+            next: None,
+            prev: None,
+            parent: None,
+        };
+        let inst = mctx.alloc(data);
+        (inst, rd)
+    }
+
+    /// Create a new `alu_rri` instruction using raw values.
+    /// This is useful when you want to create an instruction without allocating
+    /// a new register.
+    ///
+    /// op: AluOpRRI
+    /// rd: The destination register.
+    /// rs: The source register.
+    /// imm: The immediate value.
+    ///
+    /// Returns the instruction.
+    pub fn raw_alu_rri(mctx: &mut MContext, op: AluOpRRI, rd: Reg, rs: Reg, imm: Imm12) -> Self {
+        let kind = MInstKind::AluRRI { op, rd, rs, imm };
+        let data = MInstData {
+            kind,
+            next: None,
+            prev: None,
+            parent: None,
+        };
+        mctx.alloc(data)
+    }
+
+    /// Creatr a new `jump` instruction.
+    ///
+    /// target: The target block.
+    ///
+    /// Returns the instruction.
+    pub fn j(mctx: &mut MContext, target: MBlock) -> Self {
+        let kind = MInstKind::J { target };
+        let data = MInstData {
+            kind,
+            next: None,
+            prev: None,
+            parent: None,
+        };
+        mctx.alloc(data)
+    }
+
+    // TODO: add more instruction creation methods as you need.
 }
 
-impl<'a> fmt::Display for DisplayMInst<'a> {
+impl fmt::Display for DisplayMInst<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!("implement display for machine instruction")
+        match self.inst.deref(self.mctx).kind {
+            MInstKind::Li { rd, imm } => write!(f, "li {}, {}", rd, imm),
+            MInstKind::Load { op, rd, loc } => {
+                let slot = match loc {
+                    MemLoc::RegOffset { base, offset } => {
+                        format!("{}({})", offset, base)
+                    }
+                    MemLoc::Slot { offset } => {
+                        format!("{}(??? SLOT)", offset)
+                    }
+                    MemLoc::Incoming { offset } => {
+                        format!("{}(??? INCOMING)", offset)
+                    }
+                };
+                write!(f, "{} {}, {}", op, rd, slot)
+            }
+            MInstKind::Store { op, rs, loc } => {
+                let slot = match loc {
+                    MemLoc::RegOffset { base, offset } => {
+                        format!("{}({})", offset, base)
+                    }
+                    MemLoc::Slot { offset } => {
+                        format!("{}(??? SLOT)", offset)
+                    }
+                    MemLoc::Incoming { offset } => {
+                        format!("{}(??? INCOMING)", offset)
+                    }
+                };
+                write!(f, "{} {}, {}", op, rs, slot)
+            }
+            MInstKind::AluRRR { op, rd, rs1, rs2 } => write!(f, "{} {}, {}, {}", op, rd, rs1, rs2),
+            MInstKind::AluRRI { op, rd, rs, imm } => write!(f, "{} {}, {}, {}", op, rd, rs, imm),
+            MInstKind::J { target } => write!(f, "j {}", target.label(self.mctx)),
+            // TODO: implement display for more machine instructions
+        }
     }
 }
 
@@ -192,13 +410,9 @@ impl LinkedListNode for MInst {
     type Container = MBlock;
     type Ctx = MContext;
 
-    fn next(self, ctx: &Self::Ctx) -> Option<Self> {
-        self.deref(ctx).next
-    }
+    fn next(self, ctx: &Self::Ctx) -> Option<Self> { self.deref(ctx).next }
 
-    fn prev(self, ctx: &Self::Ctx) -> Option<Self> {
-        self.deref(ctx).prev
-    }
+    fn prev(self, ctx: &Self::Ctx) -> Option<Self> { self.deref(ctx).prev }
 
     fn set_next(self, arena: &mut Self::Ctx, next: Option<Self>) {
         self.deref_mut(arena).next = next;
@@ -208,9 +422,7 @@ impl LinkedListNode for MInst {
         self.deref_mut(arena).prev = prev;
     }
 
-    fn container(self, ctx: &Self::Ctx) -> Option<Self::Container> {
-        self.deref(ctx).parent
-    }
+    fn container(self, ctx: &Self::Ctx) -> Option<Self::Container> { self.deref(ctx).parent }
 
     fn set_container(self, arena: &mut Self::Ctx, container: Option<Self::Container>) {
         self.deref_mut(arena).parent = container;
@@ -225,15 +437,11 @@ impl Arena<MInst> for MContext {
         MInst(self.insts.alloc_with(|p| f(MInst(p))))
     }
 
-    fn try_deref(&self, ptr: MInst) -> Option<&MInstData> {
-        self.insts.try_deref(ptr.0)
-    }
+    fn try_deref(&self, ptr: MInst) -> Option<&MInstData> { self.insts.try_deref(ptr.0) }
 
     fn try_deref_mut(&mut self, ptr: MInst) -> Option<&mut MInstData> {
         self.insts.try_deref_mut(ptr.0)
     }
 
-    fn try_dealloc(&mut self, ptr: MInst) -> Option<MInstData> {
-        self.insts.try_dealloc(ptr.0)
-    }
+    fn try_dealloc(&mut self, ptr: MInst) -> Option<MInstData> { self.insts.try_dealloc(ptr.0) }
 }
