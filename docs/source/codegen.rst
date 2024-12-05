@@ -165,6 +165,42 @@ IR 中的组织方式类似，但是在内部存储的信息上会有细微差�
 
 最后，你需要在 ``codegen.rs`` 中添加代码翻译的逻辑，包括寄存器分配和寄存器分配之后修改内存位置的逻辑。
 
+另外，此处给出一个实现了后端之后 ``main.rs`` 中编译过程的逻辑
+
+.. code-block:: rust
+
+   let source = include_str!("../tests/sysy/basic.sy");
+
+   // Frontend
+   let src = preprocess(source);
+   let mut ast = SysYParser::new().parse(&src).unwrap();
+   ast.type_check();
+
+   // IRGen
+   let ir = irgen(&ast, 8);
+   println!("{}", ir);
+
+   // Initialize the codegen context.
+   let mut codegen_ctx = CodegenContext::new(&ir);
+
+   // Set architecture string.
+   codegen_ctx.mctx_mut().set_arch("rv64imafdc_zba_zbb");
+
+   // Do the codegen and emit virtual register assembly.
+   codegen_ctx.codegen();
+   println!("{}", codegen_ctx.mctx().display());
+
+   // Do the register allocation.
+   codegen_ctx.regalloc();
+   println!("{}", codegen_ctx.mctx().display());
+
+   // Additional work after register allocation.
+   codegen_ctx.after_regalloc();
+
+   // Emit the final assembly.
+   let mctx = codegen_ctx.finish();
+   println!("{}", mctx.display());
+
 大部分需要修改或添加代码的部分我们都用 ``TODO`` 进行了注释，如果你发现有遗漏的地方，请及时联系助教。
 
 线下提问示例
