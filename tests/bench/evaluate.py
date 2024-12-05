@@ -233,7 +233,7 @@ def test(config: Config) -> None:
                 # Compile to assembly
                 compile_command = (
                     f"{config.executable_path} -S -o {asm_path} {testcase}.sy "
-                    f"--emit-ir {ir_path} --emit-vcode {asm_path}.vcode -O{config.opt_level}"
+                    f"--emit-llvm-ir {ir_path} -O{config.opt_level}"
                 )
                 log_file.write(f"Executing: {compile_command}\n")
                 compile_result = execute_command(compile_command, config.timeout)
