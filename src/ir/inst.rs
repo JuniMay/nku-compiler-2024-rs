@@ -167,11 +167,11 @@ pub enum InstKind {
     IntBinary {
         op: IntBinaryOp,
     },
-    Cast {
-        op: CastOp,
-    },
     FloatBinary {
         op: FloatBinaryOp,
+    },
+    Cast {
+        op: CastOp,
     },
 }
 

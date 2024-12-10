@@ -174,7 +174,7 @@ def test(config: Config) -> None:
     result_md = "# Test Result\n\n"
     passed = 0
     total = len(testcases)
-    result_md_table = "| Testcase | Status |\n| -------- | ------ |\n"
+    result_md_table = "| Testcase | Status |\n| -------- | ------ | ------ |\n"
 
     for testcase in testcases:
         basename = os.path.basename(testcase)
@@ -188,6 +188,7 @@ def test(config: Config) -> None:
         log_path = os.path.join(config.output_dir, f"{basename}.log")
 
         with open(log_path, "w") as log_file:
+            begin_time = datetime.datetime.now()
             if config.test_llvm:
                 # Compile to LLVM IR
                 # XXX: Add more arguments if you need.
@@ -200,13 +201,15 @@ def test(config: Config) -> None:
                 compile_result = execute_command(compile_command, config.timeout)
                 log_file.write(f"STDOUT:\n{compile_result['stdout']}\n")
                 log_file.write(f"STDERR:\n{compile_result['stderr']}\n")
+                
+                end_time = datetime.datetime.now()
 
                 if compile_result["returncode"] != 0:
                     if compile_result["stderr"] == "TIMEOUT":
                         status = f"⚠️ orzcc TLE"
                     else:
                         status = f"⚠️ orzcc RE"
-                    result_md_table += f"| `{basename}` | {status} |\n"
+                    result_md_table += f"| `{basename}` | {status} | {(end_time - begin_time).total_seconds()}s |\n"
                     print(f"{Colors.RED}[ C E ] Compilation error for {basename}, see {log_path}{Colors.RESET}")
                     continue
 
@@ -220,12 +223,14 @@ def test(config: Config) -> None:
                 log_file.write(f"STDOUT:\n{compile_result['stdout']}\n")
                 log_file.write(f"STDERR:\n{compile_result['stderr']}\n")
 
+                end_time = datetime.datetime.now()
+
                 if compile_result["returncode"] != 0:
                     if compile_result["stderr"] == "TIMEOUT":
                         status = f"⚠️ llc TLE"
                     else:
                         status = f"⚠️ llc RE"
-                    result_md_table += f"| `{basename}` | {status} |\n"
+                    result_md_table += f"| `{basename}` | {status} | {(end_time - begin_time).total_seconds()}s |\n"
                     print(f"{Colors.RED}[ C E ] LLVMIR Compilation error for {basename}, see {log_path}{Colors.RESET}")
                     continue
             
@@ -240,12 +245,14 @@ def test(config: Config) -> None:
                 log_file.write(f"STDOUT:\n{compile_result['stdout']}\n")
                 log_file.write(f"STDERR:\n{compile_result['stderr']}\n")
 
+                end_time = datetime.datetime.now()
+
                 if compile_result["returncode"] != 0:
                     if compile_result["stderr"] == "TIMEOUT":
                         status = f"⚠️ orzcc TLE"
                     else:
                         status = f"⚠️ orzcc RE"
-                    result_md_table += f"| `{basename}` | {status} |\n"
+                    result_md_table += f"| `{basename}` | {status} | {(end_time - begin_time).total_seconds()}s |\n"
                     print(f"{Colors.RED} [ C E ] Compilation error for {basename}, see {log_path}{Colors.RESET}")
                     continue
 
@@ -259,9 +266,11 @@ def test(config: Config) -> None:
             log_file.write(f"STDOUT:\n{gcc_result['stdout']}\n")
             log_file.write(f"STDERR:\n{gcc_result['stderr']}\n")
 
+            end_time = datetime.datetime.now()
+
             if gcc_result["returncode"] != 0:
                 status = f"😢 CE"
-                result_md_table += f"| `{basename}` | {status} |\n"
+                result_md_table += f"| `{basename}` | {status} | {(end_time - begin_time).total_seconds()}s |\n"
                 print(f"{Colors.RED} [ C E ] GCC compilation error for {basename}, see {log_path}{Colors.RESET}")
                 continue
 
@@ -294,6 +303,8 @@ def test(config: Config) -> None:
             # Check the result
             is_correct = check_file(out_path, std_out_path, f"{config.output_dir}/{basename}.diff")
 
+            end_time = datetime.datetime.now()
+
             if qemu_result["returncode"] is None:
                 if qemu_result["stderr"] == "TIMEOUT":
                     status = f"⏱️ TLE"
@@ -309,7 +320,7 @@ def test(config: Config) -> None:
                 status = f"❌ WA"
                 print(f"{Colors.RED}[ W A ] Test case {basename} failed. See {log_path} and {config.output_dir}/{basename}.diff .{Colors.RESET}")
 
-            result_md_table += f"| `{basename}` | {status} |\n"
+            result_md_table += f"| `{basename}` | {status} | {(end_time - begin_time).total_seconds()}s |\n"
 
     # Summary
     result_md += f"Passed {passed}/{total} testcases.\n\n"

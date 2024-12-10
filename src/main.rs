@@ -1,8 +1,8 @@
-use std::path::Path;
-use std::process::Command as SysCommand;
-
 use clap::{Arg, ArgMatches, Command};
-use nkucc::frontend::{irgen, preprocess, SysYParser};
+use nkucc::{
+    backend::codegen::{self, CodegenContext},
+    frontend::{irgen, preprocess, SysYParser},
+};
 
 fn parse_arguments() -> ArgMatches {
     Command::new("nkucc")
@@ -35,6 +35,11 @@ fn parse_arguments() -> ArgMatches {
                 .long("emit-llvm-ir")
                 .help("Emit the IR to the specified file"),
         )
+        .arg(
+            Arg::new("emit-ir")
+                .long("emit-ir")
+                .help("Emit the backend res to the specified file"),
+        )
         .get_matches()
 }
 
@@ -46,6 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Extract arguments
     let output = matches.get_one::<String>("output");
     let emit_llvm_ir = matches.get_one::<String>("emit-llvm-ir");
+    let emit_ir = matches.get_one::<String>("emit_ir");
     let opt_level = matches.get_one::<String>("opt").unwrap();
     let source = matches.get_one::<String>("source").unwrap();
     let emit_assembly = matches.get_count("s_flag") > 0;
@@ -63,9 +69,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let ir = irgen(&ast, 8);
 
+    // let mut cg = CodegenContext::new(&ir);
+    // cg.codegen();
+
     if let Some(ir_file) = emit_llvm_ir {
         std::fs::write(ir_file, ir.to_string()).unwrap();
     }
+    // else if let Some(ir_file) = emit_ir {
+    //     std::fs::write(ir_file, cg.to_string()).unwrap();
+    // }
 
     Ok(())
 }
@@ -76,9 +88,9 @@ mod tests {
 
     #[test]
     fn test_parse_arguments() {
-        let src = std::fs::read_to_string(
-            "tests/testcase/functional_test/Advanced/000000dumbass.sy",
-        ).unwrap();
+        let src =
+            std::fs::read_to_string("tests/testcase/functional_test/Advanced/000000dumbass.sy")
+                .unwrap();
         let src = preprocess(&src);
 
         let mut ast = SysYParser::new().parse(&src).unwrap();

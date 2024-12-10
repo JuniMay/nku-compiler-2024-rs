@@ -90,8 +90,6 @@ impl ConstantValue {
         ConstantValue::GlobalRef { ty, name, value_ty }
     }
 
-    pub fn undef(ctx: &mut Context, ty: Ty) -> ConstantValue { ConstantValue::Undef { ty } }
-
     pub fn to_string(&self, ctx: &Context, typed: bool) -> String {
         let mut s = if typed {
             format!("{} ", self.ty().display(ctx))
@@ -304,11 +302,6 @@ impl Value {
 
     pub fn global_ref(ctx: &mut Context, name: String, value_ty: Ty) -> Self {
         let value = ConstantValue::global_ref(ctx, name, value_ty);
-        Self::new(ctx, ValueKind::Constant { value })
-    }
-
-    pub fn undef(ctx: &mut Context, ty: Ty) -> Self {
-        let value = ConstantValue::undef(ctx, ty);
         Self::new(ctx, ValueKind::Constant { value })
     }
 }
