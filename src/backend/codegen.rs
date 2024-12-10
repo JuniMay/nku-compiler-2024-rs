@@ -8,12 +8,12 @@ use super::block::MBlock;
 use super::context::MContext;
 use super::func::{MFunc, MLabel};
 use super::imm::Imm12;
-use super::inst::{AluOpRRI, AluOpRRR, LoadOp, MInst, MInstKind, StoreOp};
+use super::inst::{AluOpRRI, AluOpRRR, CompareOp, FpuCompareOp, FpuOpRRR, LoadOp, MInst, MInstKind, StoreOp};
 use super::operand::{MOperand, MOperandKind, MemLoc};
-use super::regs::{self, Reg};
+use super::regs::{self, Reg, RegKind};
 use crate::infra::linked_list::{LinkedListContainer, LinkedListNode};
 use crate::infra::storage::ArenaPtr;
-use crate::ir::{self, ConstantValue, IntBinaryOp, Ty, Value};
+use crate::ir::{self, ConstantValue, FloatBinaryOp, FloatCmpCond, IntBinaryOp, IntCmpCond, Ty, Value};
 
 pub struct CodegenContext<'s> {
     /// The machine code context.
