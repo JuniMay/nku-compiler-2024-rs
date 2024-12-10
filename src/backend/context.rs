@@ -3,7 +3,7 @@ use core::fmt;
 use super::block::MBlockData;
 use super::func::{MFuncData, MLabel};
 use super::inst::MInstData;
-use super::operand::{RegKind, VReg};
+use super::regs::{RegKind, VReg};
 use crate::infra::linked_list::LinkedListContainer;
 use crate::infra::storage::GenericArena;
 
@@ -40,12 +40,9 @@ pub struct MContext {
     arch: String,
 }
 
-
 impl MContext {
     /// Create a new machine code context.
-    pub fn new() -> Self {
-        Self::default()
-    }
+    pub fn new() -> Self { Self::default() }
 
     /// Create a new virtual register.
     pub fn new_vreg(&mut self, kind: RegKind) -> VReg {
@@ -60,32 +57,30 @@ impl MContext {
     }
 
     /// Set the architecture string to `arch`.
-    pub fn set_arch(&mut self, arch: impl Into<String>) {
-        self.arch = arch.into();
-    }
+    pub fn set_arch(&mut self, arch: impl Into<String>) { self.arch = arch.into(); }
 
     /// Get the architecture string.
-    pub fn arch(&self) -> &str {
-        &self.arch
-    }
+    pub fn arch(&self) -> &str { &self.arch }
 
-    pub fn display(&self) -> DisplayMContext {
-        DisplayMContext { mctx: self }
-    }
+    /// Display the machine code context.
+    pub fn display(&self) -> DisplayMContext { DisplayMContext { mctx: self } }
 }
 
 pub struct DisplayMContext<'a> {
     mctx: &'a MContext,
 }
 
-impl<'a> fmt::Display for DisplayMContext<'a> {
+impl fmt::Display for DisplayMContext<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // The architecture attribute.
         writeln!(f, "\t.attribute arch, \"{}\"", self.mctx.arch())?;
 
+        // The text section, generating the code.
         writeln!(f, "\t.text")?;
         for func_data in self.mctx.funcs.iter() {
             let func = func_data.self_ptr();
 
+            // Skip the external functions.
             if func.is_external(self.mctx) {
                 continue;
             }
@@ -105,6 +100,7 @@ impl<'a> fmt::Display for DisplayMContext<'a> {
             writeln!(f)?;
         }
 
+        // The data section, generating the data.
         for (label, raw_data) in self.mctx.raw_data.iter() {
             writeln!(f, "\t.type {}, @object", label)?;
             match raw_data {

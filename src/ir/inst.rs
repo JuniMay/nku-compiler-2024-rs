@@ -11,7 +11,7 @@ use super::TyData;
 use crate::infra::linked_list::LinkedListNode;
 use crate::infra::storage::{Arena, ArenaPtr, GenericPtr};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum IntCmpCond {
     Eq,
     Ne,
@@ -30,7 +30,7 @@ impl fmt::Display for IntCmpCond {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum IntBinaryOp {
     Add,
     Sub,
