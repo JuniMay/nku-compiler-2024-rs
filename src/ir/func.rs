@@ -4,7 +4,7 @@ use super::block::Block;
 use super::context::Context;
 use super::ty::Ty;
 use super::value::Value;
-use crate::infra::linked_list::LinkedListContainer;
+use crate::infra::linked_list::{LinkedListContainer, LinkedListNode};
 use crate::infra::storage::{Arena, ArenaPtr, GenericPtr};
 
 pub struct FuncData {
@@ -57,6 +57,39 @@ impl Func {
 
     pub fn ret_ty(self, ctx: &Context) -> Ty {
         self.deref(ctx).ret_ty
+    }
+
+    pub fn head(self, ctx: &Context) -> Option<Block> {
+        self.deref(ctx).head
+    }
+
+    pub fn remove_block(self, ctx: &mut Context, block: Block) {
+        let mut head = self.head(ctx);
+        let mut tail = self.tail(ctx);
+
+        if head == Some(block) {
+            head = block.next(ctx);
+            self.set_head(ctx, head);
+            return;
+        }
+
+        if tail == Some(block) {
+            tail = block.prev(ctx);
+            self.set_tail(ctx, tail);
+            return;
+        }
+
+        let prev = block.prev(ctx);
+        let next = block.next(ctx);
+
+        if let Some(prev) = prev {
+            prev.set_next(ctx, next);
+        }
+        if let Some(next) = next {
+            next.set_prev(ctx, prev);
+        }
+
+        ctx.try_dealloc(block);
     }
 
     pub fn display(self, ctx: &Context) -> DisplayFunc {

@@ -1,7 +1,7 @@
 use clap::{Arg, ArgMatches, Command};
 use nkucc::{
     backend::codegen::{self, CodegenContext},
-    frontend::{irgen, preprocess, SysYParser},
+    frontend::{irgen, preprocess, Optimize, SysYParser},
 };
 
 fn parse_arguments() -> ArgMatches {
@@ -69,11 +69,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let ir = irgen(&ast, 8);
 
+    let mut opt = Optimize::new(ir, opt_level.parse().unwrap());
+    opt.optmize();
+
     // let mut cg = CodegenContext::new(&ir);
     // cg.codegen();
 
     if let Some(ir_file) = emit_llvm_ir {
-        std::fs::write(ir_file, ir.to_string()).unwrap();
+        std::fs::write(ir_file, opt.ir().to_string()).unwrap();
     }
     // else if let Some(ir_file) = emit_ir {
     //     std::fs::write(ir_file, cg.to_string()).unwrap();
@@ -84,7 +87,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
-    use nkucc::frontend::{irgen, preprocess, SysYParser};
+    use std::collections::HashSet;
+
+    use nkucc::{
+        frontend::{irgen, preprocess, Optimize, SysYParser},
+        ir::{Block, BlockEdge, Context, InstKind},
+    };
 
     #[test]
     fn test_parse_arguments() {
@@ -98,11 +106,85 @@ mod tests {
         ast.type_check();
 
         println!("{:#?}", ast);
+    }
 
-        // Ok(());
+    #[test]
+    fn test_opt_irgen() {
+        let src = std::fs::read_to_string("tests/testcase/optimize_test/eliUnreachablebb/blockafterret.sy").unwrap();
+        let src = preprocess(&src);
 
-        // let ir = irgen(&ast, 8);
+        let mut ast = SysYParser::new().parse(&src).unwrap();
 
-        // println!("{}", ir);
+        ast.type_check();
+
+        // println!("{:#?}", ast);
+
+        let ir = irgen(&ast, 8);
+
+        println!("{}", &ir.to_string());
+
+        let mut opt = Optimize::new(ir, 1);
+        opt.optmize();
+
+        println!("{}", opt.ir().to_string());
+    }
+
+    #[test]
+    fn test_irgen_cfg() {
+        let src = std::fs::read_to_string("tests/sysy/basic.sy").unwrap();
+        let src = preprocess(&src);
+
+        let mut ast = SysYParser::new().parse(&src).unwrap();
+
+        ast.type_check();
+
+        // println!("{:#?}", ast);
+
+        let ir = irgen(&ast, 8);
+        let funcs = ir.funcs();
+
+        let mut st = HashSet::new();
+
+        for func in funcs {
+            println!("Func: {}", func.name(&ir));
+            let head = func.head(&ir);
+            if let None = head {
+                println!("Head is None!");
+                continue;
+            }
+            let head = head.unwrap();
+            dfs(&head, &ir, &mut st);
+            println!("========================");
+        }
+
+        println!("ir:");
+        println!("{}", ir.to_string());
+    }
+
+    fn dfs(u: &Block, ctx: &Context, st: &mut HashSet<BlockEdge>) {
+        for edge in u.successors(ctx) {
+            if st.contains(edge) {
+                continue;
+            }
+            st.insert(edge.clone());
+            let v = edge.to();
+            let inst = edge.inst();
+            let true_br = edge.is_true_branch();
+            dfs(&v, ctx, st);
+            println!(
+                "Edge: {:?} -> {:?}, {}",
+                u,
+                v,
+                if let InstKind::Br = inst.kind(ctx) {
+                    "Br"
+                } else {
+                    if true_br {
+                        "Cond Br: true"
+                    } else {
+                        "Cond Br: false"
+                    }
+                }
+            )
+        }
     }
 }

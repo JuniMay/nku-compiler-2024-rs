@@ -234,6 +234,10 @@ impl Value {
         }
     }
 
+    pub fn kind<'a>(&'a self, ctx: &'a Context) -> &'a ValueKind {
+        &self.try_deref(ctx).unwrap().kind
+    }
+
     pub(super) fn new_param(ctx: &mut Context, func: Func, ty: Ty, index: u32) -> Self {
         Self::new(ctx, ValueKind::Param { func, ty, index })
     }

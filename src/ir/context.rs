@@ -33,7 +33,9 @@ pub struct Context {
 }
 
 impl Default for Context {
-    fn default() -> Self { Self::new(4) }
+    fn default() -> Self {
+        Self::new(4)
+    }
 }
 
 impl Context {
@@ -49,9 +51,9 @@ impl Context {
         }
     }
 
-    
-
-    pub fn set_target_info(&mut self, target: TargetInfo) { self.target = target; }
+    pub fn set_target_info(&mut self, target: TargetInfo) {
+        self.target = target;
+    }
 
     pub fn funcs(&self) -> impl Iterator<Item = Func> + '_ {
         self.funcs.iter().map(|data| data.self_ptr)

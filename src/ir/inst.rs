@@ -203,7 +203,7 @@ impl<T: Usable> Default for OperandEntry<T> {
 ///
 /// As a matter of fact, removing operands is a minor operation. Normally, we
 /// can just replace the inner value of the operand with a new value.
-struct OperandList<T: Usable> {
+pub struct OperandList<T: Usable> {
     operands: Vec<OperandEntry<T>>,
     /// The index of the first vacant slot.
     first_vacant: Option<usize>,
@@ -1111,6 +1111,12 @@ impl Inst {
     /// Check if this is a phi node.
     pub fn is_phi(self, ctx: &Context) -> bool {
         matches!(self.deref(ctx).kind, InstKind::Phi)
+    }
+
+    /// Remove this node.
+    pub fn remove(self, ctx: &mut Context) {
+        let container = self.container(ctx).unwrap();
+        container.remove_inst(ctx, self);
     }
 }
 
