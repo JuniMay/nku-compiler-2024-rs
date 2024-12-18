@@ -775,9 +775,10 @@ impl IrGenContext {
                     let cond = self.gen_local_expr(&cond).unwrap();
                     let cond_branch =
                         Inst::cond_br(&mut self.ctx, cond, then_block.clone(), else_block.clone());
+
                     curr_block.push_back(&mut self.ctx, cond_branch).unwrap();
-                    curr_block.add_successor(&mut self.ctx, then_block.clone(), cond_branch, true);
-                    curr_block.add_successor(&mut self.ctx, else_block.clone(), cond_branch, false);
+                    curr_block.add_edge(&mut self.ctx, then_block.clone(), cond_branch, true);
+                    curr_block.add_edge(&mut self.ctx, else_block.clone(), cond_branch, false);
                 }
             },
             _ => {
@@ -785,8 +786,8 @@ impl IrGenContext {
                 let cond_branch =
                     Inst::cond_br(&mut self.ctx, cond, then_block.clone(), else_block.clone());
                 curr_block.push_back(&mut self.ctx, cond_branch).unwrap();
-                curr_block.add_successor(&mut self.ctx, then_block.clone(), cond_branch, true);
-                curr_block.add_successor(&mut self.ctx, else_block.clone(), cond_branch, false);
+                curr_block.add_edge(&mut self.ctx, then_block.clone(), cond_branch, true);
+                curr_block.add_edge(&mut self.ctx, else_block.clone(), cond_branch, false);
             }
         }
     }
@@ -1050,18 +1051,6 @@ impl IrGen for FuncDef {
 
         // generate body
         self.body.irgen(irgen);
-
-        // // generate br to return block
-        // let br_inst = Inst::br(&mut irgen.ctx, ret_block);
-        // irgen
-        //     .curr_block
-        //     .unwrap()
-        //     .push_back(&mut irgen.ctx, br_inst)
-        //     .unwrap();
-        // irgen
-        //     .curr_block
-        //     .unwrap()
-        //     .add_successor(&mut irgen.ctx, ret_block, br_inst, false);
 
         // append return block
         func.push_back(&mut irgen.ctx, ret_block).unwrap();
@@ -1391,7 +1380,7 @@ impl IrGen for Stmt {
                     let cond_branch = Inst::br(&mut irgen.ctx, cond_block);
 
                     curr_block.push_back(&mut irgen.ctx, cond_branch).unwrap();
-                    curr_block.add_successor(&mut irgen.ctx, cond_block, cond_branch, false);
+                    curr_block.add_edge(&mut irgen.ctx, cond_block, cond_branch, false);
                     curr_func.push_back(&mut irgen.ctx, cond_block).unwrap();
                     irgen.curr_block = Some(cond_block);
 
@@ -1412,7 +1401,7 @@ impl IrGen for Stmt {
                             .unwrap()
                             .push_back(&mut irgen.ctx, then_exit_branch)
                             .unwrap();
-                        irgen.curr_block.unwrap().add_successor(
+                        irgen.curr_block.unwrap().add_edge(
                             &mut irgen.ctx,
                             exit_block,
                             then_exit_branch,
@@ -1433,7 +1422,7 @@ impl IrGen for Stmt {
                                 .unwrap()
                                 .push_back(&mut irgen.ctx, else_exit_branch)
                                 .unwrap();
-                            irgen.curr_block.unwrap().add_successor(
+                            irgen.curr_block.unwrap().add_edge(
                                 &mut irgen.ctx,
                                 exit_block,
                                 else_exit_branch,
@@ -1464,7 +1453,7 @@ impl IrGen for Stmt {
                     let cond_branch = Inst::br(&mut irgen.ctx, cond_block);
 
                     curr_block.push_back(&mut irgen.ctx, cond_branch).unwrap();
-                    curr_block.add_successor(&mut irgen.ctx, cond_block, cond_branch, false);
+                    curr_block.add_edge(&mut irgen.ctx, cond_block, cond_branch, false);
 
                     curr_func.push_back(&mut irgen.ctx, cond_block).unwrap();
                     irgen.curr_block = Some(cond_block);
@@ -1480,7 +1469,7 @@ impl IrGen for Stmt {
                         .unwrap()
                         .push_back(&mut irgen.ctx, cond_branch)
                         .unwrap();
-                    irgen.curr_block.unwrap().add_successor(
+                    irgen.curr_block.unwrap().add_edge(
                         &mut irgen.ctx,
                         cond_block,
                         cond_branch,
@@ -1503,7 +1492,7 @@ impl IrGen for Stmt {
                     irgen.loop_exit_stack.last().unwrap().clone(),
                 );
                 curr_block.push_back(&mut irgen.ctx, jump).unwrap();
-                curr_block.add_successor(
+                curr_block.add_edge(
                     &mut irgen.ctx,
                     irgen.loop_exit_stack.last().unwrap().clone(),
                     jump,
@@ -1516,7 +1505,7 @@ impl IrGen for Stmt {
                     irgen.loop_entry_stack.last().unwrap().clone(),
                 );
                 curr_block.push_back(&mut irgen.ctx, jump).unwrap();
-                curr_block.add_successor(
+                curr_block.add_edge(
                     &mut irgen.ctx,
                     irgen.loop_exit_stack.last().unwrap().clone(),
                     jump,
@@ -1540,19 +1529,26 @@ impl IrGen for Stmt {
                     .unwrap()
                     .push_back(&mut irgen.ctx, jump)
                     .unwrap();
-                curr_block.add_successor(
+                curr_block.add_edge(
                     &mut irgen.ctx,
                     irgen.curr_ret_block.unwrap().clone(),
                     jump,
                     false,
                 );
 
+                // 此处其实没必要加边了，创建一个虚拟块便于优化
                 let block = Block::new(&mut irgen.ctx);
                 irgen.curr_block = Some(block);
                 irgen
                     .curr_func
                     .unwrap()
                     .push_back(&mut irgen.ctx, block)
+                    .unwrap();
+                let jump = Inst::br(&mut irgen.ctx, irgen.curr_ret_block.unwrap());
+                irgen
+                    .curr_block
+                    .unwrap()
+                    .push_back(&mut irgen.ctx, jump)
                     .unwrap();
             }
         }
@@ -1567,27 +1563,6 @@ impl IrGen for ast::Block {
                 BlockItem::Decl(decl) => decl.irgen(irgen),
                 BlockItem::Stmt(stmt) => stmt.irgen(irgen),
             }
-        }
-        // Ensure block has br or cond_br as tail
-        let tail = irgen.curr_block.unwrap().tail(&irgen.ctx);
-        if tail.is_none()
-            || matches!(
-                *tail.unwrap().kind(&irgen.ctx),
-                InstKind::CondBr | InstKind::Br
-            )
-        {
-            let jump = Inst::br(&mut irgen.ctx, irgen.curr_ret_block.unwrap());
-            irgen
-                .curr_block
-                .unwrap()
-                .push_back(&mut irgen.ctx, jump)
-                .unwrap();
-            irgen.curr_block.unwrap().add_successor(
-                &mut irgen.ctx,
-                irgen.curr_ret_block.unwrap().clone(),
-                jump,
-                false,
-            );
         }
         irgen.symtable.leave_scope();
     }

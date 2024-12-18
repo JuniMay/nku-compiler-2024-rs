@@ -9,7 +9,7 @@ use super::ty::Ty;
 use super::value::Value;
 use super::TyData;
 use crate::infra::linked_list::LinkedListNode;
-use crate::infra::storage::{Arena, ArenaPtr, GenericPtr};
+use crate::infra::storage::{Arena, ArenaPtr, GenericPtr, Idx};
 
 #[derive(Debug, Clone, Copy)]
 pub enum IntCmpCond {
@@ -378,6 +378,10 @@ impl Inst {
         inst
     }
 
+    pub fn index(&self) -> usize {
+        self.0.index()
+    }
+
     /// Create a new `alloca` instruction.
     pub fn alloca(ctx: &mut Context, alloca_ty: Ty) -> Self {
         let ptr = Ty::ptr(ctx, None);
@@ -511,16 +515,6 @@ impl Inst {
             }
         };
         inst
-        // let inst = Self::new(
-        //     ctx,
-        //     InstKind::IntBinary {
-        //         op: IntBinaryOp::Sub,
-        //     },
-        //     ty,
-        // );
-        // inst.add_operand(ctx, lhs);
-        // inst.add_operand(ctx, rhs);
-        // inst
     }
 
     pub fn fsub(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
@@ -553,16 +547,6 @@ impl Inst {
             }
         };
         inst
-        // let inst = Self::new(
-        //     ctx,
-        //     InstKind::IntBinary {
-        //         op: IntBinaryOp::Mul,
-        //     },
-        //     ty,
-        // );
-        // inst.add_operand(ctx, lhs);
-        // inst.add_operand(ctx, rhs);
-        // inst
     }
 
     pub fn fmul(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
@@ -595,16 +579,6 @@ impl Inst {
             }
         };
         inst
-        // let inst = Self::new(
-        //     ctx,
-        //     InstKind::IntBinary {
-        //         op: IntBinaryOp::SDiv,
-        //     },
-        //     ty,
-        // );
-        // inst.add_operand(ctx, lhs);
-        // inst.add_operand(ctx, rhs);
-        // inst
     }
 
     pub fn udiv(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
@@ -1115,8 +1089,57 @@ impl Inst {
 
     /// Remove this node.
     pub fn remove(self, ctx: &mut Context) {
+        self.remove_all_use(ctx);
         let container = self.container(ctx).unwrap();
         container.remove_inst(ctx, self);
+    }
+
+    pub fn remove_without_dealloc(self, ctx: &mut Context) {
+        self.remove_all_use(ctx);
+        let container = self.container(ctx).unwrap();
+        container.remove_inst_without_dealloc(ctx, self);
+    }
+
+    pub fn remove_all_use(self, ctx: &mut Context) {
+        // println!("self.display(ctx): {}", self.display(ctx));
+        let operands = &mut self.deref_mut(ctx).operands;
+        let mut to_drop = Vec::new();
+        // println!("operands count: {}", operands.iter().count());
+        for i in 0..operands.iter().count() {
+            let op = operands.remove(i);
+            to_drop.push(op);
+        }
+        for op in to_drop {
+            op.drop(ctx);
+        }
+        // let successors = &mut self.deref_mut(ctx).successors;
+        // let mut to_drop = Vec::new();
+        // println!("successors count: {}", successors.iter().count());
+        // for i in 0..successors.iter().count() {
+        //     let op = successors.remove(i);
+        //     to_drop.push(op);
+        // }
+        // for op in to_drop {
+        //     op.drop(ctx);
+        // }
+    }
+
+    pub fn replace(self, ctx: &mut Context, new_inst: Inst) {
+        let container = self.container(ctx).unwrap();
+        container.replace_inst(ctx, self, new_inst);
+    }
+
+    pub fn set_operand(self, ctx: &mut Context, value: Value, idx: usize) {
+        let _ = self
+            .try_deref_mut(ctx)
+            .unwrap_or_else(|| unreachable!())
+            .operands
+            .remove(idx);
+        let operand = Operand::new(ctx, value, self, idx);
+        self.try_deref_mut(ctx)
+            .unwrap_or_else(|| unreachable!())
+            .operands
+            .insert(operand);
     }
 }
 
@@ -1317,5 +1340,21 @@ impl LinkedListNode for Inst {
 
     fn set_container(self, ctx: &mut Self::Ctx, container: Option<Self::Container>) {
         self.deref_mut(ctx).container = container;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::ir::{Block, Context};
+
+    use super::Inst;
+
+    #[test]
+    fn test_equal() {
+        let mut ctx = Context::new(8);
+        let block = Block::new(&mut ctx);
+        let br1 = Inst::br(&mut ctx, block);
+        let br2 = Inst::br(&mut ctx, block);
+        println!("{}", br1 == br2);
     }
 }

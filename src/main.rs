@@ -110,7 +110,8 @@ mod tests {
 
     #[test]
     fn test_opt_irgen() {
-        let src = std::fs::read_to_string("tests/testcase/optimize_test/eliUnreachablebb/blockafterret.sy").unwrap();
+        // let src = std::fs::read_to_string("tests/testcase/optimize_test/eliUnreachablebb/blockafterret.sy").unwrap();
+        let src = std::fs::read_to_string("tests/small-test/complex_phi.sy").unwrap();
         let src = preprocess(&src);
 
         let mut ast = SysYParser::new().parse(&src).unwrap();

@@ -70,13 +70,11 @@ impl Func {
         if head == Some(block) {
             head = block.next(ctx);
             self.set_head(ctx, head);
-            return;
         }
 
         if tail == Some(block) {
             tail = block.prev(ctx);
             self.set_tail(ctx, tail);
-            return;
         }
 
         let prev = block.prev(ctx);

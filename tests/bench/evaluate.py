@@ -174,7 +174,7 @@ def test(config: Config) -> None:
     result_md = "# Test Result\n\n"
     passed = 0
     total = len(testcases)
-    result_md_table = "| Testcase | Status |\n| -------- | ------ | ------ |\n"
+    result_md_table = "| Testcase | Status | ------ |\n| -------- | ------ | ------ |\n"
 
     for testcase in testcases:
         basename = os.path.basename(testcase)
