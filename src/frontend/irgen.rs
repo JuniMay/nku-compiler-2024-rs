@@ -246,7 +246,6 @@ impl IrGenContext {
             // Unary operations -> generate the operation
             ExprKind::Unary(op, expr) => {
                 if let None = expr.ty.as_ref() {
-                    // println!("symbol table: {:#?}", self.symtable);
                     panic!("I'm here {:#?}", expr);
                 }
                 let ty = self.gen_type(expr.ty.as_ref().unwrap());
@@ -261,8 +260,6 @@ impl IrGenContext {
             }
             // LValues -> Get the value
             ExprKind::LVal(LVal { ident }) => {
-                // println!("ident: {}", ident);
-                // println!("{:#?}", self.symtable);
                 // Look up the symbol in the symbol table to get the IR value
                 let entry = self.symtable.lookup(ident).unwrap();
                 let ir_value = entry.ir_value.unwrap();
@@ -512,13 +509,6 @@ impl IrGenContext {
             ExprKind::FuncCall(FuncCall { ident, args }) => {
                 // HACK: Implement function call generation
                 let entry = self.symtable.lookup(ident).unwrap();
-                if expr.ty.as_ref().is_none() {
-                    println!("--------------");
-                    println!("funccall ident: {}", ident);
-                    for arg in args {
-                        println!("arg: {:?}", arg);
-                    }
-                }
                 let ret_ty = expr.ty.as_ref().unwrap();
 
                 let value_ty = {
@@ -625,32 +615,28 @@ impl IrGenContext {
 
     fn dfs(&mut self, ty: Ty, arr: &ArrayVal) -> (Ty, Value) {
         match arr {
-            ArrayVal::Val(val) => {
-                match val.kind {
-                    ExprKind::Const(_) => {
-                        let val = self.gen_local_expr(val).unwrap();
-                        (ty, val)
-                    }
-                    _ => match val.ty().kind() {
-                        Tk::Bool => (
-                            ty,
-                            self.gen_local_expr(&Expr::const_(Cv::bool(false))).unwrap(),
-                        ),
-                        Tk::Char => (
-                            ty,
-                            self.gen_local_expr(&Expr::const_(Cv::Char('\0'))).unwrap(),
-                        ),
-                        Tk::Int => (ty, self.gen_local_expr(&Expr::const_(Cv::Int(0))).unwrap()),
-                        Tk::Float => (
-                            ty,
-                            self.gen_local_expr(&Expr::const_(Cv::Float(0.0))).unwrap(),
-                        ),
-                        _ => unreachable!("invalid value"),
-                    },
+            ArrayVal::Val(val) => match val.kind {
+                ExprKind::Const(_) => {
+                    let val = self.gen_local_expr(val).unwrap();
+                    (ty, val)
                 }
-
-                // println!("{}", val.display(&self.ctx, true));
-            }
+                _ => match val.ty().kind() {
+                    Tk::Bool => (
+                        ty,
+                        self.gen_local_expr(&Expr::const_(Cv::bool(false))).unwrap(),
+                    ),
+                    Tk::Char => (
+                        ty,
+                        self.gen_local_expr(&Expr::const_(Cv::Char('\0'))).unwrap(),
+                    ),
+                    Tk::Int => (ty, self.gen_local_expr(&Expr::const_(Cv::Int(0))).unwrap()),
+                    Tk::Float => (
+                        ty,
+                        self.gen_local_expr(&Expr::const_(Cv::Float(0.0))).unwrap(),
+                    ),
+                    _ => unreachable!("invalid value"),
+                },
+            },
             ArrayVal::Vals(arr) => {
                 let mut elems = Vec::new();
                 for elem in arr {
@@ -666,7 +652,6 @@ impl IrGenContext {
                     elems[0].0.clone(),
                     elems.iter().map(|(_, val)| val.clone()).collect(),
                 );
-                // println!("{}", arr.display(&self.ctx, true));
                 let ty = Ty::array(&mut self.ctx, elems[0].0.clone(), elems.len());
                 (ty, arr)
             }
@@ -868,7 +853,6 @@ impl IrGen for Item {
                                     .try_fold(&irgen.symtable)
                                     .expect("global def expected to have constant initializer");
 
-                                // println!("init:-----------\n{:#?}", init);
                                 let array_ty = make_array(ty.clone(), 0, &arr_ident.size).unwrap();
                                 let value =
                                     irgen.gen_global_comptime(&comptime.to_comptimeval(&array_ty));
@@ -923,7 +907,6 @@ impl IrGen for Item {
                                     .try_fold(&irgen.symtable)
                                     .expect("global def expected to have constant initializer");
 
-                                // println!("init:-----------\n{:#?}", init);
                                 let array_ty = make_array(ty.clone(), 0, &arr_ident.size).unwrap();
                                 let value =
                                     irgen.gen_global_comptime(&comptime.to_comptimeval(&array_ty));
@@ -949,7 +932,6 @@ impl IrGen for Item {
             },
             Item::FuncDef(func_def) => func_def.irgen(irgen),
         }
-        // println!("{:#?}", irgen.symtable);
     }
 }
 
@@ -1052,6 +1034,29 @@ impl IrGen for FuncDef {
         // generate body
         self.body.irgen(irgen);
 
+        // generate br to return block
+        let br_inst = Inst::br(&mut irgen.ctx, ret_block);
+
+        // check if the last inst is br, avoid duplicate br
+        let tail = irgen.curr_block.unwrap().tail(&irgen.ctx);
+        let mut flag = true;
+        if let Some(tail) = tail {
+            if let InstKind::Br = tail.kind(&irgen.ctx) {
+                flag = false;
+            }
+        }
+        if flag {
+            irgen
+                .curr_block
+                .unwrap()
+                .push_back(&mut irgen.ctx, br_inst)
+                .unwrap();
+            irgen
+                .curr_block
+                .unwrap()
+                .add_edge(&mut irgen.ctx, ret_block, br_inst, false);
+        }
+
         // append return block
         func.push_back(&mut irgen.ctx, ret_block).unwrap();
 
@@ -1145,7 +1150,6 @@ impl IrGen for Decl {
                             }
                             let (ty, new_init) = irgen.gen_local_array(ty, init);
                             let (ty, new_init) = (ty.unwrap(), new_init.unwrap());
-                            // println!("{}", init.display(&irgen.ctx, true));
                             let slot = stack_slot.result(&irgen.ctx).unwrap();
                             let store = Inst::store(&mut irgen.ctx, new_init, slot);
                             curr_block.push_back(&mut irgen.ctx, store).unwrap();
@@ -1189,7 +1193,6 @@ impl IrGen for Decl {
                         }
                         VarDef::Array(arr_ident, init) => {
                             let init = init.as_ref().unwrap();
-                            // println!("init:-----------\n{:#?}", init);
                             let array_ty = make_array(ty.clone(), 0, &arr_ident.size).unwrap();
                             let ir_ty = irgen.gen_type(&array_ty);
                             let stack_slot = Inst::alloca(&mut irgen.ctx, ir_ty);
@@ -1252,7 +1255,6 @@ impl IrGen for Decl {
                             } else {
                                 let (ty, new_init) = irgen.gen_local_array(ty, init);
                                 let (ty, new_init) = (ty.unwrap(), new_init.unwrap());
-                                // println!("{}", init.display(&irgen.ctx, true));
                                 let slot = stack_slot.result(&irgen.ctx).unwrap();
                                 let store = Inst::store(&mut irgen.ctx, new_init, slot);
                                 curr_block.push_back(&mut irgen.ctx, store).unwrap();

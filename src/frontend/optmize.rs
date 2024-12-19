@@ -1,17 +1,11 @@
-use std::{
-    collections::{HashMap, HashSet},
-    hash::Hash,
-    net::Incoming,
-    result,
-};
+use std::collections::{HashMap, HashSet};
 
 use crate::{
-    backend::block,
     infra::{
         linked_list::{LinkedListContainer, LinkedListNode},
-        storage::Arena,
+        storage::{Arena, ArenaPtr},
     },
-    ir::{Block, ConstantValue, Context, Func, Inst, InstKind, Usable, ValueKind},
+    ir::{Block, ConstantValue, Context, Func, Inst, InstKind, TyData, Usable, ValueKind},
 };
 pub struct Optimize {
     ir: Context,
@@ -39,9 +33,9 @@ impl Optimize {
 
     pub fn opt1(&mut self) {
         while self.remove_unreachable_blocks() {} // 删除不可达块，不动点算法
-        println!("==============================");
-        println!("{}", self.ir.to_string());
-        // self.remove_redundant_jumps(); // 删除冗余跳转
+        println!("remove_unreachable_blocks done");
+        // println!("{}", self.ir.to_string());
+        // self.remove_redundant_jumps(); // 删除冗余跳转，简化CFG
         self.mem2reg_special(); // mem2reg的特殊情况
         println!("mem2reg_special done");
         self.mem2reg(); // mem2reg
@@ -224,19 +218,16 @@ impl Optimize {
             let head = head.unwrap();
             let alloca: Vec<_> = head
                 .iter(&self.ir)
-                .take_while(|inst| matches!(inst.kind(&self.ir), InstKind::Alloca { .. }))
+                .filter(|inst| match inst.kind(&self.ir) {
+                    InstKind::Alloca { ty } => match ty.try_deref(&self.ir).unwrap() {
+                        TyData::Ptr { .. } => false,
+                        TyData::Array { .. } => false,
+                        _ => true,
+                    },
+                    _ => false,
+                })
                 .collect();
             let mut inst_to_remove = HashSet::new();
-
-            for alloca in alloca.clone() {
-                let result = alloca.result(&self.ir).unwrap();
-                println!("alloca: {}", alloca.display(&self.ir));
-                for user in result.users(&self.ir) {
-                    let inst = user.inst();
-                    println!("inst: {}", inst.display(&self.ir));
-                }
-                println!("=====================");
-            }
 
             let _alloca: Vec<_> = alloca
                 .into_iter()
@@ -313,36 +304,18 @@ impl Optimize {
     pub fn mem2reg(&mut self) {
         let funcs: Vec<_> = self.ir.funcs().collect();
 
-        let block_cnt = funcs
-            .iter()
-            .map(|func| func.iter(&self.ir).into_iter().count())
-            .sum::<usize>();
+        // let block_cnt = funcs
+        //     .iter()
+        //     .map(|func| func.iter(&self.ir).into_iter().count())
+        //     .sum::<usize>();
         // 主要是当前块算法复杂度太高，容易爆TLE
-        if block_cnt > 500 {
-            println!("TOO LARGE");
-            return;
-        }
+        // if block_cnt > 500 {
+        //     println!("TOO LARGE: {}", block_cnt);
+        //     return;
+        // }
 
         let df = self.get_df();
         let dom_tree = self.get_dom_tree();
-
-        println!("df:");
-        for (block, succs) in &df {
-            print!("{} -> ", block.name(&self.ir));
-            for succ in succs {
-                print!("    {} ", succ.name(&self.ir));
-            }
-            println!();
-        }
-
-        println!("dom_tree:");
-        for (block, succs) in &dom_tree {
-            print!("{} <- ", block.name(&self.ir));
-            for succ in succs {
-                print!("    {} ", succ.name(&self.ir));
-            }
-            println!();
-        }
 
         for func in funcs {
             let head = func.head(&self.ir);
@@ -351,12 +324,31 @@ impl Optimize {
                 continue;
             }
 
+            // 首先确保所有的alloca都与数组无关（需要更复杂的mem2reg才能实现）
             let head = head.unwrap();
+            if !head.iter(&self.ir).all(|inst| match inst.kind(&self.ir) {
+                InstKind::Alloca { ty } => match ty.try_deref(&self.ir).unwrap() {
+                    TyData::Ptr { .. } => false,
+                    TyData::Array { .. } => false,
+                    _ => true,
+                },
+                _ => false,
+            }) {
+                println!("exist array");
+                continue;
+            }
             let alloca: Vec<_> = head
                 .iter(&self.ir)
                 .filter(|inst| {
-                    matches!(inst.kind(&self.ir), InstKind::Alloca { .. })
-                        && self.is_alloca_promotable(inst, &dom_tree)
+                    let result = match inst.kind(&self.ir) {
+                        InstKind::Alloca { ty } => match ty.try_deref(&self.ir).unwrap() {
+                            TyData::Ptr { .. } => false,
+                            TyData::Array { .. } => false,
+                            _ => true,
+                        },
+                        _ => false,
+                    };
+                    result && self.is_alloca_promotable(inst, &dom_tree)
                 })
                 .collect();
             let alloca_store_bbs: HashMap<_, _> = alloca
@@ -382,10 +374,7 @@ impl Optimize {
                 .collect();
             let mut inst_to_remove = HashSet::new();
 
-            let block_cnt = func.iter(&self.ir).into_iter().count();
-
             if alloca.is_empty() {
-                println!("exit, block_cnt: {}", block_cnt);
                 for inst in inst_to_remove {
                     self.ir.try_dealloc(inst);
                 }
@@ -432,7 +421,6 @@ impl Optimize {
             let mut work = vec![(head, incoming_vals.clone())];
             while let Some((block, mut incoming_vals)) = work.pop() {
                 if visited.insert(block) {
-                    println!("block: {}", block.name(&self.ir));
                     let insts = block.iter(&self.ir).collect::<Vec<_>>();
                     for inst in insts {
                         let kind = inst.kind(&self.ir);
@@ -487,9 +475,11 @@ impl Optimize {
                         for phi in block_phi_map.get(&succ.to()).unwrap_or(&empty_vec) {
                             if phi_alloca_map.contains_key(&phi) {
                                 let alloca = phi_alloca_map.get(&phi).unwrap();
-                                let val = incoming_vals
-                                    .get(&alloca.result(&self.ir).unwrap())
-                                    .unwrap();
+                                let val = incoming_vals.get(&alloca.result(&self.ir).unwrap());
+                                if val.is_none() {
+                                    continue;
+                                }
+                                let val = val.unwrap();
                                 // let val = match incoming_vals.get(&alloca.result(&self.ir).unwrap())
                                 // {
                                 //     Some(val) => {

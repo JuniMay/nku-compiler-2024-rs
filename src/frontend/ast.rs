@@ -896,7 +896,6 @@ impl CompUnit {
         for item in self.items.iter_mut() {
             item.type_check(&mut symtable);
         }
-        // println!("{:#?}", symtable);
 
         symtable.leave_scope();
     }
@@ -1118,7 +1117,6 @@ impl VarDecl {
                     new_defs.push(def);
                 }
                 VarDef::Array(ident, init) => {
-                    // println!("{:#?}", ident);
                     // Type check the init expression, and fold it if possible
                     let new_init = std::mem::replace(init, Some(ArrayVal::default()))
                         .map(|init| {
@@ -1145,8 +1143,6 @@ impl VarDecl {
                         })
                         .unwrap();
 
-                    // println!("{:#?}", new_init);
-
                     let (expr_size, size): (Vec<Expr>, Vec<usize>) = ident
                         .size
                         .drain(..)
@@ -1164,11 +1160,9 @@ impl VarDecl {
                     ident.size = expr_size;
 
                     let mut full_array = ArrayVal::new_array(&ty, &size);
-                    println!("{:#?}", new_init);
                     new_init.fix_size(&mut full_array, &size);
 
                     *init = Some(full_array);
-                    // println!("{:#?}", init);
 
                     // Insert the variable into the symbol table
                     let arr_ty = make_array(
@@ -1359,7 +1353,6 @@ impl ArrayVal {
             ArrayVal::Vals(mut new_vals) => match full_array {
                 ArrayVal::Val(_) => unreachable!("unable array"),
                 ArrayVal::Vals(old_vals) => {
-                    // println!("{:#?}{:#?}", old_vals.len(), new_vals.len());
                     if new_vals.len() > old_vals.len() {
                         let group_size: usize = size[1..].iter().product();
                         let mut group_vals = vec![];
@@ -1426,8 +1419,6 @@ impl Block {
         symtable.enter_scope();
         let mut new_items = Vec::new();
 
-        // println!("------------------");
-        // println!("BeforeBLOCK{:#?}", symtable);
         // Type check each block item in the block
         for item in self.items.drain(..) {
             let item = match item {
@@ -1448,7 +1439,6 @@ impl Block {
             };
             new_items.push(item);
         }
-        // println!("AfterBLOCK{:#?}", symtable);
         self.items = new_items;
         symtable.leave_scope();
     }
@@ -1671,8 +1661,6 @@ impl Expr {
             ExprKind::Const(_) => self,
             ExprKind::Binary(op, lhs, rhs) => {
                 // Type check the left and right hand side expressions
-                // println!("{:#?}", lhs);
-                // println!("{:#?}", rhs);
 
                 let mut lhs = lhs.type_check(None, symtable);
                 let mut rhs = rhs.type_check(None, symtable);
@@ -1769,8 +1757,6 @@ impl Expr {
                 let entry = symtable.lookup(&ident).unwrap();
 
                 let (param_tys, ret_ty) = entry.ty.unwrap_func();
-                println!("{:#?}", param_tys);
-                println!("{:#?}", ret_ty);
 
                 // Type check the arguments
                 let args = args
@@ -1814,7 +1800,6 @@ impl Expr {
                     let entry = symtable.lookup(id).unwrap();
                     let ty = &entry.ty;
                     let (_, inner_ty) = get_inner_ty(ty, indices.len());
-                    // println!("{:#?}: {:#?}", id, ty.kind());
                     let indices = indices
                         .into_iter()
                         .map(|index| index.type_check(Some(&Type::int()), symtable))
@@ -1885,9 +1870,6 @@ impl Expr {
                 Tk::Int => expr = Expr::coercion(expr, Type::int()),
                 Tk::Float => expr = Expr::coercion(expr, Type::float()),
                 Tk::Array(_, _) => {
-                    // println!("------------");
-                    // println!("{:#?}", ty);
-                    // println!("{:#?}", expr.ty());
                     if !ty.is_equal(expr.ty()) {
                         unreachable!("unsupported type coercion: {:?}", ty);
                     } else {

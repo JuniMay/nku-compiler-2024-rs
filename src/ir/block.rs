@@ -5,7 +5,7 @@ use super::context::Context;
 use super::def_use::{Usable, User};
 use super::func::Func;
 use super::inst::Inst;
-use super::{InstKind, OperandList};
+use super::InstKind;
 use crate::infra::linked_list::{LinkedListContainer, LinkedListNode};
 use crate::infra::storage::{Arena, ArenaPtr, GenericPtr, Idx};
 use std::hash::Hash;
@@ -205,7 +205,6 @@ impl Block {
         let edge = match inst.kind(ctx) {
             InstKind::Br => BlockEdge(successor, inst, false),
             InstKind::CondBr => {
-                println!("remove cond_br and ad br");
                 let new_succ = if true_br {
                     inst.successor(ctx, 1)
                 } else {
