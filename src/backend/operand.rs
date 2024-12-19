@@ -25,6 +25,45 @@ pub struct MOperand {
     pub(super) kind: MOperandKind,
 }
 
+impl MOperand {
+    pub fn is_undef(&self) -> bool {
+        matches!(self.kind, MOperandKind::Undef)
+    }
+
+    pub fn is_mem(&self) -> bool {
+        matches!(self.kind, MOperandKind::Mem(..))
+    }
+
+    pub fn is_reg(&self) -> bool {
+        matches!(self.kind, MOperandKind::Reg(..))
+    }
+
+    pub fn is_imm(&self) -> bool {
+        matches!(self.kind, MOperandKind::Imm(..))
+    }
+
+    pub fn as_mem(&self) -> MemLoc {
+        match self.kind {
+            MOperandKind::Mem(mem) => mem,
+            _ => panic!("expect a memory location"),
+        }
+    }
+
+    pub fn as_reg(&self) -> Reg {
+        match self.kind {
+            MOperandKind::Reg(reg) => reg,
+            _ => panic!("expect a register"),
+        }
+    }
+
+    pub fn as_imm(&self) -> (Reg, i64) {
+        match self.kind {
+            MOperandKind::Imm(reg, imm) => (reg, imm),
+            _ => panic!("expect an immediate"),
+        }
+    }
+}
+
 /// A memory location
 ///
 /// # Stack Layout

@@ -1,7 +1,9 @@
 //! Abstract Syntax Tree (AST) for the SysY language.
 
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
+use super::get_inner_ty;
 use super::irgen::IrGenResult;
 use super::types::{Type, TypeKind as Tk};
 
@@ -9,9 +11,28 @@ use super::types::{Type, TypeKind as Tk};
 #[derive(Debug, Clone)]
 pub enum ComptimeVal {
     Bool(bool),
+    Char(char),
     Int(i32),
+    Float(f32), //iakkefloattest origin:f32,
+    Array(Type, Vec<ComptimeVal>),
     Undef(Type),
-    // TODO: Add more types, like float, list, etc.
+    // TOD?: Add more types, like float, list, etc.
+}
+
+impl Hash for ComptimeVal {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Bool(b) => b.hash(state),
+            Self::Char(c) => c.hash(state),
+            Self::Int(i) => i.hash(state),
+            Self::Float(f) => f.to_bits().hash(state),
+            Self::Array(ty, elems) => {
+                ty.hash(state);
+                elems.hash(state);
+            }
+            Self::Undef(ty) => ty.hash(state),
+        }
+    }
 }
 
 impl ComptimeVal {
@@ -21,20 +42,43 @@ impl ComptimeVal {
             Self::Bool(b) => *b as i32,
             Self::Int(i) => *i,
             Self::Undef(_) => panic!("unwrapping undefined comptime value"),
+            _ => panic!("not an integer"),
         }
     }
 
-    pub fn bool(b: bool) -> Self { Self::Bool(b) }
+    pub fn bool(b: bool) -> Self {
+        Self::Bool(b)
+    }
 
-    pub fn int(i: i32) -> Self { Self::Int(i) }
+    pub fn char(c: char) -> Self {
+        Self::Char(c)
+    }
 
-    pub fn undef(ty: Type) -> Self { Self::Undef(ty) }
+    pub fn int(i: i32) -> Self {
+        Self::Int(i)
+    }
+
+    pub fn float(f: f64) -> Self {
+        //iakkefloattest origin:f32,
+        Self::Float(f as f32)
+    }
+
+    pub fn array(ty: Type, elems: Vec<ComptimeVal>) -> Self {
+        Self::Array(ty, elems)
+    }
+
+    pub fn undef(ty: Type) -> Self {
+        Self::Undef(ty)
+    }
 
     /// Get the type of the comptime value.
     pub fn get_type(&self) -> Type {
         match self {
             Self::Bool(_) => Type::bool(),
+            Self::Char(_) => Type::char(),
             Self::Int(_) => Type::int(),
+            Self::Float(_) => Type::float(),
+            Self::Array(ty, _) => ty.clone(),
             Self::Undef(ty) => ty.clone(),
         }
     }
@@ -45,6 +89,7 @@ impl ComptimeVal {
             Self::Bool(b) => !*b,
             Self::Int(i) => *i == 0,
             Self::Undef(_) => false,
+            _ => unreachable!(""),
         }
     }
 
@@ -54,12 +99,14 @@ impl ComptimeVal {
             Self::Bool(a) => *a,
             Self::Int(a) => *a != 0,
             Self::Undef(_) => panic!("logical OR with undefined comptime value"),
+            _ => unreachable!(""),
         };
 
         let rhs = match other {
             Self::Bool(b) => *b,
             Self::Int(b) => *b != 0,
             Self::Undef(_) => panic!("logical OR with undefined comptime value"),
+            _ => unreachable!(""),
         };
 
         Self::Bool(lhs || rhs)
@@ -71,12 +118,14 @@ impl ComptimeVal {
             Self::Bool(a) => *a,
             Self::Int(a) => *a != 0,
             Self::Undef(_) => panic!("logical AND with undefined comptime value"),
+            _ => unreachable!(""),
         };
 
         let rhs = match other {
             Self::Bool(b) => *b,
             Self::Int(b) => *b != 0,
             Self::Undef(_) => panic!("logical AND with undefined comptime value"),
+            _ => unreachable!(""),
         };
 
         Self::Bool(lhs && rhs)
@@ -86,7 +135,114 @@ impl ComptimeVal {
     // Your compiler can still work without these operations, but it will be less
     // efficient.
     //
-    // TODO: Implement other operations for ComptimeVal
+    // HACK: Implement other operations for ComptimeVal
+    // TOD?: 完成float的其他操作
+    pub fn add(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Int(a + b),
+            (Self::Float(a), Self::Float(b)) => Self::Float(a + b),
+            (Self::Int(a), Self::Float(b)) => Self::Float(*a as f32 + b),
+            (Self::Float(a), Self::Int(b)) => Self::Float(a + *b as f32),
+            _ => panic!("unsupported operation: {:?} + {:?}", self, other),
+        }
+    }
+    pub fn sub(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Int(a - b),
+            (Self::Float(a), Self::Float(b)) => Self::Float(a - b),
+            (Self::Int(a), Self::Float(b)) => Self::Float(*a as f32 - b),
+            (Self::Float(a), Self::Int(b)) => Self::Float(a - *b as f32),
+            _ => panic!("unsupported operation: {:?} - {:?}", self, other),
+        }
+    }
+    pub fn mul(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Int(a * b),
+            (Self::Float(a), Self::Float(b)) => Self::Float(a * b),
+            (Self::Int(a), Self::Float(b)) => Self::Float(*a as f32 * b),
+            (Self::Float(a), Self::Int(b)) => Self::Float(a * *b as f32),
+            _ => panic!("unsupported operation: {:?} * {:?}", self, other),
+        }
+    }
+    pub fn sdiv(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Int(a / b),
+            (Self::Float(a), Self::Float(b)) => Self::Float(a / b),
+            (Self::Int(a), Self::Float(b)) => Self::Float(*a as f32 / b),
+            (Self::Float(a), Self::Int(b)) => Self::Float(a / *b as f32),
+            _ => panic!("unsupported operation: {:?} / {:?}", self, other),
+        }
+    }
+    pub fn srem(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Int(a % b),
+            (Self::Float(a), Self::Float(b)) => Self::Float(a % b), // question:浮点数取余？没见过qaq??
+            (Self::Int(a), Self::Float(b)) => Self::Float(*a as f32 % b),
+            (Self::Float(a), Self::Int(b)) => Self::Float(a % *b as f32),
+            _ => panic!("unsupported operation: {:?} % {:?}", self, other),
+        }
+    }
+    pub fn udiv(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Int(a / b),
+            _ => panic!("unsupported operation: {:?} / {:?}", self, other),
+        }
+    }
+    pub fn urem(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Int(a % b),
+            _ => panic!("unsupported operation: {:?} % {:?}", self, other),
+        }
+    }
+    pub fn eq(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Bool(a == b),
+            (Self::Float(a), Self::Float(b)) => Self::Bool(a == b),
+            (Self::Int(a), Self::Float(b)) => Self::Bool(*a as f32 == *b),
+            (Self::Float(a), Self::Int(b)) => Self::Bool(*a == *b as f32),
+            _ => panic!("unsupported operation: {:?} == {:?}", self, other),
+        }
+    }
+    pub fn ne(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Bool(a != b),
+            (Self::Float(a), Self::Float(b)) => Self::Bool(a != b),
+            (Self::Int(a), Self::Float(b)) => Self::Bool(*a as f32 != *b),
+            (Self::Float(a), Self::Int(b)) => Self::Bool(*a != *b as f32),
+            _ => panic!("unsupported operation: {:?} != {:?}", self, other),
+        }
+    }
+    pub fn lt(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Bool(a < b),
+            (Self::Float(a), Self::Float(b)) => Self::Bool(a < b),
+            (Self::Int(a), Self::Float(b)) => Self::Bool((*a as f32) < *b),
+            (Self::Float(a), Self::Int(b)) => Self::Bool(*a < *b as f32),
+            _ => panic!("unsupported operation: {:?} < {:?}", self, other),
+        }
+    }
+    pub fn le(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => Self::Bool(a <= b),
+            (Self::Float(a), Self::Float(b)) => Self::Bool(a <= b),
+            (Self::Int(a), Self::Float(b)) => Self::Bool(*a as f32 <= *b),
+            (Self::Float(a), Self::Int(b)) => Self::Bool(*a <= *b as f32),
+            _ => panic!("unsupported operation: {:?} <= {:?}", self, other),
+        }
+    }
+    pub fn neg(&self) -> Self {
+        match self {
+            Self::Int(a) => Self::Int(-a),
+            Self::Float(a) => Self::Float(-a),
+            _ => panic!("unsupported operation: -{:?}", self),
+        }
+    }
+    pub fn not(&self) -> Self {
+        match self {
+            Self::Bool(a) => Self::Bool(!a),
+            _ => panic!("unsupported operation: !{:?}", self),
+        }
+    }
 }
 
 impl PartialEq for ComptimeVal {
@@ -95,10 +251,14 @@ impl PartialEq for ComptimeVal {
         match (self, other) {
             (Cv::Bool(a), Cv::Bool(b)) => a == b,
             (Cv::Int(a), Cv::Int(b)) => a == b,
+            (Cv::Float(a), Cv::Float(b)) => a == b,
 
             // Coercion situations, bool -> int
             (Cv::Bool(a), Cv::Int(b)) => (*a as i32) == *b,
             (Cv::Int(a), Cv::Bool(b)) => *a == (*b as i32),
+
+            (Cv::Int(a), Cv::Float(b)) => (*a as f32) == *b,
+            (Cv::Float(a), Cv::Int(b)) => *a == (*b as f32),
 
             _ => false,
         }
@@ -113,10 +273,14 @@ impl PartialOrd for ComptimeVal {
         match (self, other) {
             (Cv::Bool(a), Cv::Bool(b)) => a.partial_cmp(b),
             (Cv::Int(a), Cv::Int(b)) => a.partial_cmp(b),
+            (Cv::Float(a), Cv::Float(b)) => a.partial_cmp(b),
 
             // Coercion situations, bool -> int
             (Cv::Bool(a), Cv::Int(b)) => (*a as i32).partial_cmp(b),
             (Cv::Int(a), Cv::Bool(b)) => a.partial_cmp(&(*b as i32)),
+
+            (Cv::Int(a), Cv::Float(b)) => (*a as f32).partial_cmp(b),
+            (Cv::Float(a), Cv::Int(b)) => a.partial_cmp(&(*b as f32)),
 
             _ => None,
         }
@@ -131,7 +295,10 @@ impl std::ops::Neg for ComptimeVal {
         match self {
             Cv::Bool(a) => Cv::Int(-(a as i32)),
             Cv::Int(a) => Cv::Int(-a),
+            Cv::Float(a) => Cv::Float(-a),
             Cv::Undef(_) => panic!("negating undefined comptime value"),
+
+            _ => unreachable!("array"),
         }
     }
 }
@@ -144,7 +311,9 @@ impl std::ops::Not for ComptimeVal {
         match self {
             Cv::Bool(a) => Cv::Bool(!a),
             Cv::Int(a) => Cv::Bool(a != 0),
+
             Cv::Undef(_) => panic!("logical NOT with undefined comptime value"),
+            _ => unreachable!("array"),
         }
     }
 }
@@ -156,11 +325,15 @@ impl std::ops::Add for ComptimeVal {
         use ComptimeVal as Cv;
         match (self, other) {
             (Cv::Int(a), Cv::Int(b)) => Cv::Int(a + b),
+            (Cv::Float(a), Cv::Float(b)) => Cv::Float(a + b),
 
             // coercion situations, bool -> int
             (Cv::Bool(a), Cv::Int(b)) => Cv::Int(a as i32 + b),
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a + b as i32),
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 + b as i32),
+
+            (Cv::Int(a), Cv::Float(b)) => Cv::Float(a as f32 + b),
+            (Cv::Float(a), Cv::Int(b)) => Cv::Float(a + b as f32),
 
             _ => panic!("unsupported addition"),
         }
@@ -174,12 +347,18 @@ impl std::ops::Sub for ComptimeVal {
         use ComptimeVal as Cv;
 
         match (self, other) {
-            (Cv::Int(a), Cv::Int(b)) => Cv::Int(a - b),
+            (Cv::Int(a), Cv::Int(b)) => Cv::Int(a.checked_sub(b).unwrap_or_else(|| {
+                -2147483648 // INT32_MIN
+            })),
+            (Cv::Float(a), Cv::Float(b)) => Cv::Float(a - b),
 
             // coercion situations, bool -> int
             (Cv::Bool(a), Cv::Int(b)) => Cv::Int(a as i32 - b),
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a - b as i32),
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 - b as i32),
+
+            (Cv::Int(a), Cv::Float(b)) => Cv::Float(a as f32 - b),
+            (Cv::Float(a), Cv::Int(b)) => Cv::Float(a - b as f32),
 
             _ => panic!("unsupported subtraction"),
         }
@@ -193,12 +372,15 @@ impl std::ops::Mul for ComptimeVal {
         use ComptimeVal as Cv;
         match (self, other) {
             (Cv::Int(a), Cv::Int(b)) => Cv::Int(a * b),
+            (Cv::Float(a), Cv::Float(b)) => Cv::Float(a * b),
 
             // coercion situations, bool -> int
             (Cv::Bool(a), Cv::Int(b)) => Cv::Int(a as i32 * b),
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a * b as i32),
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 * b as i32),
 
+            (Cv::Int(a), Cv::Float(b)) => Cv::Float(a as f32 * b),
+            (Cv::Float(a), Cv::Int(b)) => Cv::Float(a * b as f32),
             _ => panic!("unsupported multiplication"),
         }
     }
@@ -211,11 +393,15 @@ impl std::ops::Div for ComptimeVal {
         use ComptimeVal as Cv;
         match (self, other) {
             (Cv::Int(a), Cv::Int(b)) => Cv::Int(a / b),
+            (Cv::Float(a), Cv::Float(b)) => Cv::Float(a / b),
 
             // coercion situations, bool -> int
             (Cv::Bool(a), Cv::Int(b)) => Cv::Int(a as i32 / b),
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a / b as i32),
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 / b as i32),
+
+            (Cv::Int(a), Cv::Float(b)) => Cv::Float(a as f32 / b),
+            (Cv::Float(a), Cv::Int(b)) => Cv::Float(a / b as f32),
 
             _ => panic!("unsupported division"),
         }
@@ -229,11 +415,15 @@ impl std::ops::Rem for ComptimeVal {
         use ComptimeVal as Cv;
         match (self, other) {
             (Cv::Int(a), Cv::Int(b)) => Cv::Int(a % b),
+            (Cv::Float(a), Cv::Float(b)) => Cv::Float(a % b),
 
             // bool -> int
             (Cv::Bool(a), Cv::Bool(b)) => Cv::Int(a as i32 % b as i32),
             (Cv::Bool(a), Cv::Int(b)) => Cv::Int(a as i32 % b),
             (Cv::Int(a), Cv::Bool(b)) => Cv::Int(a % b as i32),
+
+            (Cv::Int(a), Cv::Float(b)) => Cv::Float(a as f32 % b),
+            (Cv::Float(a), Cv::Int(b)) => Cv::Float(a % b as f32),
 
             _ => panic!("unsupported remainder"),
         }
@@ -241,16 +431,27 @@ impl std::ops::Rem for ComptimeVal {
 }
 
 /// Binary operators.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BinaryOp {
     Add,
     Sub,
     Mul,
     Div,
+    Mod,
+    /// Comparison operators.
+    Lt, // 小于
+    Le, // 小于等于
+    Gt, // 大于
+    Ge, // 大于等于
+    Eq, // 等于
+    Ne, // 不等于
+    /// Logical operators.
+    And,
+    Or,
 }
 
 /// Unary operators.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum UnaryOp {
     Neg,
     /// Logical not.
@@ -258,7 +459,7 @@ pub enum UnaryOp {
 }
 
 /// Function call.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct FuncCall {
     pub ident: String,
     pub args: Vec<Expr>,
@@ -268,12 +469,12 @@ pub struct FuncCall {
 /// Left value refers to a specific memory location, typically allowing it to be
 /// assigned a value.
 /// Its usually on the left side of an assignment.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct LVal {
     pub ident: String,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum ExprKind {
     /// Constant value.
     Const(ComptimeVal),
@@ -285,12 +486,14 @@ pub enum ExprKind {
     FuncCall(FuncCall),
     /// Left value.
     LVal(LVal),
+    /// Array access.
+    ArrayAccess(Box<Expr>, Vec<Box<Expr>>),
     /// Type coercion. This is used to convert one type to another.
     Coercion(Box<Expr>),
 }
 
 /// Expression.
-#[derive(Debug)]
+#[derive(Debug, Clone, Hash)]
 pub struct Expr {
     /// kind of the expression.
     pub kind: ExprKind,
@@ -300,7 +503,9 @@ pub struct Expr {
 }
 
 impl PartialEq for Expr {
-    fn eq(&self, other: &Self) -> bool { self.kind == other.kind }
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+    }
 }
 
 impl Eq for Expr {}
@@ -342,6 +547,13 @@ impl Expr {
         }
     }
 
+    pub fn array_access(expr: Expr, index: Vec<Expr>) -> Self {
+        Self {
+            kind: ExprKind::ArrayAccess(Box::new(expr), index.into_iter().map(Box::new).collect()),
+            ty: None,
+        }
+    }
+
     pub fn coercion(expr: Expr, to: Type) -> Self {
         if let Some(ref from) = expr.ty {
             if from == &to {
@@ -352,6 +564,13 @@ impl Expr {
         Self {
             kind: ExprKind::Coercion(Box::new(expr)),
             ty: Some(to),
+        }
+    }
+
+    pub fn get_const_value(&self) -> Option<&ComptimeVal> {
+        match &self.kind {
+            ExprKind::Const(val) => Some(val),
+            _ => None,
         }
     }
 }
@@ -374,6 +593,9 @@ pub enum Stmt {
     /// Assignment statement.
     /// e.g. `a = 1;`
     Assign(LVal, Expr),
+    /// Array assignment statement.
+    /// e.g. `a[1] = 1;`
+    ArrayAssign(ArrayIdent, Expr),
     /// Expression statement.
     /// e.g. `1 + 2;`
     Expr(ExprStmt),
@@ -432,9 +654,9 @@ pub enum Decl {
 ///           ^^^^^
 /// ```
 #[derive(Debug)]
-pub struct ConstDef {
-    pub ident: String,
-    pub init: Expr,
+pub enum ConstDef {
+    Val(String, Expr),
+    Array(ArrayIdent, ArrayVal),
 }
 
 /// Variable definition.
@@ -445,9 +667,9 @@ pub struct ConstDef {
 ///     ^^^^^
 /// ```
 #[derive(Debug)]
-pub struct VarDef {
-    pub ident: String,
-    pub init: Option<Expr>,
+pub enum VarDef {
+    Val(String, Option<Expr>),
+    Array(ArrayIdent, Option<ArrayVal>),
 }
 
 /// Constant declaration.
@@ -495,6 +717,35 @@ pub struct FuncDef {
     pub body: Block,
 }
 
+#[derive(Debug)]
+pub struct ArrayIdent {
+    pub ident: String,
+    /// 用来标记每个维度的大小
+    pub size: Vec<Expr>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ArrayVal {
+    Val(Expr),           // 数组值
+    Vals(Vec<ArrayVal>), // 嵌套数组
+}
+
+impl ArrayVal {
+    pub fn from_vec(vals: Vec<Expr>) -> Self {
+        let vals: Vec<ArrayVal> = vals.into_iter().map(ArrayVal::Val).collect();
+        Self::Vals(vals)
+    }
+    pub fn empty() -> Self {
+        Self::Vals(Vec::new())
+    }
+    pub fn depth(&self) -> usize {
+        match self {
+            Self::Val(_) => 0,
+            Self::Vals(vals) => 1 + vals.iter().map(ArrayVal::depth).max().unwrap_or(0),
+        }
+    }
+}
+
 /// A global item.
 /// This can be a declaration or a function definition.
 /// e.g. `const int a = 1;`, `int main() { ... }`
@@ -538,7 +789,7 @@ impl SymbolEntry {
 
 /// Symbol table.
 /// This is used to store information about symbols in the program.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct SymbolTable {
     /// Stack of scopes.
     /// Each scope has its own hashmap of symbols.
@@ -550,10 +801,14 @@ pub struct SymbolTable {
 
 impl SymbolTable {
     /// Enter a new scope.
-    pub fn enter_scope(&mut self) { self.stack.push(HashMap::default()); }
+    pub fn enter_scope(&mut self) {
+        self.stack.push(HashMap::default());
+    }
 
     /// Leave the current scope.
-    pub fn leave_scope(&mut self) { self.stack.pop(); }
+    pub fn leave_scope(&mut self) {
+        self.stack.pop();
+    }
 
     /// Insert a symbol into the current scope.
     pub fn insert(&mut self, name: impl Into<String>, entry: SymbolEntry) {
@@ -592,7 +847,39 @@ impl SymbolTable {
 
     /// Register SysY library functions to the symbol table.
     pub fn register_sysylib(&mut self) {
-        // TODO: Register SysY library functions to the symbol table
+        // HACK: Register SysY library functions to the symbol table
+        // 注册一些函数，但是目前用不到
+        let sysy_funcs = vec![
+            ("getint", Type::func(vec![], Type::int())),
+            ("getch", Type::func(vec![], Type::int())),
+            ("getfloat", Type::func(vec![], Type::float())),
+            (
+                "getarray",
+                Type::func(vec![Type::ptr(Type::int())], Type::int()),
+            ),
+            (
+                "getfarray",
+                Type::func(vec![Type::ptr(Type::float())], Type::int()),
+            ),
+            ("putint", Type::func(vec![Type::int()], Type::void())),
+            ("putch", Type::func(vec![Type::int()], Type::void())),
+            ("putfloat", Type::func(vec![Type::float()], Type::void())),
+            (
+                "putarray",
+                Type::func(vec![Type::int(), Type::ptr(Type::int())], Type::void()),
+            ),
+            (
+                "putfarray",
+                Type::func(vec![Type::int(), Type::ptr(Type::float())], Type::void()),
+            ),
+            // ("putf", Type::func(vec![Type::array(Type::char(), 0), ],Type::void())),
+            ("starttime", Type::func(vec![], Type::void())),
+            ("stoptime", Type::func(vec![], Type::void())),
+        ];
+
+        for (name, ty) in sysy_funcs {
+            self.insert(name, SymbolEntry::from_ty(ty));
+        }
     }
 }
 
@@ -633,9 +920,54 @@ impl Item {
 
                 // Insert the function parameters into the scope
                 let mut param_tys = Vec::new();
-                for param in params.iter() {
-                    param_tys.push(param.ty.clone());
-                    symtable.insert(param.ident.clone(), SymbolEntry::from_ty(param.ty.clone()));
+                for param in params.iter_mut() {
+                    match param.ty.kind() {
+                        Tk::Array(_, _) | Tk::Ptr(_) => {
+                            let mut vec_size = vec![];
+                            let mut new_ty = param.ty.kind().clone();
+                            let base_ty = loop {
+                                if let Tk::Array(ty, size) = new_ty {
+                                    let size = size.type_check(Some(&Type::int()), symtable);
+                                    let size = size.try_fold(symtable).expect("non-constant size");
+                                    let size = Expr::const_(size);
+                                    vec_size.push(size);
+                                    new_ty = ty.kind().clone();
+                                } else if let Tk::Ptr(ty) = new_ty {
+                                    new_ty = ty.kind().clone();
+                                } else {
+                                    break new_ty;
+                                }
+                            };
+                            let mut base_ty = match base_ty {
+                                Tk::Int => Type::int(),
+                                Tk::Float => Type::float(),
+                                Tk::Char => Type::char(),
+                                Tk::Bool => Type::bool(),
+                                _ => panic!("unsupported type"),
+                            };
+
+                            for expr in vec_size.iter().rev() {
+                                base_ty = Type::array(base_ty, expr.clone());
+                            }
+                            base_ty = Type::ptr(base_ty);
+
+                            *param = FuncFParam {
+                                ty: base_ty.clone(),
+                                ident: param.ident.clone(),
+                            };
+
+                            param_tys.push(base_ty.clone());
+                            symtable
+                                .insert(param.ident.clone(), SymbolEntry::from_ty(base_ty.clone()));
+                        }
+                        _ => {
+                            param_tys.push(param.ty.clone());
+                            symtable.insert(
+                                param.ident.clone(),
+                                SymbolEntry::from_ty(param.ty.clone()),
+                            );
+                        }
+                    }
                 }
 
                 let func_ty = Type::func(param_tys, ret_ty.clone());
@@ -655,32 +987,94 @@ impl Item {
     }
 }
 
+use super::irgen::make_array;
+
 impl ConstDecl {
     /// Type check the constant declaration.
     pub fn type_check(&mut self, symtable: &mut SymbolTable) {
         let mut new_defs = Vec::new();
         for mut def in self.defs.drain(..) {
-            // TODO: array type checking
-
+            // HACK: array type checking，
+            // 目前的方式是，如果是数组，那么就直接将其插入符号表，然后将其初始化为0，否则就按照常量处理
             let ty = self.ty.clone();
 
-            // Type check the init expression
-            def.init = def.init.type_check(Some(&ty), symtable);
+            match &mut def {
+                ConstDef::Val(ident, init) => {
+                    // Type check the init expression
+                    let new_init =
+                        std::mem::replace(init, Expr::default()).type_check(Some(&ty), symtable);
+                    *init = new_init;
 
-            // Fold the init expression into a constant value
-            let folded = def.init.try_fold(symtable).expect("non-constant init");
-            def.init = Expr::const_(folded.clone());
+                    // Fold the init expression into a constant value
+                    let folded = init.try_fold(symtable).expect("non-constant init");
+                    *init = Expr::const_(folded.clone());
 
-            // Insert the constant into the symbol table
-            symtable.insert(
-                def.ident.clone(),
-                SymbolEntry {
-                    ty,
-                    comptime: Some(folded),
-                    ir_value: None,
-                },
-            );
-            new_defs.push(def);
+                    // Insert the constant into the symbol table
+                    symtable.insert(
+                        ident.clone(),
+                        SymbolEntry {
+                            ty,
+                            comptime: Some(folded),
+                            ir_value: None,
+                        },
+                    );
+                    new_defs.push(def);
+                }
+                ConstDef::Array(ident, init) => {
+                    // Type check the init expression, and fold it if possible
+                    let new_init = Some(std::mem::replace(init, ArrayVal::default()))
+                        .map(|init| {
+                            let typed_init = init.type_check(Some(&ty), symtable);
+                            typed_init.try_fold(symtable)
+                        })
+                        .unwrap()
+                        .unwrap_or_else(|| panic!("unable to fold!"));
+
+                    let (expr_size, size): (Vec<Expr>, Vec<usize>) = ident
+                        .size
+                        .drain(..)
+                        .map(|expr| {
+                            let expr = expr.type_check(None, symtable);
+                            if let ExprKind::Const(ComptimeVal::Int(val)) = &expr.kind {
+                                let val = *val;
+                                (expr, val as usize)
+                            } else {
+                                panic!("non-constant array size")
+                            }
+                        })
+                        .unzip();
+
+                    ident.size = expr_size;
+
+                    let mut full_array = ArrayVal::new_array(&ty, &size);
+                    new_init.fix_size(&mut full_array, &size);
+
+                    let arr_ty = make_array(
+                        ty.clone(),
+                        0,
+                        &size
+                            .clone()
+                            .into_iter()
+                            .map(|x| Expr::const_(ComptimeVal::int(x as i32)))
+                            .collect::<Vec<_>>(),
+                    )
+                    .unwrap();
+
+                    // Insert the variable into the symbol table
+                    symtable.insert(
+                        ident.ident.clone(),
+                        SymbolEntry {
+                            ty: arr_ty.clone(),
+                            comptime: Some(full_array.to_comptimeval(&arr_ty)),
+                            ir_value: None,
+                        },
+                    );
+
+                    *init = full_array;
+
+                    new_defs.push(def);
+                }
+            }
         }
         self.defs = new_defs;
     }
@@ -691,32 +1085,330 @@ impl VarDecl {
     pub fn type_check(&mut self, symtable: &mut SymbolTable) {
         let mut new_defs = Vec::new();
         for mut def in self.defs.drain(..) {
-            // TODO: array type checking
-
             let ty = self.ty.clone();
 
-            // Type check the init expression, and fold it if possible
-            let init = def
-                .init
-                .map(|init| {
-                    // fold as much as possible
-                    // XXX: what if we do not fold here?
-                    let typed_init = init.type_check(Some(&ty), symtable);
-                    match typed_init.try_fold(symtable) {
-                        Some(val) => Expr::const_(val),
-                        None => typed_init,
-                    }
-                })
-                // TODO: assign undef
-                .unwrap_or_else(|| todo!("what if there is no init value?"));
+            match &mut def {
+                VarDef::Val(ident, init) => {
+                    // Type check the init expression, and fold it if possible
+                    let new_init = std::mem::replace(init, Some(Expr::default()))
+                        .map(|init| {
+                            // fold as much as possible
+                            // XXX: what if we do not fold here?
+                            let typed_init = init.type_check(Some(&ty), symtable);
+                            match typed_init.try_fold(symtable) {
+                                Some(val) => Expr::const_(val),
+                                None => typed_init,
+                            }
+                        })
+                        .unwrap_or_else(|| match &ty.kind() {
+                            // HACK：没有初始化值则指定为0或者false
+                            Tk::Bool => Expr::const_(ComptimeVal::bool(false)),
+                            Tk::Char => Expr::const_(ComptimeVal::char('\0')),
+                            Tk::Int => Expr::const_(ComptimeVal::int(0)),
+                            Tk::Float => Expr::const_(ComptimeVal::float(0.0)),
 
-            def.init = Some(init);
+                            _ => panic!("unsupported type"),
+                        });
 
-            // Insert the variable into the symbol table
-            symtable.insert(def.ident.clone(), SymbolEntry::from_ty(ty));
-            new_defs.push(def);
+                    *init = Some(new_init);
+
+                    // Insert the variable into the symbol table
+                    symtable.insert(ident.clone(), SymbolEntry::from_ty(ty));
+                    new_defs.push(def);
+                }
+                VarDef::Array(ident, init) => {
+                    // Type check the init expression, and fold it if possible
+                    let new_init = std::mem::replace(init, Some(ArrayVal::default()))
+                        .map(|init| {
+                            // fold as much as possible
+                            // XXX: what if we do not fold here?
+                            let typed_init = init.type_check(Some(&ty), symtable);
+                            typed_init.force_fold(symtable)
+                        })
+                        .unwrap_or_else(|| match &ty.kind() {
+                            // HACK：未初始化则指定为0或者false
+                            Tk::Bool => Some(ArrayVal::Vals(vec![ArrayVal::Val(Expr::const_(
+                                ComptimeVal::bool(false),
+                            ))])),
+                            Tk::Char => Some(ArrayVal::Vals(vec![ArrayVal::Val(Expr::const_(
+                                ComptimeVal::Char('\0'),
+                            ))])),
+                            Tk::Int => Some(ArrayVal::Vals(vec![ArrayVal::Val(Expr::const_(
+                                ComptimeVal::int(0),
+                            ))])),
+                            Tk::Float => Some(ArrayVal::Vals(vec![ArrayVal::Val(Expr::const_(
+                                ComptimeVal::float(0.0),
+                            ))])),
+                            _ => panic!("unsupported type"),
+                        })
+                        .unwrap();
+
+                    let (expr_size, size): (Vec<Expr>, Vec<usize>) = ident
+                        .size
+                        .drain(..)
+                        .map(|expr| {
+                            let expr = expr.type_check(None, symtable);
+                            if let ExprKind::Const(ComptimeVal::Int(val)) = &expr.kind {
+                                let val = *val;
+                                (expr, val as usize)
+                            } else {
+                                panic!("non-constant array size")
+                            }
+                        })
+                        .unzip();
+
+                    ident.size = expr_size;
+
+                    let mut full_array = ArrayVal::new_array(&ty, &size);
+                    new_init.fix_size(&mut full_array, &size);
+
+                    *init = Some(full_array);
+
+                    // Insert the variable into the symbol table
+                    let arr_ty = make_array(
+                        ty,
+                        0,
+                        &size
+                            .clone()
+                            .into_iter()
+                            .map(|x| Expr::const_(ComptimeVal::int(x as i32)))
+                            .collect::<Vec<_>>(),
+                    )
+                    .unwrap();
+                    symtable.insert(ident.ident.clone(), SymbolEntry::from_ty(arr_ty));
+                    new_defs.push(def);
+                }
+            }
         }
         self.defs = new_defs;
+    }
+}
+
+impl ArrayVal {
+    pub fn type_check(self, expect: Option<&Type>, symtable: &SymbolTable) -> Self {
+        match self {
+            ArrayVal::Val(expr) => {
+                let expr = expr.type_check(expect, symtable);
+                ArrayVal::Val(expr)
+            }
+            ArrayVal::Vals(vals) => {
+                // 采用递归的方式进行类型检查，逐层检查
+                let vals = vals
+                    .into_iter()
+                    .map(|val| val.type_check(expect, symtable))
+                    .collect();
+                ArrayVal::Vals(vals)
+            }
+        }
+    }
+
+    /// 强制折叠数组，如果不能折叠则使用原来的值，需要移动权限
+    pub fn force_fold(self, symtable: &SymbolTable) -> Option<ArrayVal> {
+        // HACK:递归的方式进行折叠
+        match self {
+            ArrayVal::Val(expr) => {
+                let new_expr = expr.try_fold(symtable);
+                match new_expr {
+                    Some(new_expr) => Some(ArrayVal::Val(Expr::const_(new_expr))),
+                    None => Some(ArrayVal::Val(expr)),
+                }
+            }
+            ArrayVal::Vals(vals) => {
+                //不能折叠则保持原状
+                let vals = vals
+                    .into_iter()
+                    .map(|val| val.try_fold(symtable).or(Some(val)))
+                    .collect::<Option<Vec<_>>>()?;
+
+                Some(ArrayVal::Vals(vals))
+            }
+        }
+    }
+
+    pub fn try_fold(&self, symtable: &SymbolTable) -> Option<ArrayVal> {
+        // HACK:递归的方式进行折叠
+        match self {
+            ArrayVal::Val(expr) => {
+                let expr = expr.try_fold(symtable)?;
+                Some(ArrayVal::Val(Expr::const_(expr)))
+            }
+            ArrayVal::Vals(vals) => {
+                //确保所有的值都被折叠
+                let vals = vals
+                    .iter()
+                    .map(|val| val.try_fold(symtable))
+                    .collect::<Option<Vec<_>>>()?;
+
+                Some(ArrayVal::Vals(vals))
+            }
+        }
+    }
+
+    pub fn to_comptimeval(&self, ty: &Type) -> ComptimeVal {
+        match self {
+            ArrayVal::Val(expr) => {
+                if let ExprKind::Const(val) = &expr.kind {
+                    val.clone()
+                } else {
+                    panic!("non-constant array value");
+                }
+            }
+            ArrayVal::Vals(vals) => {
+                let ty = match ty.kind() {
+                    Tk::Array(ty, _) => ty,
+                    Tk::Ptr(ty) => ty,
+                    _ => panic!("invalid type"),
+                };
+
+                let vals = vals.iter().map(|val| val.to_comptimeval(ty)).collect();
+                ComptimeVal::array(ty.clone(), vals)
+            }
+        }
+    }
+
+    pub fn new_array(ty: &Type, size: &Vec<usize>) -> Self {
+        let mut vals = Vec::new();
+        for _ in 0..size[0] {
+            if size.len() == 1 {
+                match ty.kind() {
+                    Tk::Int => vals.push(ArrayVal::Val(Expr::const_(ComptimeVal::int(0)))),
+                    Tk::Bool => vals.push(ArrayVal::Val(Expr::const_(ComptimeVal::bool(false)))),
+                    Tk::Float => vals.push(ArrayVal::Val(Expr::const_(ComptimeVal::float(0.0)))),
+                    _ => unreachable!("invalid type"),
+                }
+            } else {
+                let new_size = size[1..].to_vec();
+                vals.push(ArrayVal::new_array(&ty.clone(), &new_size));
+            }
+        }
+        ArrayVal::Vals(vals)
+    }
+
+    // FIXME:该实现有问题，递归可能出现长度过长的问题
+    // pub fn fix_size_another(self, full_array: &mut ArrayVal, size: &Vec<usize>) {
+    //     let depth = full_array.depth();
+    //     match full_array {
+    //         ArrayVal::Val(_) => match self {
+    //             ArrayVal::Val(new_val) => {
+    //                 *full_array = ArrayVal::Val(new_val);
+    //             }
+    //             ArrayVal::Vals(_) => {
+    //                 panic!("invalid array size");
+    //             }
+    //         },
+    //         ArrayVal::Vals(vals) => match self {
+    //             ArrayVal::Val(_) => {
+    //                 self.fix_size(&mut vals[0], &size[1..].to_vec());
+    //             }
+    //             ArrayVal::Vals(new_vals) => {
+    //                 let mut is_same_row = true;
+    //                 let mut more_inner_iters = vec![];
+    //                 let mut inner_cnt = 0;
+    //                 // println!("new_vals:{:#?}", new_vals);
+    //                 for new_val in new_vals.into_iter() {
+    //                     if new_val.depth() > 0 || depth == 1 {
+    //                         // 此时为数组
+    //                         new_val
+    //                             .clone()
+    //                             .fix_size(&mut vals[inner_cnt], &size[1..].to_vec());
+    //                         inner_cnt += 1;
+    //                         is_same_row = false;
+    //                     } else {
+    //                         // 此时为单个的值
+    //                         more_inner_iters.push(new_val.clone());
+    //                         is_same_row = true;
+    //                     }
+
+    //                     // 最极端的情况为，最后一个元素的深度刚好，而中段不够
+    //                     if more_inner_iters.len() > 0 && !is_same_row {
+    //                         let new_val = ArrayVal::Vals(more_inner_iters);
+    //                         new_val.fix_size(&mut vals[inner_cnt], &size[1..].to_vec());
+    //                         inner_cnt += 1;
+    //                         more_inner_iters = vec![];
+    //                         is_same_row = true;
+    //                     }
+    //                 }
+    //                 // 最后一个值的深度不够的情况
+    //                 if more_inner_iters.len() > 0 && is_same_row {
+    //                     let new_val = ArrayVal::Vals(more_inner_iters);
+    //                     new_val.fix_size(&mut vals[inner_cnt], &size[1..].to_vec());
+    //                 }
+    //             }
+    //         },
+    //     }
+    // }
+
+    // XXX：这里我也不记得怎么实现的了，可能还要优化
+    pub fn fix_size(self, full_array: &mut ArrayVal, size: &Vec<usize>) {
+        match self {
+            ArrayVal::Val(new_val) => match full_array {
+                ArrayVal::Val(_) => {
+                    *full_array = ArrayVal::Val(new_val);
+                }
+                ArrayVal::Vals(vals) => {
+                    let new_val = ArrayVal::Val(new_val);
+                    new_val.fix_size(&mut vals[0], &size[1..].to_vec());
+                }
+            },
+            ArrayVal::Vals(mut new_vals) => match full_array {
+                ArrayVal::Val(_) => unreachable!("unable array"),
+                ArrayVal::Vals(old_vals) => {
+                    if new_vals.len() > old_vals.len() {
+                        let group_size: usize = size[1..].iter().product();
+                        let mut group_vals = vec![];
+                        let mut group_cnt = 0;
+                        let new_size = size[1..].to_vec();
+                        new_vals.reverse();
+                        for i in 0..new_vals.len() {
+                            if let Some(new_val) = new_vals.pop() {
+                                let depth = new_val.depth();
+                                if depth > size.len() - 1 {
+                                    panic!("invalid array size");
+                                }
+                                if depth == size.len() - 1 && depth != 0 {
+                                    // 此时数组深度与当前的深度相同，确保为数组
+                                    if group_vals.len() == 0 {
+                                        new_val.fix_size(&mut old_vals[group_cnt], &new_size);
+                                        group_cnt += 1;
+                                        continue;
+                                    }
+                                    // 原来的group_vals还有值，先弹出
+                                    let group_val = ArrayVal::Vals(group_vals);
+                                    group_val.fix_size(&mut old_vals[group_cnt], &new_size);
+                                    group_cnt += 1;
+                                    group_vals = vec![];
+                                    new_val.fix_size(&mut old_vals[group_cnt], &new_size);
+                                    group_cnt += 1;
+                                    continue;
+                                }
+                                group_vals.push(new_val);
+                                if (i + 1) % group_size == 0 {
+                                    let new_val = ArrayVal::Vals(group_vals);
+                                    new_val.fix_size(&mut old_vals[group_cnt], &new_size);
+                                    group_cnt += 1;
+                                    group_vals = vec![];
+                                }
+                            } else {
+                                let new_val = ArrayVal::Vals(group_vals);
+                                new_val.fix_size(&mut old_vals[group_cnt], &new_size);
+                                group_cnt += 1;
+                                group_vals = vec![];
+                                break;
+                            }
+                        }
+                        if group_vals.len() > 0 {
+                            let new_val = ArrayVal::Vals(group_vals);
+                            new_val.fix_size(&mut old_vals[group_cnt], &new_size);
+                        }
+                        return;
+                    }
+                    let new_size = size[1..].to_vec();
+                    for (i, new_val) in new_vals.into_iter().enumerate() {
+                        new_val.fix_size(&mut old_vals[i], &new_size);
+                    }
+                }
+            },
+        }
     }
 }
 
@@ -759,14 +1451,37 @@ impl Stmt {
             Stmt::Assign(LVal { ident }, expr) => {
                 // lookup the variable in the symbol table
                 let entry = symtable.lookup(&ident).expect("variable not found");
-
-                // TODO: array type checking
-
                 let ty = &entry.ty;
 
                 // Type check the expression
                 let expr = expr.type_check(Some(ty), symtable);
                 Stmt::Assign(LVal { ident }, expr)
+            }
+            Stmt::ArrayAssign(
+                ArrayIdent {
+                    ident,
+                    size: indices,
+                },
+                expr,
+            ) => {
+                let entry = symtable.lookup(&ident).expect("variable not found");
+                let ty = &entry.ty;
+                let (_, inner_ty) = get_inner_ty(ty, indices.len());
+
+                let indices: Vec<Expr> = indices
+                    .into_iter()
+                    .map(|expr| expr.type_check(Some(&Type::int()), symtable))
+                    .collect::<Vec<_>>();
+
+                // Type check the expression
+                let expr = expr.type_check(Some(&inner_ty), symtable);
+                Stmt::ArrayAssign(
+                    ArrayIdent {
+                        ident,
+                        size: indices,
+                    },
+                    expr,
+                )
             }
             Stmt::Expr(ExprStmt { expr }) => {
                 // Type check the expression
@@ -793,11 +1508,12 @@ impl Stmt {
                 let mut expr = expr.unwrap();
                 let ret_ty = symtable.curr_ret_ty.as_ref().unwrap();
 
-                if ret_ty.is_int() {
-                    // Coerce the expression to int if needed
-                    expr = Expr::coercion(expr, Type::int());
-                } else {
-                    panic!("unsupported return type");
+                match ret_ty.kind() {
+                    Tk::Bool => expr = Expr::coercion(expr, Type::bool()),
+                    Tk::Char => expr = Expr::coercion(expr, Type::char()),
+                    Tk::Int => expr = Expr::coercion(expr, Type::int()),
+                    Tk::Float => expr = Expr::coercion(expr, Type::float()),
+                    _ => panic!("unsupported return type"),
                 }
 
                 Stmt::Return(ReturnStmt { expr: Some(expr) })
@@ -821,7 +1537,9 @@ impl Stmt {
 
 impl Expr {
     /// Get the type of the expression.
-    pub fn ty(&self) -> &Type { self.ty.as_ref().unwrap() }
+    pub fn ty(&self) -> &Type {
+        self.ty.as_ref().unwrap()
+    }
 
     /// Try to fold the expression into a constant value.
     pub fn try_fold(&self, symtable: &SymbolTable) -> Option<ComptimeVal> {
@@ -838,6 +1556,15 @@ impl Expr {
                     Bo::Sub => Some(lhs - rhs),
                     Bo::Mul => Some(lhs * rhs),
                     Bo::Div => Some(lhs / rhs),
+                    Bo::Mod => Some(lhs % rhs),
+                    Bo::Lt => Some(ComptimeVal::bool(lhs < rhs)),
+                    Bo::Le => Some(ComptimeVal::bool(lhs <= rhs)),
+                    Bo::Gt => Some(ComptimeVal::bool(lhs > rhs)),
+                    Bo::Ge => Some(ComptimeVal::bool(lhs >= rhs)),
+                    Bo::Eq => Some(ComptimeVal::bool(lhs == rhs)),
+                    Bo::Ne => Some(ComptimeVal::bool(lhs != rhs)),
+                    Bo::And => Some(lhs.logical_and(&rhs)),
+                    Bo::Or => Some(lhs.logical_or(&rhs)),
                 }
             }
             ExprKind::Unary(op, expr) => {
@@ -850,9 +1577,21 @@ impl Expr {
             }
             ExprKind::FuncCall(_) => None,
             ExprKind::LVal(LVal { ident }) => {
-                // TODO: what if there are indices?
                 let entry = symtable.lookup(ident).unwrap();
                 Some(entry.comptime.as_ref()?.clone())
+            }
+            ExprKind::ArrayAccess(ident, indices) => {
+                if let ExprKind::LVal(LVal { ident }) = &ident.as_ref().kind {
+                    let entry = symtable.lookup(ident).unwrap();
+                    let array_entry = entry.comptime.as_ref()?;
+                    let indices = indices
+                        .iter()
+                        .map(|index| index.try_fold(symtable))
+                        .collect::<Option<Vec<_>>>()?;
+                    Some(get_comptime_array(array_entry, indices, 0))
+                } else {
+                    unreachable!("array access")
+                }
             }
             ExprKind::Coercion(expr) => {
                 // Coerce the expression to the target type
@@ -861,20 +1600,46 @@ impl Expr {
                     Tk::Bool => {
                         let expr = match expr {
                             ComptimeVal::Bool(val) => val,
+                            ComptimeVal::Char(val) => val as u8 != 0,
                             ComptimeVal::Int(val) => val != 0,
+                            ComptimeVal::Float(val) => val != 0.0,
                             ComptimeVal::Undef(_) => unreachable!(),
+                            _ => unreachable!("invalid type"),
                         };
                         Some(ComptimeVal::bool(expr))
+                    }
+                    Tk::Char => {
+                        let expr = match expr {
+                            ComptimeVal::Bool(val) => val as u8 as char,
+                            ComptimeVal::Char(val) => val,
+                            ComptimeVal::Int(val) => val as u8 as char,
+                            ComptimeVal::Undef(_) => unreachable!(),
+                            _ => unreachable!("invalid type"),
+                        };
+                        Some(ComptimeVal::char(expr))
                     }
                     Tk::Int => {
                         let expr = match expr {
                             ComptimeVal::Bool(val) => val as i32,
+                            ComptimeVal::Char(val) => val as i32,
                             ComptimeVal::Int(val) => val,
+                            ComptimeVal::Float(val) => val as i32,
                             ComptimeVal::Undef(_) => unreachable!(),
+                            _ => unreachable!("invalid type"),
                         };
                         Some(ComptimeVal::int(expr))
                     }
-                    Tk::Void | Tk::Func(..) => {
+                    Tk::Float => {
+                        let expr = match expr {
+                            ComptimeVal::Bool(val) => val as i32 as f64, //iakkefloattest origin:f32,
+                            ComptimeVal::Char(val) => val as i32 as f64,
+                            ComptimeVal::Int(val) => val as f64, //iakkefloattest origin:f32,
+                            ComptimeVal::Float(val) => val as f64,
+                            _ => unreachable!("invalid type"),
+                        };
+                        Some(ComptimeVal::float(expr))
+                    }
+                    Tk::Void | Tk::Func(..) | Tk::Array(_, _) | Tk::Ptr(_) | Tk::Args => {
                         panic!("unsupported type coercion")
                     }
                 }
@@ -896,23 +1661,68 @@ impl Expr {
             ExprKind::Const(_) => self,
             ExprKind::Binary(op, lhs, rhs) => {
                 // Type check the left and right hand side expressions
+
                 let mut lhs = lhs.type_check(None, symtable);
                 let mut rhs = rhs.type_check(None, symtable);
 
-                let lhs_ty = lhs.ty();
-                let rhs_ty = rhs.ty();
+                let lhs_ty = lhs.ty().clone();
+                let rhs_ty = rhs.ty().clone();
 
                 // Coerce the types if needed
-                match (lhs_ty.kind(), rhs_ty.kind()) {
-                    (Tk::Bool, Tk::Int) => {
-                        lhs = Expr::coercion(lhs, Type::int());
-                    }
-                    (Tk::Int, Tk::Bool) => {
-                        rhs = Expr::coercion(rhs, Type::int());
-                    }
-                    _ => {
-                        if lhs_ty != rhs_ty {
-                            panic!("unsupported type coercion: {:?} -> {:?}", lhs_ty, rhs_ty);
+                match op {
+                    BinaryOp::Add
+                    | BinaryOp::Sub
+                    | BinaryOp::Mul
+                    | BinaryOp::Div
+                    | BinaryOp::Mod
+                    | BinaryOp::Lt
+                    | BinaryOp::Le
+                    | BinaryOp::Gt
+                    | BinaryOp::Ge
+                    | BinaryOp::Eq
+                    | BinaryOp::Ne => match (lhs_ty.kind(), rhs_ty.kind()) {
+                        (Tk::Bool, Tk::Int) => {
+                            lhs = Expr::coercion(lhs, Type::int());
+                        }
+                        (Tk::Int, Tk::Bool) => {
+                            rhs = Expr::coercion(rhs, Type::int());
+                        }
+                        (Tk::Float, Tk::Int) => {
+                            rhs = Expr::coercion(rhs, Type::float());
+                        }
+                        (Tk::Int, Tk::Float) => {
+                            lhs = Expr::coercion(lhs, Type::float());
+                        }
+                        (Tk::Float, Tk::Bool) => {
+                            rhs = Expr::coercion(rhs, Type::float());
+                        }
+                        (Tk::Bool, Tk::Float) => {
+                            lhs = Expr::coercion(lhs, Type::float());
+                        }
+                        _ => {
+                            if lhs_ty != rhs_ty {
+                                panic!("unsupported type coercion: {:?} -> {:?}", lhs_ty, rhs_ty);
+                            }
+                        }
+                    },
+                    BinaryOp::And | BinaryOp::Or => {
+                        match lhs_ty.kind() {
+                            Tk::Bool => {}
+                            Tk::Char | Tk::Int | Tk::Float => {
+                                lhs = Expr::coercion(lhs, Type::bool());
+                            }
+                            _ => {
+                                panic!("unsupported type coercion: {:?} -> {:?}", lhs_ty, Tk::Bool);
+                            }
+                        }
+                        match rhs_ty.kind() {
+                            Tk::Bool => {}
+                            Tk::Char | Tk::Int | Tk::Float => {
+                                rhs = Expr::coercion(rhs, Type::bool());
+                            }
+                            _ => {
+                                panic!("unsupported type coercion: {:?} -> {:?}", lhs_ty, Tk::Bool);
+                            }
                         }
                     }
                 }
@@ -922,9 +1732,22 @@ impl Expr {
                 // Create the binary expression
                 let mut expr = Expr::binary(op, lhs, rhs);
                 match op {
-                    BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div => {
+                    BinaryOp::Add
+                    | BinaryOp::Sub
+                    | BinaryOp::Mul
+                    | BinaryOp::Div
+                    | BinaryOp::Mod => {
                         expr.ty = Some(lhs_ty.clone());
-                    } // TODO: support other binary operations
+                    } // HACK: support other binary operations
+                    BinaryOp::Lt
+                    | BinaryOp::Le
+                    | BinaryOp::Gt
+                    | BinaryOp::Ge
+                    | BinaryOp::Eq
+                    | BinaryOp::Ne => {
+                        expr.ty = Some(Type::bool());
+                    }
+                    BinaryOp::And | BinaryOp::Or => expr.ty = Some(Type::bool()),
                 }
                 expr
             }
@@ -945,16 +1768,56 @@ impl Expr {
                 // Create the function call expression
                 let mut expr = Expr::func_call(ident, args);
                 expr.ty = Some(ret_ty.clone());
+                match expect {
+                    Some(expect) => {
+                        if !expect.is_equal(&ret_ty) {
+                            expr = Expr::coercion(expr, expect.clone());
+                        }
+                    }
+                    None => {}
+                }
                 expr
             }
             ExprKind::LVal(LVal { ident }) => {
                 // Lookup the variable in the symbol table
                 let entry = symtable.lookup(&ident).unwrap();
-
                 // Create the left value expression
                 let mut expr = Expr::lval(LVal { ident });
                 expr.ty = Some(entry.ty.clone());
+                match expect {
+                    Some(expect) => {
+                        if !expect.is_equal(&entry.ty) {
+                            expr = Expr::coercion(expr, expect.clone());
+                        }
+                    }
+                    None => {}
+                }
                 expr
+            }
+            ExprKind::ArrayAccess(ident, indices) => {
+                // Lookup the variable in the symbol table
+                if let ExprKind::LVal(LVal { ident: id }) = &ident.as_ref().kind {
+                    let entry = symtable.lookup(id).unwrap();
+                    let ty = &entry.ty;
+                    let (_, inner_ty) = get_inner_ty(ty, indices.len());
+                    let indices = indices
+                        .into_iter()
+                        .map(|index| index.type_check(Some(&Type::int()), symtable))
+                        .collect();
+                    let mut expr = Expr::array_access(*ident, indices);
+                    expr.ty = Some(inner_ty.clone());
+                    match expect {
+                        Some(expect) => {
+                            if !expect.is_equal(&ty) {
+                                expr = Expr::coercion(expr, expect.clone());
+                            }
+                        }
+                        None => {}
+                    }
+                    expr
+                } else {
+                    unreachable!("array access");
+                }
             }
             ExprKind::Unary(op, expr) => {
                 // Type check the expression
@@ -979,7 +1842,12 @@ impl Expr {
                         if ty.is_bool() {
                             // Do nothing
                         } else if ty.is_int() {
-                            // TODO: How do we convert int to bool?
+                            // HACK: How do we convert int to bool?
+                            expr = Expr::coercion(expr, Type::bool());
+                        } else if ty.is_float() {
+                            //iakkefloattest
+                            // HACK: How do we convert int to bool?
+                            expr = Expr::coercion(expr, Type::bool());
                         } else {
                             panic!("unsupported type for logical not: {:?}", ty);
                         }
@@ -996,18 +1864,27 @@ impl Expr {
 
         // Coerce the expression to the expected type if needed
         if let Some(ty) = expect {
-            if ty.is_int() || ty.is_bool() {
-                match ty.kind() {
-                    Tk::Bool => expr = Expr::coercion(expr, Type::bool()),
-                    Tk::Int => expr = Expr::coercion(expr, Type::int()),
-                    Tk::Func(..) | Tk::Void => {
-                        unreachable!()
+            match ty.kind() {
+                Tk::Bool => expr = Expr::coercion(expr, Type::bool()),
+                Tk::Char => expr = Expr::coercion(expr, Type::char()),
+                Tk::Int => expr = Expr::coercion(expr, Type::int()),
+                Tk::Float => expr = Expr::coercion(expr, Type::float()),
+                Tk::Array(_, _) => {
+                    if !ty.is_equal(expr.ty()) {
+                        unreachable!("unsupported type coercion: {:?}", ty);
+                    } else {
+                        expr = Expr::coercion(expr, ty.clone());
                     }
                 }
-                expr.ty = Some(ty.clone());
-            } else if ty != expr.ty() {
-                panic!("unsupported type coercion: {:?}", ty);
+                Tk::Ptr(_) => {
+                    // 指针类型允许任意转换，不做操作
+                    // expr = Expr::coercion(expr, ty.clone());
+                }
+                Tk::Func(..) | Tk::Void | Tk::Args => {
+                    panic!("unsupported type coercion: {:?}", ty);
+                }
             }
+            expr.ty = Some(ty.clone());
         }
 
         // try to fold the expression into a constant value
@@ -1016,5 +1893,40 @@ impl Expr {
         }
 
         expr
+    }
+}
+
+impl Default for Expr {
+    fn default() -> Self {
+        Expr::const_(ComptimeVal::int(0))
+    }
+}
+
+impl Default for ArrayVal {
+    fn default() -> Self {
+        ArrayVal::empty()
+    }
+}
+
+pub fn get_comptime_array(
+    array_entry: &ComptimeVal,
+    indices: Vec<ComptimeVal>,
+    pos: usize,
+) -> ComptimeVal {
+    if pos == indices.len() {
+        return array_entry.clone();
+    }
+    match array_entry {
+        ComptimeVal::Array(_, vals) => match &indices[pos] {
+            ComptimeVal::Int(index) => {
+                let index = *index as usize;
+                if index >= vals.len() {
+                    panic!("array index out of bounds");
+                }
+                get_comptime_array(&vals[index], indices, pos + 1)
+            }
+            _ => unreachable!("non-constant array index"),
+        },
+        _ => unreachable!("not an array"),
     }
 }
