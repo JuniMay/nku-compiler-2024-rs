@@ -20,6 +20,17 @@ pub struct MInstData {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MInst(GenericPtr<MInstData>);
 
+impl MInst {
+    pub fn new(mctx: &mut MContext, kind: MInstKind) -> Self {
+        mctx.alloc_with(|inst| MInstData {
+            kind,
+            next: None,
+            prev: None,
+            parent: None,
+        })
+    }
+}
+
 /// Kinds of machine instructions.
 ///
 /// The instructions are classified with its format. This classification is
@@ -39,6 +50,12 @@ pub enum MInstKind {
         rs1: Reg,
         rs2: Reg,
     },
+    FpuRRR {
+        op: FpuOpRRR,
+        rd: Reg,
+        rs1: Reg,
+        rs2: Reg,
+    },
     /// Load instructions.
     Load { op: LoadOp, rd: Reg, loc: MemLoc },
     /// Store instructions.
@@ -48,6 +65,27 @@ pub enum MInstKind {
     /// Jump instructions.
     J { target: MBlock },
     // TODO: add more instructions as you need.
+    /// Compare instructions.
+    Compare {
+        op: CompareOp,
+        rd: Reg,
+        rs1: Reg,
+        rs2: Option<Reg>,
+    },
+    /// FPU compare instructions.
+    FpuCompare {
+        op: FpuCompareOp,
+        rd: Reg,
+        rs1: Reg,
+        rs2: Reg,
+    },
+    /// Branch instructions.
+    Branch {
+        op: BranchOp,
+        rs1: Reg,
+        rs2: Option<Reg>,
+        target: MBlock,
+    },
 }
 
 #[derive(Copy, Clone)]
@@ -209,7 +247,40 @@ impl fmt::Display for AluOpRRR {
     }
 }
 
-// TODO: add more instruction kinds as you need.
+#[derive(Copy, Clone)]
+pub enum FpuOpRRR {
+    FaddS,
+    FaddD,
+    FsubS,
+    FsubD,
+    FmulS,
+    FmulD,
+    FdivS,
+    FdivD,
+}
+
+#[derive(Copy, Clone)]
+pub enum CompareOp {
+    Slt,
+    Sltu,
+    Seqz,
+    Snez,
+    Sgtz,
+    Sltz,
+}
+
+#[derive(Copy, Clone)]
+pub enum FpuCompareOp {
+    FeqS,
+    FeqD,
+    FltS,
+    FltD,
+    FleS,
+    FleD,
+}
+
+#[derive(Copy, Clone)]
+pub enum BranchOp {}
 
 pub struct DisplayMInst<'a> {
     mctx: &'a MContext,
@@ -397,6 +468,7 @@ impl fmt::Display for DisplayMInst<'_> {
             MInstKind::AluRRI { op, rd, rs, imm } => write!(f, "{} {}, {}, {}", op, rd, rs, imm),
             MInstKind::J { target } => write!(f, "j {}", target.label(self.mctx)),
             // TODO: implement display for more machine instructions
+            _ => todo!("display for others"),
         }
     }
 }

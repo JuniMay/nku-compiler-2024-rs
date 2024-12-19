@@ -313,6 +313,7 @@ dependencies = [
  "clap",
  "lalrpop",
  "lalrpop-util",
+ "regex",
  "thiserror",
 ]
 
