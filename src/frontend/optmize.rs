@@ -5,7 +5,7 @@ use crate::{
         linked_list::{LinkedListContainer, LinkedListNode},
         storage::{Arena, ArenaPtr},
     },
-    ir::{Block, ConstantValue, Context, Func, Inst, InstKind, TyData, Usable, ValueKind},
+    ir::{Block, ConstantValue, Context, Func, Inst, InstKind, TyData, Usable, Value, ValueKind},
 };
 pub struct Optimize {
     ir: Context,
@@ -326,16 +326,16 @@ impl Optimize {
 
             // 首先确保所有的alloca都与数组无关（需要更复杂的mem2reg才能实现）
             let head = head.unwrap();
-            if !head.iter(&self.ir).all(|inst| match inst.kind(&self.ir) {
+            if head.iter(&self.ir).any(|inst| match inst.kind(&self.ir) {
                 InstKind::Alloca { ty } => match ty.try_deref(&self.ir).unwrap() {
-                    TyData::Ptr { .. } => false,
-                    TyData::Array { .. } => false,
-                    _ => true,
+                    TyData::Ptr { .. } => true,
+                    TyData::Array { .. } => true,
+                    _ => false,
                 },
                 _ => false,
             }) {
                 println!("exist array");
-                continue;
+                return;
             }
             let alloca: Vec<_> = head
                 .iter(&self.ir)
@@ -501,24 +501,62 @@ impl Optimize {
             }
 
             // 清除冗余phi节点
-            // for phi in block_phi_map.values().flatten() {
-            //     let incoming: Vec<_> = phi.incoming_iter(&self.ir).into_iter().collect();
-            //     if incoming.len() == 1 {
-            //         let val = incoming[0].1;
-            //         let result = phi.result(&self.ir).unwrap();
-            //         let users = result.users(&self.ir).into_iter().collect::<Vec<_>>();
-            //         for user in users {
-            //             let inst = user.inst();
-            //             inst.set_operand(&mut self.ir, val, user.idx());
-            //         }
-            //         phi.remove_without_dealloc(&mut self.ir);
-            //         inst_to_remove.insert(*phi);
-            //     } else if incoming.len() == 0 {
-            //         phi.remove_without_dealloc(&mut self.ir);
-            //         inst_to_remove.insert(*phi);
-            //     }
-            // }
+            let phis = phi_alloca_map.keys().cloned().collect::<Vec<_>>();
+            for phi in phis.clone() {
+                let incoming: Vec<_> = phi.incoming_iter(&self.ir).into_iter().collect();
+                if incoming.len() == 1 {
+                    let val = incoming[0].1;
+                    let result = phi.result(&self.ir).unwrap();
+                    let users = result.users(&self.ir).into_iter().collect::<Vec<_>>();
+                    for user in users {
+                        let inst = user.inst();
+                        inst.set_operand(&mut self.ir, val, user.idx());
+                    }
+                    phi.remove_without_dealloc(&mut self.ir);
+                    inst_to_remove.insert(phi);
+                    phi_alloca_map.remove(&phi);
+                } else if incoming.len() == 0 {
+                    phi.remove_without_dealloc(&mut self.ir);
+                    inst_to_remove.insert(phi);
+                    phi_alloca_map.remove(&phi);
+                }
+            }
 
+            let phis = phi_alloca_map.keys().cloned().collect::<Vec<_>>();
+            for phi in phis {
+                let incoming: Vec<_> = phi.incoming_iter(&self.ir).into_iter().collect();
+                let ty = phi.result(&self.ir).unwrap().ty(&self.ir);
+                let zero = Value::zero(&mut self.ir, ty);
+                if incoming.len()
+                    < phi
+                        .container(&self.ir)
+                        .unwrap()
+                        .predecessors(&self.ir)
+                        .len()
+                {
+                    let preds: Vec<_> = phi
+                        .container(&self.ir)
+                        .unwrap()
+                        .predecessors(&self.ir)
+                        .clone()
+                        .into_iter()
+                        .collect();
+                    for pred in preds {
+                        let mut flag = false;
+                        for (block, _) in &incoming {
+                            if *block == pred.from() {
+                                flag = true;
+                                break;
+                            }
+                        }
+                        if !flag {
+                            phi.insert_incoming(&mut self.ir, pred.from(), zero);
+                        }
+                    }
+                }
+            }
+
+            // 清除alloca, load, store
             for inst in inst_to_remove {
                 self.ir.try_dealloc(inst);
             }
@@ -675,6 +713,15 @@ impl Optimize {
         let mut df = HashMap::new();
         let dom_tree: HashMap<Block, HashSet<Block>> = self.get_dom_tree();
         let cfg = self.get_cfg();
+
+        println!("cfg:");
+        for (key, succs) in cfg.clone() {
+            print!("{} -> ", key.name(&self.ir));
+            for succ in succs {
+                print!("{}, ", succ.name(&self.ir));
+            }
+            println!("");
+        }
 
         let emptyset = HashSet::new();
         for (block, succs) in &cfg {

@@ -1038,14 +1038,7 @@ impl IrGen for FuncDef {
         let br_inst = Inst::br(&mut irgen.ctx, ret_block);
 
         // check if the last inst is br, avoid duplicate br
-        let tail = irgen.curr_block.unwrap().tail(&irgen.ctx);
-        let mut flag = true;
-        if let Some(tail) = tail {
-            if let InstKind::Br = tail.kind(&irgen.ctx) {
-                flag = false;
-            }
-        }
-        if flag {
+        if !test_tail_br_inst(&irgen.ctx, &irgen.curr_block.unwrap()) {
             irgen
                 .curr_block
                 .unwrap()
@@ -1396,7 +1389,9 @@ impl IrGen for Stmt {
                     curr_func.push_back(&mut irgen.ctx, then_block).unwrap();
                     irgen.curr_block = Some(then_block);
                     then_stmt.irgen(irgen);
-                    if irgen.curr_block.is_some() {
+                    if irgen.curr_block.is_some()
+                        && !test_tail_br_inst(&irgen.ctx, &irgen.curr_block.unwrap())
+                    {
                         let then_exit_branch = Inst::br(&mut irgen.ctx, exit_block);
                         irgen
                             .curr_block
@@ -1417,7 +1412,9 @@ impl IrGen for Stmt {
                             .unwrap();
                         irgen.curr_block = Some(else_block);
                         else_stmt.irgen(irgen);
-                        if irgen.curr_block.is_some() {
+                        if irgen.curr_block.is_some()
+                            && !test_tail_br_inst(&irgen.ctx, &irgen.curr_block.unwrap())
+                        {
                             let else_exit_branch = Inst::br(&mut irgen.ctx, exit_block);
                             irgen
                                 .curr_block
@@ -1462,22 +1459,24 @@ impl IrGen for Stmt {
 
                     irgen.gen_local_cond_block(expr.clone(), &body_block, &exit_block);
 
+                    curr_func.push_back(&mut irgen.ctx, body_block).unwrap();
                     irgen.curr_block = Some(body_block);
                     stmt.irgen(irgen);
 
-                    let cond_branch = Inst::br(&mut irgen.ctx, cond_block);
-                    irgen
-                        .curr_block
-                        .unwrap()
-                        .push_back(&mut irgen.ctx, cond_branch)
-                        .unwrap();
-                    irgen.curr_block.unwrap().add_edge(
-                        &mut irgen.ctx,
-                        cond_block,
-                        cond_branch,
-                        false,
-                    );
-                    curr_func.push_back(&mut irgen.ctx, body_block).unwrap();
+                    if !test_tail_br_inst(&irgen.ctx, &irgen.curr_block.unwrap()) {
+                        let cond_branch = Inst::br(&mut irgen.ctx, cond_block);
+                        irgen
+                            .curr_block
+                            .unwrap()
+                            .push_back(&mut irgen.ctx, cond_branch)
+                            .unwrap();
+                        irgen.curr_block.unwrap().add_edge(
+                            &mut irgen.ctx,
+                            cond_block,
+                            cond_branch,
+                            false,
+                        );
+                    }
 
                     curr_func.push_back(&mut irgen.ctx, exit_block).unwrap();
                     irgen.curr_block = Some(exit_block);
@@ -1489,30 +1488,73 @@ impl IrGen for Stmt {
                 }
             }
             Stmt::Break => {
-                let jump = Inst::br(
-                    &mut irgen.ctx,
-                    irgen.loop_exit_stack.last().unwrap().clone(),
-                );
-                curr_block.push_back(&mut irgen.ctx, jump).unwrap();
-                curr_block.add_edge(
-                    &mut irgen.ctx,
-                    irgen.loop_exit_stack.last().unwrap().clone(),
-                    jump,
-                    false,
-                );
+                if !test_tail_br_inst(&irgen.ctx, &irgen.curr_block.unwrap()) {
+                    let jump = Inst::br(
+                        &mut irgen.ctx,
+                        irgen.loop_exit_stack.last().unwrap().clone(),
+                    );
+                    curr_block.push_back(&mut irgen.ctx, jump).unwrap();
+                    curr_block.add_edge(
+                        &mut irgen.ctx,
+                        irgen.loop_exit_stack.last().unwrap().clone(),
+                        jump,
+                        false,
+                    );
+                }
+
+                // 此处其实没必要加边了，创建一个虚拟块便于优化
+                let block = Block::new(&mut irgen.ctx);
+                irgen.curr_block = Some(block);
+                irgen
+                    .curr_func
+                    .unwrap()
+                    .push_back(&mut irgen.ctx, block)
+                    .unwrap();
+                let jump = Inst::br(&mut irgen.ctx, irgen.curr_ret_block.unwrap());
+                irgen
+                    .curr_block
+                    .unwrap()
+                    .push_back(&mut irgen.ctx, jump)
+                    .unwrap();
             }
             Stmt::Continue => {
-                let jump = Inst::br(
-                    &mut irgen.ctx,
-                    irgen.loop_entry_stack.last().unwrap().clone(),
-                );
-                curr_block.push_back(&mut irgen.ctx, jump).unwrap();
-                curr_block.add_edge(
-                    &mut irgen.ctx,
-                    irgen.loop_exit_stack.last().unwrap().clone(),
-                    jump,
-                    false,
-                );
+                if !test_tail_br_inst(&irgen.ctx, &irgen.curr_block.unwrap()) {
+                    println!(
+                        "continue: {}",
+                        irgen
+                            .loop_entry_stack
+                            .last()
+                            .unwrap()
+                            .clone()
+                            .name(&irgen.ctx)
+                    );
+                    let jump = Inst::br(
+                        &mut irgen.ctx,
+                        irgen.loop_entry_stack.last().unwrap().clone(),
+                    );
+                    curr_block.push_back(&mut irgen.ctx, jump).unwrap();
+                    curr_block.add_edge(
+                        &mut irgen.ctx,
+                        irgen.loop_entry_stack.last().unwrap().clone(),
+                        jump,
+                        false,
+                    );
+                }
+
+                // 此处其实没必要加边了，创建一个虚拟块便于优化
+                let block = Block::new(&mut irgen.ctx);
+                irgen.curr_block = Some(block);
+                irgen
+                    .curr_func
+                    .unwrap()
+                    .push_back(&mut irgen.ctx, block)
+                    .unwrap();
+                let jump = Inst::br(&mut irgen.ctx, irgen.curr_ret_block.unwrap());
+                irgen
+                    .curr_block
+                    .unwrap()
+                    .push_back(&mut irgen.ctx, jump)
+                    .unwrap();
             }
             Stmt::Return(ReturnStmt { expr }) => {
                 if let Some(expr) = expr {
@@ -1525,18 +1567,20 @@ impl IrGen for Stmt {
                         .unwrap();
                 }
 
-                let jump = Inst::br(&mut irgen.ctx, irgen.curr_ret_block.unwrap());
-                irgen
-                    .curr_block
-                    .unwrap()
-                    .push_back(&mut irgen.ctx, jump)
-                    .unwrap();
-                curr_block.add_edge(
-                    &mut irgen.ctx,
-                    irgen.curr_ret_block.unwrap().clone(),
-                    jump,
-                    false,
-                );
+                if !test_tail_br_inst(&irgen.ctx, &irgen.curr_block.unwrap()) {
+                    let jump = Inst::br(&mut irgen.ctx, irgen.curr_ret_block.unwrap());
+                    irgen
+                        .curr_block
+                        .unwrap()
+                        .push_back(&mut irgen.ctx, jump)
+                        .unwrap();
+                    curr_block.add_edge(
+                        &mut irgen.ctx,
+                        irgen.curr_ret_block.unwrap().clone(),
+                        jump,
+                        false,
+                    );
+                }
 
                 // 此处其实没必要加边了，创建一个虚拟块便于优化
                 let block = Block::new(&mut irgen.ctx);
@@ -1638,4 +1682,17 @@ pub fn get_depth(ty: &Type) -> usize {
         }
     }
     depth
+}
+
+/// 判断块的最后一个指令是否是br
+pub fn test_tail_br_inst(ctx: &Context, block: &Block) -> bool {
+    let tail = block.tail(ctx);
+    if let Some(tail) = tail {
+        match tail.kind(ctx) {
+            InstKind::Br | InstKind::CondBr => true,
+            _ => false,
+        }
+    } else {
+        false
+    }
 }

@@ -105,14 +105,18 @@ impl ConstantValue {
             ConstantValue::Int32 { value, .. } => s.push_str(&value.to_string()),
             ConstantValue::Float32 { value, .. } => s.push_str(&format!("0x{:01$x}", value, 16)), //
             ConstantValue::Array { elems, .. } => {
-                s.push('[');
-                for (i, elem) in elems.iter().enumerate() {
-                    if i > 0 {
-                        s.push_str(", ");
+                if self.is_zero_array() {
+                    s = s + "zeroinitializer";
+                } else {
+                    s.push('[');
+                    for (i, elem) in elems.iter().enumerate() {
+                        if i > 0 {
+                            s.push_str(", ");
+                        }
+                        s.push_str(&elem.to_string(ctx, true));
                     }
-                    s.push_str(&elem.to_string(ctx, true));
+                    s.push(']');
                 }
-                s.push(']');
             }
             ConstantValue::GlobalRef { name, .. } => {
                 s.push('@');
@@ -121,6 +125,17 @@ impl ConstantValue {
         }
 
         s
+    }
+
+    pub fn is_zero_array(&self) -> bool {
+        match self {
+            ConstantValue::Array { elems, .. } => elems.iter().all(|elem| elem.is_zero_array()),
+            ConstantValue::Int1 { value, .. } => !*value,
+            ConstantValue::Int8 { value, .. } => *value == 0,
+            ConstantValue::Int32 { value, .. } => *value == 0,
+            ConstantValue::Float32 { value, .. } => *value == 0,
+            _ => false,
+        }
     }
 }
 
@@ -307,6 +322,16 @@ impl Value {
     pub fn global_ref(ctx: &mut Context, name: String, value_ty: Ty) -> Self {
         let value = ConstantValue::global_ref(ctx, name, value_ty);
         Self::new(ctx, ValueKind::Constant { value })
+    }
+
+    pub fn zero(ctx: &mut Context, ty: Ty) -> Self {
+        match ty.try_deref(ctx).unwrap() {
+            TyData::Int1 => Self::i1(ctx, false),
+            TyData::Int8 => Self::i8(ctx, 0),
+            TyData::Int32 => Self::i32(ctx, 0),
+            TyData::Float32 => Self::f32(ctx, 0.0),
+            _ => unimplemented!(),
+        }
     }
 }
 
