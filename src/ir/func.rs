@@ -93,6 +93,7 @@ impl Func {
     pub fn display(self, ctx: &Context) -> DisplayFunc {
         DisplayFunc { ctx, func: self }
     }
+
 }
 
 impl fmt::Display for DisplayFunc<'_> {

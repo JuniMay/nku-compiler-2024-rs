@@ -51,7 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Extract arguments
     let output = matches.get_one::<String>("output");
     let emit_llvm_ir = matches.get_one::<String>("emit-llvm-ir");
-    let emit_ir = matches.get_one::<String>("emit_ir");
+    let emit_ir = matches.get_one::<String>("emit-ir");
     let opt_level = matches.get_one::<String>("opt").unwrap();
     let source = matches.get_one::<String>("source").unwrap();
     let emit_assembly = matches.get_count("s_flag") > 0;

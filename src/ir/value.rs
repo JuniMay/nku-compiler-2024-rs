@@ -261,6 +261,13 @@ impl Value {
         Self::new(ctx, ValueKind::InstResult { inst, ty })
     }
 
+    pub fn inst(&self, ctx: &Context) -> Option<Inst> {
+        match self.try_deref(ctx).unwrap().kind {
+            ValueKind::InstResult { inst, .. } => Some(inst),
+            _ => None,
+        }
+    }
+
     pub fn display(self, ctx: &Context, with_type: bool) -> DisplayValue {
         DisplayValue {
             ctx,

@@ -58,6 +58,10 @@ impl Context {
     pub fn funcs(&self) -> impl Iterator<Item = Func> + '_ {
         self.funcs.iter().map(|data| data.self_ptr)
     }
+
+    pub fn ptr_size(&self) -> u32 {
+        self.target.ptr_size
+    }
 }
 
 impl fmt::Display for Context {

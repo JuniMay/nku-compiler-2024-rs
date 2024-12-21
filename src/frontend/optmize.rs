@@ -1,3 +1,4 @@
+use crate::ir::Ty;
 use std::collections::{HashMap, HashSet};
 
 use crate::{
@@ -39,6 +40,12 @@ impl Optimize {
         self.mem2reg_special(); // mem2reg的特殊情况
         println!("mem2reg_special done");
         self.mem2reg(); // mem2reg
+
+        println!("{}", self.ir);
+
+        // 添加死代码消除
+        self.dead_code_elimination();
+        println!("dead_code_elimination done");
     }
 
     pub fn opt2(&mut self) {
@@ -763,10 +770,243 @@ impl Optimize {
 
         cfg
     }
+    /// 构建 def_map 和 use_map
+    pub fn build_def_and_use_maps(
+        &self,
+        func: &Func,
+    ) -> (HashMap<Value, Inst>, HashMap<Value, HashSet<Inst>>) {
+        let mut def_map = HashMap::new();
+        let mut use_map = HashMap::new();
+
+        for block in func.iter(&self.ir) {
+            for inst in block.iter(&self.ir) {
+                // 如果指令有结果，记录定义点
+                if let Some(result) = inst.result(&self.ir) {
+                    if !result.ty(self.ir()).is_void(self.ir()) {
+                        def_map.insert(result, inst);
+                    }
+                }
+                // 遍历指令的所有操作数，记录使用点
+                for operand in inst.operand_iter(&self.ir) {
+                    use_map
+                        .entry(operand)
+                        .or_insert_with(HashSet::new)
+                        .insert(inst);
+                }
+            }
+        }
+
+        (def_map, use_map)
+    }
+
+    pub fn init_work_list(
+        &self,
+        def_map: &HashMap<Value, Inst>,
+        use_map: &HashMap<Value, HashSet<Inst>>,
+        func: &Func, // 添加对函数的引用
+    ) -> Vec<Value> {
+        let return_value = func
+            .head(&self.ir)
+            .and_then(|head| head.tail(&self.ir)) // 获取最后一个块的最后一条指令
+            .and_then(|inst| inst.result(&self.ir)); // 获取返回值
+
+        def_map
+            .keys()
+            .filter(|val| {
+                // 如果变量是函数返回值，则排除
+                if Some(**val) == return_value {
+                    return false;
+                }
+                // 检查变量是否没有使用点
+                use_map.get(*val).map_or(true, |uses| uses.is_empty())
+            })
+            .cloned()
+            .collect()
+    }
+
+    pub fn dead_code_elimination(&mut self) {
+        let funcs: Vec<_> = self.ir.funcs().collect();
+        for func in funcs {
+            println!("Initial CFG:");
+            for block in func.iter(&self.ir) {
+                println!(
+                    "Block {}: successors = {:?}, predecessors = {:?}",
+                    block.name(&self.ir),
+                    block
+                        .successors(&self.ir)
+                        .iter()
+                        .map(|edge| edge.to().name(&self.ir))
+                        .collect::<Vec<_>>(),
+                    block
+                        .predecessors(&self.ir)
+                        .iter()
+                        .map(|edge| edge.from().name(&self.ir))
+                        .collect::<Vec<_>>()
+                );
+            }
+
+            println!("Processing function: {}", func.name(&self.ir));
+
+            let (mut def_map, mut use_map) = self.build_def_and_use_maps(&func);
+            println!("Initial def_map: {:?}", def_map);
+            println!("Initial use_map: {:?}", use_map);
+
+            let mut work_list = self.init_work_list(&def_map, &use_map, &func);
+            println!("Initial work_list: {:?}", work_list.iter().map(|val| val.display(self.ir(), true).to_string()).collect::<Vec<_>>());
+
+            // 处理 work_list 中的死变量
+            while let Some(dead_val) = work_list.pop() {
+                println!("Processing dead_val: {:?}", dead_val);
+
+                if let Some(&def_inst) = def_map.get(&dead_val) {
+                    if !def_inst.has_side_effects(&self.ir) {
+                        println!("Removing def_inst: {:?}", def_inst);
+
+                        // 删除指令前清理其操作数
+                        for operand in def_inst.operand_iter(&self.ir) {
+                            if let Some(users) = use_map.get_mut(&operand) {
+                                // 如果操作数变成死变量，加入 work_list
+                                if users.is_empty() {
+                                    println!(
+                                        "Operand became dead, processing recursively: {:?}",
+                                        operand
+                                    );
+                                    if let Some(operand_def_inst) = def_map.get(&operand) {//iakke
+                                        // get
+                                        work_list.push(operand_def_inst.result(&self.ir).unwrap());
+                                    }
+                                }
+
+                                users.remove(&def_inst);
+
+                                println!("operand removing successful!");
+                            }
+                        }
+
+                        // 删除指令
+                        let block = def_inst.container(&self.ir).unwrap();
+                        block.remove_inst(&mut self.ir, def_inst);
+                        def_map.remove(&dead_val);
+                    }
+                }
+            }
+
+            println!("Finished processing function: {}", func.name(&self.ir));
+
+            println!(
+                "CFG after dead_code_elimination for function {}:",
+                func.name(&self.ir)
+            );
+            for block in func.iter(&self.ir) {
+                println!(
+                    "Block {}: successors = {:?}, predecessors = {:?}",
+                    block.name(&self.ir),
+                    block
+                        .successors(&self.ir)
+                        .iter()
+                        .map(|edge| edge.to().name(&self.ir))
+                        .collect::<Vec<_>>(),
+                    block
+                        .predecessors(&self.ir)
+                        .iter()
+                        .map(|edge| edge.from().name(&self.ir))
+                        .collect::<Vec<_>>()
+                );
+            }
+        }
+    }
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
+    use super::*;
+
     #[test]
-    fn df() {}
+    fn test_build_maps() {
+        // 创建一个模拟的 Context
+        let ptr_size = std::mem::size_of::<usize>() as u32; // 动态获取指针大小
+        let mut ctx = Context::new(ptr_size); // 创建 Context
+
+        let ret_ty = Ty::i32(&mut ctx);
+        let mut func = Func::new(&mut ctx, "complex_func".to_string(), ret_ty, Some(true));
+
+        // 创建基本块
+        let entry_block = {
+            let b = Block::new(&mut ctx);
+            func.set_head(&mut ctx, Some(b));
+            b
+        };
+
+        let cond_block = Block::new(&mut ctx);
+        let true_block = Block::new(&mut ctx);
+        let false_block = Block::new(&mut ctx);
+        let merge_block = Block::new(&mut ctx);
+
+        func.set_tail(&mut ctx, Some(merge_block));
+
+        // 在 entry_block 中创建变量和条件分支
+        let cond_val = {
+            let ty = Ty::i1(&mut ctx);
+            let cond = Inst::alloca(&mut ctx, ty);
+            entry_block.append_inst(&mut ctx, cond);
+            cond.result(&ctx).unwrap()
+        };
+
+        // 设置块之间的控制流关系
+        let br_inst = Inst::br(&mut ctx, cond_block);
+        entry_block.append_inst(&mut ctx, br_inst);
+
+        let cond_inst = Inst::cond_br(&mut ctx, cond_val, true_block, false_block);
+        cond_block.append_inst(&mut ctx, cond_inst);
+
+        entry_block.add_successor(&mut ctx, cond_block, br_inst, false);
+        cond_block.add_successor(&mut ctx, true_block, cond_inst, true);
+        cond_block.add_successor(&mut ctx, false_block, cond_inst, false);
+
+        true_block.add_successor(&mut ctx, merge_block, br_inst, false);
+        false_block.add_successor(&mut ctx, merge_block, br_inst, false);
+
+        // 在 true_block 中添加未使用的变量和返回指令
+        let unused_val = {
+            let ty = Ty::i32(&mut ctx);
+            let inst = Inst::alloca(&mut ctx, ty);
+            true_block.append_inst(&mut ctx, inst);
+            inst.result(&ctx).unwrap()
+        };
+        {
+            // 在 true_block 中添加返回指令
+            let ret_inst = Inst::ret(&mut ctx, None);
+            true_block.append_inst(&mut ctx, ret_inst);
+        }
+
+        {
+            // 在 false_block 中添加返回指令
+            let ret_inst = Inst::ret(&mut ctx, None);
+            false_block.append_inst(&mut ctx, ret_inst);
+        }
+
+        {
+            // 在 merge_block 中添加返回指令
+            let ret_inst = Inst::ret(&mut ctx, None);
+            merge_block.append_inst(&mut ctx, ret_inst);
+        }
+
+        // 打印 CFG 调试信息
+        println!("Initial CFG:");
+        let cfg = func.display(&ctx);
+        println!("{}", cfg);
+
+        // 执行优化
+        let mut optimizer = Optimize::new(ctx, 1);
+        optimizer.opt1();
+
+        // 验证优化效果
+        let final_cfg = func.display(optimizer.ir());
+        println!("Optimized CFG:");
+        println!("{}", final_cfg);
+
+        // 检查 true_block 和 unused_val 是否被删除
+        let (def_map, _) = optimizer.build_def_and_use_maps(&func);
+        assert!(!def_map.contains_key(&unused_val));
+    }
 }

@@ -1066,7 +1066,7 @@ impl Inst {
     pub fn successor_iter(self, ctx: &Context) -> impl Iterator<Item = Block> + '_ {
         self.deref(ctx).successors.iter().map(|op| op.used())
     }
-
+    
     /// Get a displayable instance of the instruction.
     pub fn display(self, ctx: &Context) -> DisplayInst {
         DisplayInst { ctx, inst: self }
@@ -1140,6 +1140,18 @@ impl Inst {
             .unwrap_or_else(|| unreachable!())
             .operands
             .insert(operand);
+    }
+    /// 判断指令是否具有副作用
+    pub fn has_side_effects(&self, ir: &Context) -> bool {
+        matches!(
+            self.kind(ir),
+            InstKind::Store | InstKind::Call | InstKind::Ret
+        )
+    }
+
+    /// 判断指令是否是终止指令
+    pub fn is_terminal(&self, ir: &Context) -> bool {
+        matches!(self.kind(ir), InstKind::Ret | InstKind::Br | InstKind::CondBr)
     }
 }
 

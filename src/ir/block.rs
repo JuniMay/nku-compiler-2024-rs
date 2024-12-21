@@ -142,6 +142,28 @@ impl Block {
         inst.insert_after(ctx, new_inst).unwrap();
         self.remove_inst(ctx, inst);
     }
+
+    pub fn append_inst(self, ctx: &mut Context, inst: Inst) -> Inst {
+        let tail = self.tail(ctx);
+
+        if let Some(tail_inst) = tail {
+            // 如果有尾指令，将新指令插入到尾部之后
+            tail_inst.set_next(ctx, Some(inst));
+            inst.set_prev(ctx, Some(tail_inst));
+        } else {
+            // 如果块为空，将新指令设置为头和尾
+            self.set_head(ctx, Some(inst));
+        }
+
+        self.set_tail(ctx, Some(inst));
+        inst.set_container(ctx, Some(self)); // 将块设置为指令的容器
+        inst
+    }
+
+    pub fn is_empty(&self, ctx: &Context) -> bool {
+        self.iter(ctx).next().is_none()
+    }
+    
 }
 
 impl Block {
@@ -247,6 +269,7 @@ impl Block {
             InstKind::Br => BlockEdge(predecessor, inst, false),
             InstKind::CondBr => BlockEdge(predecessor, inst, true_br),
             _ => {
+                println!("lty");
                 panic!("unavailble br");
             }
         };
