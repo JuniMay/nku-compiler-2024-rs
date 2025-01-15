@@ -18,6 +18,8 @@ use crate::infra::storage::ArenaPtr;
 use crate::ir::{
     self, ConstantValue, FloatBinaryOp, FloatCmpCond, IntBinaryOp, IntCmpCond, Ty, Value,
 };
+use crate::backend::inst::BranchOp;
+use crate::backend::context::RawData;
 
 pub struct CodegenContext<'s> {
     /// The machine code context.
@@ -102,9 +104,15 @@ impl<'s> CodegenContext<'s> {
         //  1. External functions and corresponding signatures.
         //  2. Global variables/constants.
         for global in self.ctx.globals() {
-            let name = global.name(self.ctx);
-            let label = MLabel::from(name);
-            self.globals.insert(name.to_string(), label);
+            let name = global.name(self.ctx); // 获取全局变量的名称
+            let label = MLabel::from(name);   // 为全局变量生成符号地址
+            self.globals.insert(name.to_string(), label.clone());
+    
+            let ty = global.ty(self.ctx);             // 获取全局变量的类型
+            let init_value = global.value(self.ctx); // 获取全局变量的初始值（如果有）
+    
+            // 根据是否有初始值调用不同方法
+            self.emit_global_data(label, ty, init_value);
         }
 
         // XXX: This is just a demonstration, you may refactor this part entirely.
@@ -138,6 +146,9 @@ impl<'s> CodegenContext<'s> {
                             };
                             // Insert the result into the lowered map.
                             self.lowered.insert(inst.result(self.ctx).unwrap(), mopd);
+
+                            let default_value = self.get_default_value(ty);
+                            self.gen_store_from_constant(default_value, mem_loc);
                         }
                         ir::InstKind::Store => {
                             let val = inst.operand(self.ctx, 0);
@@ -350,10 +361,28 @@ impl<'s> CodegenContext<'s> {
                             }
                         }
                         ir::InstKind::CondBr => {
-                            let cond = inst.operand(&self.ctx, 0);
-                            let then_dst = inst.successor(&self.ctx, 0);
-                            let else_dst = inst.successor(&self.ctx, 1);
+                            // 获取条件操作数和目标基本块
+                            let cond = inst.operand(self.ctx, 0); // 条件操作数
+                            let then_dst = inst.successor(self.ctx, 0); // 条件为真时跳转的目标块
+                            let else_dst = inst.successor(self.ctx, 1); // 条件为假时跳转的目标块（如果存在）
+                        
+                            // 获取对应的基本块
+                            let then_block = self.blocks[&then_dst];
+                        
+                            // 处理 else 块（如果映射失败，则为 None）
+                            let else_block = if self.blocks.contains_key(&else_dst) {
+                                Some(self.blocks[&else_dst])
+                            } else {
+                                None
+                            };
+                        
+                            // 获取当前块的下一个块，作为结束块
+                            let end_block = self.blocks[&block.next(self.ctx).unwrap()];
+                        
+                            // 调用 gen_cond_branch 方法生成条件分支指令
+                            self.gen_cond_branch(cond, then_block, else_block, end_block);
                         }
+                        
                         ir::InstKind::Cast { op } => todo!(),
                     }
                 }
@@ -494,6 +523,90 @@ impl<'s> CodegenContext<'s> {
     /// emission directly in `main.rs`.
     pub fn emit(&mut self) {
         // TODO: Emit the assembly code.
+    }
+    pub fn emit_global_data(&mut self, label: MLabel, ty: Ty, init_value: &ir::ConstantValue) {
+        let size = (ty.bitwidth(self.ctx) + 7) / 8;
+    
+        let raw_data = match init_value {
+            ir::ConstantValue::Int32 { value, .. } => {
+                // 将整数值按字节存储到 `.data` 段
+                let bytes = value.to_le_bytes().to_vec();
+                RawData::Bytes(bytes)
+            }
+            ir::ConstantValue::Float32 { value, .. } => {
+                let float_value = f32::from_bits((*value as u32)); // 将解引用后的值转为 u32
+                let float_bytes = float_value.to_bits().to_le_bytes().to_vec();
+                RawData::Bytes(float_bytes)
+            }            
+            ir::ConstantValue::AggregateZero { .. } => {
+                // 如果是零初始化，直接用 BSS 段管理
+                RawData::Bss(size)
+            }
+            _ => panic!("Unsupported global variable type: {:?}", init_value),
+        };
+    
+        // 添加到 `raw_data`
+        self.mctx.add_raw_data(label, raw_data);
+    }
+    pub fn get_default_value(&self, ty: Ty) -> ir::ConstantValue {
+        match ty.kind(self.ctx) {
+            ir::TyData::Int32 => ir::ConstantValue::Int32 {
+                ty,
+                value: 0, // 默认值为 0
+            },
+            ir::TyData::Float32 => ir::ConstantValue::Float32 {
+                ty,
+                value: 0, // 默认值为 0.0
+            },
+            ir::TyData::Int8 => ir::ConstantValue::Int8 {
+                ty,
+                value: 0, // 默认值为 0
+            },
+            _ => panic!("Unsupported type for default initialization: {:?}", ty.kind(self.ctx)),
+        }
+    }
+
+    pub fn gen_store_from_constant(&mut self, value: ir::ConstantValue, mem_loc: MemLoc) {
+        let curr_block = self.curr_block.unwrap();
+
+        let src = match value {
+            ir::ConstantValue::Int32 { value, .. } => {
+                let (li, r) = MInst::li(&mut self.mctx, value as u64);
+                curr_block.push_back(&mut self.mctx, li).unwrap();
+                r
+            }
+            ir::ConstantValue::Float32 { value, .. } => {
+                let (li, r) = MInst::li(&mut self.mctx, value as u64);
+                curr_block.push_back(&mut self.mctx, li).unwrap();
+                r
+            }
+            ir::ConstantValue::Int8 { value, .. } => {
+                let (li, r) = MInst::li(&mut self.mctx, value as u64);
+                curr_block.push_back(&mut self.mctx, li).unwrap();
+                r
+            }
+            ir::ConstantValue::AggregateZero { .. } => regs::zero().into(),
+            _ => panic!("Unsupported constant value: {:?}", value),
+        };
+
+        let bitwidth = match value {
+            ir::ConstantValue::Int32 { .. } => 32,
+            ir::ConstantValue::Float32 { .. } => 32,
+            ir::ConstantValue::Int8 { .. } => 8,
+            ir::ConstantValue::AggregateZero { .. } => 0, // 特殊情况
+            _ => panic!("Unsupported constant value for bitwidth"),
+        };
+
+        let op = match bitwidth {
+            8 => StoreOp::Sb,
+            16 => StoreOp::Sh,
+            32 => StoreOp::Sw,
+            64 => StoreOp::Sd,
+            _ => unreachable!(),
+        };
+
+        let store = MInst::store(&mut self.mctx, op, src, mem_loc);
+        curr_block.push_back(&mut self.mctx, store).unwrap();
     }
 
     /// Generate a store instruction and append it to the current block.
@@ -1423,6 +1536,89 @@ impl<'s> CodegenContext<'s> {
         );
         curr_block.push_back(&mut self.mctx, mv).unwrap();
     }
+
+    pub fn gen_cond_branch(
+        &mut self,
+        cond: ir::Value,
+        then_block: MBlock,
+        else_block: Option<MBlock>,
+        end_block: MBlock,
+    ) {
+        let curr_block = self.curr_block.unwrap();
+    
+        let cond_reg = match self.lowered.get(&cond) {
+            Some(mopd) => match mopd.kind {
+                MOperandKind::Reg(reg) => reg,
+                MOperandKind::Imm(_, imm) => {
+                    let (li, reg) = MInst::li(&mut self.mctx, imm as u64);
+                    curr_block.push_back(&mut self.mctx, li).unwrap();
+                    reg
+                }
+                MOperandKind::Undef => regs::zero().into(),
+                _ => panic!("Unsupported condition operand kind: {:?}", mopd.kind),
+            },
+            None => panic!("Condition value not lowered: {:?}", cond),
+        };
+    
+        if let Some(else_block) = else_block {
+            let bnez = MInst::new(
+                &mut self.mctx,
+                MInstKind::Branch {
+                    op: BranchOp::Bne,
+                    rs1: cond_reg,
+                    rs2: regs::zero().into(),
+                    target: then_block,
+                },
+            );
+            curr_block.push_back(&mut self.mctx, bnez).unwrap();
+    
+            let j_else = MInst::j(&mut self.mctx, None, else_block);
+            curr_block.push_back(&mut self.mctx, j_else).unwrap();
+    
+            let j_end = MInst::j(&mut self.mctx, None, end_block);
+            then_block.push_back(&mut self.mctx, j_end).unwrap();
+        } else {
+            let bnez = MInst::new(
+                &mut self.mctx,
+                MInstKind::Branch {
+                    op: BranchOp::Bne,
+                    rs1: cond_reg,
+                    rs2: regs::zero().into(),
+                    target: then_block,
+                },
+            );
+            curr_block.push_back(&mut self.mctx, bnez).unwrap();
+    
+            let j_end = MInst::j(&mut self.mctx, None, end_block);
+            then_block.push_back(&mut self.mctx, j_end).unwrap();
+        }
+    }
+    
+    // pub fn gen_while(&mut self, cond: ir::Value, body: ir::Block) {
+    //     // 创建基本块：条件判断块、循环体块、结束块
+    //     let cond_block = MBlock::new(&mut self.mctx, "while_cond");
+    //     let body_block = MBlock::new(&mut self.mctx, "while_body");
+    //     let end_block = MBlock::new(&mut self.mctx, "while_end");
+    
+    //     // 当前块跳转到条件判断块
+    //     let curr_block = self.curr_block.unwrap();
+    //     let j_to_cond = MInst::j(&mut self.mctx, None, cond_block);
+    //     curr_block.push_back(&mut self.mctx, j_to_cond).unwrap();
+    
+    //     // 生成条件判断块
+    //     self.curr_block = Some(cond_block);
+    //     self.gen_cond_branch(cond, body_block, None, end_block);
+    
+    //     // 生成循环体块
+    //     self.curr_block = Some(body_block);
+    //     self.gen_block(body); // 生成循环体代码
+    //     let j_back_to_cond = MInst::j(&mut self.mctx, None, cond_block);
+    //     body_block.push_back(&mut self.mctx, j_back_to_cond).unwrap();
+    
+    //     // 结束块：跳转到循环后的逻辑
+    //     self.curr_block = Some(end_block);
+    // }
+    
 
     // TODO: Add more helper functions.
 }

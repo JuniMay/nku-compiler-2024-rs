@@ -7,6 +7,7 @@ use super::regs::{RegKind, VReg};
 use crate::infra::linked_list::LinkedListContainer;
 use crate::infra::storage::GenericArena;
 
+
 /// The raw data of the machine code.
 /// e.g. the data section, the bss section.
 pub enum RawData {

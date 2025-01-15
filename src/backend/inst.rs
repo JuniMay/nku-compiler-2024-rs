@@ -337,6 +337,8 @@ pub enum BranchOp {
     Bne,
     Blt,
     Bge,
+    Bgt,
+    Ble,
     Bltu,
     Bgeu,
 }
@@ -348,6 +350,8 @@ impl fmt::Display for BranchOp {
             BranchOp::Bne => write!(f, "bne"),
             BranchOp::Blt => write!(f, "blt"),
             BranchOp::Bge => write!(f, "bge"),
+            BranchOp::Bgt => write!(f, "bgt"),
+            BranchOp::Ble => write!(f, "ble"),
             BranchOp::Bltu => write!(f, "bltu"),
             BranchOp::Bgeu => write!(f, "bgeu"),
         }
