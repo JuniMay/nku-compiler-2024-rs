@@ -298,3 +298,158 @@ pub const fn t6() -> PReg {
 }
 
 // TODO: You may need to add more registers here.
+pub const fn f0() -> PReg {
+    PReg::new(0, RegKind::Float)
+}
+
+pub const fn f1() -> PReg {
+    PReg::new(1, RegKind::Float)
+}
+
+pub const fn f2() -> PReg {
+    PReg::new(2, RegKind::Float)
+}
+
+pub const fn f3() -> PReg {
+    PReg::new(3, RegKind::Float)
+}
+
+pub const fn f4() -> PReg {
+    PReg::new(4, RegKind::Float)
+}
+
+pub const fn f5() -> PReg {
+    PReg::new(5, RegKind::Float)
+}
+
+pub const fn f6() -> PReg {
+    PReg::new(6, RegKind::Float)
+}
+
+pub const fn f7() -> PReg {
+    PReg::new(7, RegKind::Float)
+}
+
+pub const fn f8() -> PReg {
+    PReg::new(8, RegKind::Float)
+}
+
+pub const fn f9() -> PReg {
+    PReg::new(9, RegKind::Float)
+}
+
+pub const fn fa0() -> PReg {
+    PReg::new(10, RegKind::Float)
+}
+
+pub const fn fa1() -> PReg {
+    PReg::new(11, RegKind::Float)
+}
+
+pub const fn fa2() -> PReg {
+    PReg::new(12, RegKind::Float)
+}
+
+pub const fn fa3() -> PReg {
+    PReg::new(13, RegKind::Float)
+}
+
+pub const fn fa4() -> PReg {
+    PReg::new(14, RegKind::Float)
+}
+
+pub const fn fa5() -> PReg {
+    PReg::new(15, RegKind::Float)
+}
+
+pub const fn fa6() -> PReg {
+    PReg::new(16, RegKind::Float)
+}
+
+pub const fn fa7() -> PReg {
+    PReg::new(17, RegKind::Float)
+}
+
+pub const fn f18() -> PReg {
+    PReg::new(18, RegKind::Float)
+}
+
+pub const fn f19() -> PReg {
+    PReg::new(19, RegKind::Float)
+}
+
+pub const fn f20() -> PReg {
+    PReg::new(20, RegKind::Float)
+}
+
+pub const fn f21() -> PReg {
+    PReg::new(21, RegKind::Float)
+}
+
+pub const fn f22() -> PReg {
+    PReg::new(22, RegKind::Float)
+}
+
+pub const fn f23() -> PReg {
+    PReg::new(23, RegKind::Float)
+}
+
+pub const fn f24() -> PReg {
+    PReg::new(24, RegKind::Float)
+}
+
+pub const fn f25() -> PReg {
+    PReg::new(25, RegKind::Float)
+}
+
+pub const fn f26() -> PReg {
+    PReg::new(26, RegKind::Float)
+}
+
+pub const fn f27() -> PReg {
+    PReg::new(27, RegKind::Float)
+}
+
+pub const fn f28() -> PReg {
+    PReg::new(28, RegKind::Float)
+}
+
+pub const fn f29() -> PReg {
+    PReg::new(29, RegKind::Float)
+}
+
+pub const fn f30() -> PReg {
+    PReg::new(30, RegKind::Float)
+}
+
+pub const fn f31() -> PReg {
+    PReg::new(31, RegKind::Float)
+}
+
+pub const fn get_arg(index: usize) -> PReg {
+    match index {
+        0 => a0(),
+        1 => a1(),
+        2 => a2(),
+        3 => a3(),
+        4 => a4(),
+        5 => a5(),
+        6 => a6(),
+        7 => a7(),
+        _ => panic!("Invalid argument register index"),
+    }
+}
+
+pub const fn get_farg(index: usize) -> PReg {
+    match index {
+        0 => fa0(),
+        1 => fa1(),
+        2 => fa2(),
+        3 => fa3(),
+        4 => fa4(),
+        5 => fa5(),
+        6 => fa6(),
+        7 => fa7(),
+        _ => panic!("Invalid floating-point argument register index"),
+    }
+}

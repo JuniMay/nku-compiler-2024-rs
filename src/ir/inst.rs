@@ -69,7 +69,7 @@ impl fmt::Display for IntBinaryOp {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum FloatBinaryOp {
     Fadd,
     Fsub,
@@ -90,7 +90,7 @@ impl fmt::Display for FloatBinaryOp {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum FloatCmpCond {
     Oeq,
     Olt,

@@ -9,7 +9,7 @@ use super::ty::Ty;
 use crate::infra::storage::{Arena, ArenaPtr, GenericPtr, Idx};
 use crate::ir::TyData;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum ConstantValue {
     /// The undefined value.
     Undef { ty: Ty },
@@ -139,6 +139,7 @@ impl ConstantValue {
     }
 }
 
+#[derive(Debug)]
 pub enum ValueKind {
     /// The value is the result of an instruction.
     InstResult { inst: Inst, ty: Ty },

@@ -1,4 +1,4 @@
-use std::fmt;
+use std::fmt::{self, write};
 
 use super::block::MBlock;
 use super::context::MContext;
@@ -50,6 +50,7 @@ pub enum MInstKind {
         rs1: Reg,
         rs2: Reg,
     },
+    /// FPU instructions with two registers (rd, and two rs-s).
     FpuRRR {
         op: FpuOpRRR,
         rd: Reg,
@@ -63,33 +64,29 @@ pub enum MInstKind {
     /// Load immediate pseudo instruction.
     Li { rd: Reg, imm: u64 },
     /// Jump instructions.
-    J { target: MBlock },
-    // TODO: add more instructions as you need.
-    /// Compare instructions.
-    Compare {
-        op: CompareOp,
+    J {
+        target: MBlock,
         rd: Reg,
-        rs1: Reg,
-        rs2: Option<Reg>,
+        rs: Option<Reg>,
     },
-    /// FPU compare instructions.
-    FpuCompare {
-        op: FpuCompareOp,
-        rd: Reg,
-        rs1: Reg,
-        rs2: Reg,
-    },
+    /// Call instructions.
+    Call { target: MBlock },
+    /// FPU move instructions.
+    FpuMove { op: FpuMoveOp, rd: Reg, rs: Reg },
     /// Branch instructions.
     Branch {
         op: BranchOp,
         rs1: Reg,
-        rs2: Option<Reg>,
+        rs2: Reg,
         target: MBlock,
     },
 }
 
 #[derive(Copy, Clone)]
 pub enum LoadOp {
+    // 伪指令
+    La,
+    // 基本指令
     Lb,
     Lh,
     Lw,
@@ -104,6 +101,7 @@ pub enum LoadOp {
 impl fmt::Display for LoadOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            LoadOp::La => write!(f, "la"),
             LoadOp::Lb => write!(f, "lb"),
             LoadOp::Lh => write!(f, "lh"),
             LoadOp::Lw => write!(f, "lw"),
@@ -193,8 +191,6 @@ pub enum AluOpRRR {
     Xor,
     Or,
     And,
-    Slt,
-    Sltu,
     Mul,
     Mulw,
     Mulh,
@@ -209,6 +205,9 @@ pub enum AluOpRRR {
     Remu,
     Remuw,
     Rew,
+    // comp
+    Slt,
+    Sltu,
 }
 
 impl fmt::Display for AluOpRRR {
@@ -257,6 +256,23 @@ pub enum FpuOpRRR {
     FmulD,
     FdivS,
     FdivD,
+    FCmp { op: FpuCompareOp },
+}
+
+impl fmt::Display for FpuOpRRR {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            FpuOpRRR::FaddS => write!(f, "fadd.s"),
+            FpuOpRRR::FaddD => write!(f, "fadd.d"),
+            FpuOpRRR::FsubS => write!(f, "fsub.s"),
+            FpuOpRRR::FsubD => write!(f, "fsub.d"),
+            FpuOpRRR::FmulS => write!(f, "fmul.s"),
+            FpuOpRRR::FmulD => write!(f, "fmul.d"),
+            FpuOpRRR::FdivS => write!(f, "fdiv.s"),
+            FpuOpRRR::FdivD => write!(f, "fdiv.d"),
+            FpuOpRRR::FCmp { op } => write!(f, "{}", op),
+        }
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -279,8 +295,64 @@ pub enum FpuCompareOp {
     FleD,
 }
 
+impl fmt::Display for FpuCompareOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            FpuCompareOp::FeqS => write!(f, "feq.s"),
+            FpuCompareOp::FeqD => write!(f, "feq.d"),
+            FpuCompareOp::FltS => write!(f, "flt.s"),
+            FpuCompareOp::FltD => write!(f, "flt.d"),
+            FpuCompareOp::FleS => write!(f, "fle.s"),
+            FpuCompareOp::FleD => write!(f, "fle.d"),
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
-pub enum BranchOp {}
+pub enum FpuMoveOp {
+    FmvXS,
+    FmvXD,
+    FmvSX,
+    FmvDX,
+    FmvWX,
+    FmvXW,
+}
+
+impl fmt::Display for FpuMoveOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            FpuMoveOp::FmvXS => write!(f, "fmv.x.s"),
+            FpuMoveOp::FmvXD => write!(f, "fmv.x.s"),
+            FpuMoveOp::FmvSX => write!(f, "fmv.s.x"),
+            FpuMoveOp::FmvDX => write!(f, "fmv.d.x"),
+            FpuMoveOp::FmvWX => write!(f, "fmv.w.x"),
+            FpuMoveOp::FmvXW => write!(f, "fmv.x.w"),
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub enum BranchOp {
+    Beq,
+    Bne,
+    Blt,
+    Bge,
+    Bltu,
+    Bgeu,
+}
+
+impl fmt::Display for BranchOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            BranchOp::Beq => write!(f, "beq"),
+            BranchOp::Bne => write!(f, "bne"),
+            BranchOp::Blt => write!(f, "blt"),
+            BranchOp::Bge => write!(f, "bge"),
+            BranchOp::Bltu => write!(f, "bltu"),
+            BranchOp::Bgeu => write!(f, "bgeu"),
+        }
+    }
+}
 
 pub struct DisplayMInst<'a> {
     mctx: &'a MContext,
@@ -288,11 +360,17 @@ pub struct DisplayMInst<'a> {
 }
 
 impl MInst {
-    pub fn kind(self, mctx: &MContext) -> &MInstKind { &self.deref(mctx).kind }
+    pub fn kind(self, mctx: &MContext) -> &MInstKind {
+        &self.deref(mctx).kind
+    }
 
-    pub fn kind_mut(self, mctx: &mut MContext) -> &mut MInstKind { &mut self.deref_mut(mctx).kind }
+    pub fn kind_mut(self, mctx: &mut MContext) -> &mut MInstKind {
+        &mut self.deref_mut(mctx).kind
+    }
 
-    pub fn display(self, mctx: &MContext) -> DisplayMInst { DisplayMInst { mctx, inst: self } }
+    pub fn display(self, mctx: &MContext) -> DisplayMInst {
+        DisplayMInst { mctx, inst: self }
+    }
 
     // XXX: These instruction creation methods are just for demonstration.
     // You can refactor them as you need.
@@ -418,8 +496,9 @@ impl MInst {
     /// target: The target block.
     ///
     /// Returns the instruction.
-    pub fn j(mctx: &mut MContext, target: MBlock) -> Self {
-        let kind = MInstKind::J { target };
+    pub fn j(mctx: &mut MContext, rs: Option<Reg>, target: MBlock) -> Self {
+        let rd = mctx.new_vreg(RegKind::General).into();
+        let kind = MInstKind::J { rd, rs, target };
         let data = MInstData {
             kind,
             next: None,
@@ -430,11 +509,49 @@ impl MInst {
     }
 
     // TODO: add more instruction creation methods as you need.
+
+    /// Create a new `fpu_rrr` instruction.
+    ///
+    /// op: FpuOpRRI
+    /// rs1: The first source register.
+    /// rs2: The second source register.
+    ///
+    /// Returns (inst, rd).
+    pub fn fpu_rrr(mctx: &mut MContext, op: FpuOpRRR, rs1: Reg, rs2: Reg) -> (Self, Reg) {
+        let rd = mctx.new_vreg(RegKind::Float).into();
+        let kind = MInstKind::FpuRRR { op, rd, rs1, rs2 };
+        let data = MInstData {
+            kind,
+            next: None,
+            prev: None,
+            parent: None,
+        };
+        let inst = mctx.alloc(data);
+        (inst, rd)
+    }
+
+    /// Create a new `compare` instruction.
+    ///    
+    /// op: CompareOp
+    /// rs1: The first source register.
+    /// rs2: The second source register.
+    ///
+    /// Returns the instruction.
+    pub fn fpu_move(mctx: &mut MContext, op: FpuMoveOp, rd: Reg, rs: Reg) -> Self {
+        let kind = MInstKind::FpuMove { op, rd, rs };
+        let data = MInstData {
+            kind,
+            next: None,
+            prev: None,
+            parent: None,
+        };
+        mctx.alloc(data)
+    }
 }
 
 impl fmt::Display for DisplayMInst<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.inst.deref(self.mctx).kind {
+        match &self.inst.deref(self.mctx).kind {
             MInstKind::Li { rd, imm } => write!(f, "li {}, {}", rd, imm),
             MInstKind::Load { op, rd, loc } => {
                 let slot = match loc {
@@ -446,6 +563,9 @@ impl fmt::Display for DisplayMInst<'_> {
                     }
                     MemLoc::Incoming { offset } => {
                         format!("{}(??? INCOMING)", offset)
+                    }
+                    MemLoc::Label { offset } => {
+                        format!("{}", offset)
                     }
                 };
                 write!(f, "{} {}, {}", op, rd, slot)
@@ -461,14 +581,30 @@ impl fmt::Display for DisplayMInst<'_> {
                     MemLoc::Incoming { offset } => {
                         format!("{}(??? INCOMING)", offset)
                     }
+                    MemLoc::Label { offset } => {
+                        format!("{}", offset)
+                    }
                 };
                 write!(f, "{} {}, {}", op, rs, slot)
             }
             MInstKind::AluRRR { op, rd, rs1, rs2 } => write!(f, "{} {}, {}, {}", op, rd, rs1, rs2),
             MInstKind::AluRRI { op, rd, rs, imm } => write!(f, "{} {}, {}, {}", op, rd, rs, imm),
-            MInstKind::J { target } => write!(f, "j {}", target.label(self.mctx)),
-            // TODO: implement display for more machine instructions
-            _ => todo!("display for others"),
+            MInstKind::J { target, rd, rs } => {
+                if let Some(rs) = rs {
+                    write!(f, "jalr {}, {}, {}", rd, rs, target.label(self.mctx))
+                } else {
+                    write!(f, "jal {}, {}", rd, target.label(self.mctx))
+                }
+            }
+            MInstKind::FpuRRR { op, rd, rs1, rs2 } => write!(f, "{} {}, {}, {}", op, rd, rs1, rs2),
+            MInstKind::Call { target } => write!(f, "call {}", target.label(self.mctx)),
+            MInstKind::FpuMove { op, rd, rs } => write!(f, "{} {}, {}", op, rd, rs),
+            MInstKind::Branch {
+                op,
+                rs1,
+                rs2,
+                target,
+            } => write!(f, "{} {}, {}, {}", op, rs1, rs2, target.label(self.mctx)),
         }
     }
 }
@@ -482,9 +618,13 @@ impl LinkedListNode for MInst {
     type Container = MBlock;
     type Ctx = MContext;
 
-    fn next(self, ctx: &Self::Ctx) -> Option<Self> { self.deref(ctx).next }
+    fn next(self, ctx: &Self::Ctx) -> Option<Self> {
+        self.deref(ctx).next
+    }
 
-    fn prev(self, ctx: &Self::Ctx) -> Option<Self> { self.deref(ctx).prev }
+    fn prev(self, ctx: &Self::Ctx) -> Option<Self> {
+        self.deref(ctx).prev
+    }
 
     fn set_next(self, arena: &mut Self::Ctx, next: Option<Self>) {
         self.deref_mut(arena).next = next;
@@ -494,7 +634,9 @@ impl LinkedListNode for MInst {
         self.deref_mut(arena).prev = prev;
     }
 
-    fn container(self, ctx: &Self::Ctx) -> Option<Self::Container> { self.deref(ctx).parent }
+    fn container(self, ctx: &Self::Ctx) -> Option<Self::Container> {
+        self.deref(ctx).parent
+    }
 
     fn set_container(self, arena: &mut Self::Ctx, container: Option<Self::Container>) {
         self.deref_mut(arena).parent = container;
@@ -509,11 +651,15 @@ impl Arena<MInst> for MContext {
         MInst(self.insts.alloc_with(|p| f(MInst(p))))
     }
 
-    fn try_deref(&self, ptr: MInst) -> Option<&MInstData> { self.insts.try_deref(ptr.0) }
+    fn try_deref(&self, ptr: MInst) -> Option<&MInstData> {
+        self.insts.try_deref(ptr.0)
+    }
 
     fn try_deref_mut(&mut self, ptr: MInst) -> Option<&mut MInstData> {
         self.insts.try_deref_mut(ptr.0)
     }
 
-    fn try_dealloc(&mut self, ptr: MInst) -> Option<MInstData> { self.insts.try_dealloc(ptr.0) }
+    fn try_dealloc(&mut self, ptr: MInst) -> Option<MInstData> {
+        self.insts.try_dealloc(ptr.0)
+    }
 }

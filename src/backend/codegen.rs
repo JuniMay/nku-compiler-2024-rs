@@ -8,12 +8,16 @@ use super::block::MBlock;
 use super::context::MContext;
 use super::func::{MFunc, MLabel};
 use super::imm::Imm12;
-use super::inst::{AluOpRRI, AluOpRRR, CompareOp, FpuCompareOp, FpuOpRRR, LoadOp, MInst, MInstKind, StoreOp};
+use super::inst::{
+    AluOpRRI, AluOpRRR, FpuCompareOp, FpuMoveOp, FpuOpRRR, LoadOp, MInst, MInstKind, StoreOp,
+};
 use super::operand::{MOperand, MOperandKind, MemLoc};
 use super::regs::{self, Reg, RegKind};
 use crate::infra::linked_list::{LinkedListContainer, LinkedListNode};
 use crate::infra::storage::ArenaPtr;
-use crate::ir::{self, ConstantValue, FloatBinaryOp, FloatCmpCond, IntBinaryOp, IntCmpCond, Ty, Value};
+use crate::ir::{
+    self, ConstantValue, FloatBinaryOp, FloatCmpCond, IntBinaryOp, IntCmpCond, Ty, Value,
+};
 
 pub struct CodegenContext<'s> {
     /// The machine code context.
@@ -97,6 +101,11 @@ impl<'s> CodegenContext<'s> {
         // TODO: There are several things to be handled before translating instructions:
         //  1. External functions and corresponding signatures.
         //  2. Global variables/constants.
+        for global in self.ctx.globals() {
+            let name = global.name(self.ctx);
+            let label = MLabel::from(name);
+            self.globals.insert(name.to_string(), label);
+        }
 
         // XXX: This is just a demonstration, you may refactor this part entirely.
         for func in self.ctx.funcs() {
@@ -154,11 +163,18 @@ impl<'s> CodegenContext<'s> {
                             self.lowered.insert(inst.result(self.ctx).unwrap(), mopd);
                         }
                         ir::InstKind::IntBinary { op } => {
-                            // TODO: Here's a simple example, you may need to handle more cases.
                             let lhs = inst.operand(self.ctx, 0);
                             let rhs = inst.operand(self.ctx, 1);
+                            let dst = inst.result(self.ctx).unwrap();
                             let mopd = self.gen_int_binary(*op, lhs, rhs);
-                            self.lowered.insert(inst.result(self.ctx).unwrap(), mopd);
+                            self.lowered.insert(dst, mopd);
+                        }
+                        ir::InstKind::FloatBinary { op } => {
+                            let lhs = inst.operand(self.ctx, 0);
+                            let rhs = inst.operand(self.ctx, 1);
+                            let dst = inst.result(self.ctx).unwrap();
+                            let mopd = self.get_float_binary(*op, lhs, rhs);
+                            self.lowered.insert(dst, mopd);
                         }
                         ir::InstKind::Ret => {
                             // TODO: You can handle multiple return values as you like.
@@ -168,63 +184,165 @@ impl<'s> CodegenContext<'s> {
                             }
                         }
                         ir::InstKind::Phi => todo!(),
-                        ir::InstKind::Load => {
-                            let src = inst.operand(&self.ctx, 0);
+                        ir::InstKind::GetElementPtr { bound_ty } => {
+                            let base = inst.operand(&self.ctx, 0);
+                            let offsets = inst.operand_iter(&self.ctx).skip(1);
                             let dst = inst.result(&self.ctx).unwrap();
-                            let ty = dst.ty(&self.ctx);
+                            let mut ty = bound_ty.clone();
 
-                            let src = self.lowered[&src];
-                            let dst = self.lowered[&dst];
-                            match ty.kind(&self.ctx) {
-                                ir::TyData::Int1 | ir::TyData::Int8 => {
-                                    let minst = MInst::new(
-                                        &mut self.mctx,
-                                        MInstKind::Load {
-                                            op: LoadOp::Lb,
-                                            rd: dst.as_reg(),
-                                            loc: src.as_mem(),
-                                        },
-                                    );
-                                    mblock.push_back(&mut self.mctx, minst).unwrap();
-                                }
-                                ir::TyData::Int32 => {
-                                    let minst = MInst::new(
-                                        &mut self.mctx,
-                                        MInstKind::Load {
-                                            op: LoadOp::Lw,
-                                            rd: dst.as_reg(),
-                                            loc: src.as_mem(),
-                                        },
-                                    );
-                                    mblock.push_back(&mut self.mctx, minst).unwrap();
-                                }
-                                ir::TyData::Float32 => {
-                                    let minst = MInst::new(
-                                        &mut self.mctx,
-                                        MInstKind::Load {
-                                            op: LoadOp::Flw,
-                                            rd: dst.as_reg(),
-                                            loc: src.as_mem(),
-                                        },
-                                    );
-                                    mblock.push_back(&mut self.mctx, minst).unwrap();
-                                }
+                            println!("ty: {:?}", ty);
+                            println!("self.lowered:\n{:?}", self.lowered);
+
+                            let mut offset = 0;
+                            for op in offsets {
+                                let op = self.lowered[&op];
+                                let size = (ty.bitwidth(&self.ctx) + 7) / 8;
+                                offset += op.as_imm().1 * size as i64;
+                                ty = ty.as_array(&self.ctx).unwrap().0;
+                            }
+
+                            // match self.lowered.get(&base) {
+                            //     Some(mop) => {
+                            //         let minst = MInst::new(
+                            //             &mut self.mctx,
+                            //             MInstKind::Load {
+                            //                 op: LoadOp::La,
+                            //                 rd: regs::t0().into(),
+                            //                 loc: MemLoc::Label {
+                            //                     offset: mop.as_label().clone(),
+                            //                 },
+                            //             },
+                            //         )
+                            //     }
+                            //     None => {
+                            //         let base_name = match &base.try_deref(&self.ctx).unwrap().kind {
+                            //             ir::ValueKind::Constant { value } => match value {
+                            //                 ir::ConstantValue::GlobalRef { ty, name, value_ty } => {
+                            //                     name
+                            //                 }
+                            //                 _ => {
+                            //                     eprintln!("Unsupported base: {:?}", base);
+                            //                     unreachable!()
+                            //                 }
+                            //             },
+                            //             _ => {
+                            //                 eprintln!("Unsupported base: {:?}", base);
+                            //                 unreachable!()
+                            //             }
+                            //         };
+                            //         let base = self.globals.get(base_name).unwrap();
+                            //         // 获取全局变量地址
+                            //         let minst = MInst::new(
+                            //             &mut self.mctx,
+                            //             MInstKind::Load {
+                            //                 op: LoadOp::La,
+                            //                 rd: regs::t0().into(),
+                            //                 loc: MemLoc::Label {
+                            //                     offset: base.clone(),
+                            //                 },
+                            //             },
+                            //         );
+                            //         mblock.push_back(&mut self.mctx, minst).unwrap();
+                            //         // 计算偏移结果
+                            //         let minst = MInst::raw_alu_rri(
+                            //             &mut self.mctx,
+                            //             AluOpRRI::Addi,
+                            //             regs::t0().into(),
+                            //             regs::t0().into(),
+                            //             Imm12::try_from_i64(offset).unwrap(),
+                            //         );
+                            //         mblock.push_back(&mut self.mctx, minst).unwrap();
+                            //     }
+                            // };
+
+                            let mopd = MOperand {
+                                ty,
+                                kind: MOperandKind::Mem(MemLoc::Slot { offset }),
+                            };
+                            self.lowered.insert(dst, mopd);
+                        }
+                        ir::InstKind::Call => {
+                            let callee = inst.operand(&self.ctx, 0);
+                            let args = inst.operand_iter(&self.ctx).skip(1);
+                            let ret = inst.result(&self.ctx).unwrap();
+                            let callee_name = match &callee.try_deref(&self.ctx).unwrap().kind {
+                                ir::ValueKind::Constant { value } => match value {
+                                    ir::ConstantValue::GlobalRef { ty, name, value_ty } => name,
+                                    _ => {
+                                        eprintln!("Unsupported callee: {:?}", callee);
+                                        unreachable!()
+                                    }
+                                },
                                 _ => {
-                                    eprintln!("Unsupported type: {:?}", ty.kind(&self.ctx));
+                                    eprintln!("Unsupported callee: {:?}", callee);
                                     unreachable!()
                                 }
+                            };
+
+                            let callee = self
+                                .funcs
+                                .get(callee_name)
+                                .unwrap()
+                                .head(&self.mctx)
+                                .unwrap();
+                            let args: Vec<_> = args.map(|arg| self.lowered[&arg]).collect();
+                            let ret = self.lowered[&ret];
+
+                            for (index, arg) in args.iter().enumerate() {
+                                let arg_reg = match arg.ty.kind(self.ctx) {
+                                    ir::TyData::Int32 => regs::get_arg(index).into(),
+                                    ir::TyData::Float32 => regs::get_farg(index).into(),
+                                    _ => todo!(),
+                                };
+                                let mv = MInst::raw_alu_rri(
+                                    &mut self.mctx,
+                                    AluOpRRI::Addi,
+                                    arg_reg,
+                                    arg.as_reg(),
+                                    Imm12::try_from_i64(0).unwrap(),
+                                );
+                                self.curr_block
+                                    .unwrap()
+                                    .push_back(&mut self.mctx, mv)
+                                    .unwrap();
+                            }
+
+                            let minst =
+                                MInst::new(&mut self.mctx, MInstKind::Call { target: callee });
+
+                            self.curr_block
+                                .unwrap()
+                                .push_back(&mut self.mctx, minst)
+                                .unwrap();
+
+                            // Handle the return value if any.
+                            if let Some(_) = inst.result(self.ctx) {
+                                let ret_reg = match ret.ty.kind(self.ctx) {
+                                    ir::TyData::Int32 => regs::a0().into(),
+                                    ir::TyData::Float32 => regs::fa0().into(),
+                                    _ => todo!(),
+                                };
+                                let mv = MInst::raw_alu_rri(
+                                    &mut self.mctx,
+                                    AluOpRRI::Addi,
+                                    ret_reg,
+                                    ret.as_reg(),
+                                    Imm12::try_from_i64(0).unwrap(),
+                                );
+                                self.curr_block
+                                    .unwrap()
+                                    .push_back(&mut self.mctx, mv)
+                                    .unwrap();
                             }
                         }
-                        ir::InstKind::GetElementPtr { bound_ty } => todo!(),
-                        ir::InstKind::Call => todo!(),
-                        &ir::InstKind::Br => {
+                        ir::InstKind::Br => {
                             // You can also encapsulate this into a helper function for cleaner
                             // code.
                             if inst.operand_iter(self.ctx).count() == 0 {
                                 // Unconditional branch.
                                 let target = inst.successor(self.ctx, 0);
                                 let target_block = self.blocks[&target];
-                                let j = MInst::j(&mut self.mctx, target_block);
+                                let j = MInst::j(&mut self.mctx, None, target_block);
                                 mblock.push_back(&mut self.mctx, j).unwrap();
                             } else {
                                 // TODO: Handle conditional branch.
@@ -235,388 +353,6 @@ impl<'s> CodegenContext<'s> {
                             let cond = inst.operand(&self.ctx, 0);
                             let then_dst = inst.successor(&self.ctx, 0);
                             let else_dst = inst.successor(&self.ctx, 1);
-                        }
-                        ir::InstKind::Store => {
-                            let src = inst.operand(&self.ctx, 0);
-                            let dst = inst.operand(&self.ctx, 1);
-                            let ty = src.ty(&self.ctx);
-                            let src = self.lowered[&src];
-                            let dst = self.lowered[&dst];
-                            match ty.kind(&self.ctx) {
-                                ir::TyData::Int1 | ir::TyData::Int8 => {
-                                    let minst = MInst::new(
-                                        &mut self.mctx,
-                                        MInstKind::Store {
-                                            op: StoreOp::Sb,
-                                            rs: src.as_reg(),
-                                            loc: dst.as_mem(),
-                                        },
-                                    );
-                                    mblock.push_back(&mut self.mctx, minst).unwrap();
-                                }
-                                ir::TyData::Int32 => {
-                                    let minst = MInst::new(
-                                        &mut self.mctx,
-                                        MInstKind::Store {
-                                            op: StoreOp::Sw,
-                                            rs: src.as_reg(),
-                                            loc: dst.as_mem(),
-                                        },
-                                    );
-                                    mblock.push_back(&mut self.mctx, minst).unwrap();
-                                }
-                                ir::TyData::Float32 => {
-                                    let minst = MInst::new(
-                                        &mut self.mctx,
-                                        MInstKind::Store {
-                                            op: StoreOp::Fsw,
-                                            rs: src.as_reg(),
-                                            loc: dst.as_mem(),
-                                        },
-                                    );
-                                    mblock.push_back(&mut self.mctx, minst).unwrap();
-                                }
-                                _ => {
-                                    eprintln!("Unsupported type: {:?}", ty.kind(&self.ctx));
-                                    unreachable!()
-                                }
-                            }
-                        }
-                        ir::InstKind::IntBinary { op } => {
-                            let src1 = inst.operand(&self.ctx, 0);
-                            let src2 = inst.operand(&self.ctx, 1);
-                            let dst = inst.result(&self.ctx).unwrap();
-
-                            let mut swapped = false;
-                            let mut src1 = self.lowered[&src1];
-                            let mut src2 = self.lowered[&src2];
-                            let dst = self.lowered[&dst];
-                            // 确保src1是寄存器
-                            match (src1.kind, src2.kind) {
-                                (MOperandKind::Imm(..), MOperandKind::Reg(..)) => {
-                                    std::mem::swap(&mut src1, &mut src2);
-                                    swapped = true;
-                                }
-                                _ => {}
-                            }
-                            match src2.kind {
-                                MOperandKind::Reg(src2) => {
-                                    let mop = match op {
-                                        IntBinaryOp::Add => AluOpRRR::Addw,
-                                        IntBinaryOp::Sub => AluOpRRR::Subw,
-                                        IntBinaryOp::Mul => AluOpRRR::Mulw,
-                                        IntBinaryOp::SDiv => AluOpRRR::Divw,
-                                        IntBinaryOp::UDiv => AluOpRRR::Divuw,
-                                        IntBinaryOp::SRem => AluOpRRR::Remw,
-                                        IntBinaryOp::URem => AluOpRRR::Remuw,
-                                        IntBinaryOp::Shl => AluOpRRR::Sllw,
-                                        IntBinaryOp::LShr => AluOpRRR::Srlw,
-                                        IntBinaryOp::AShr => AluOpRRR::Sraw,
-                                        IntBinaryOp::And => AluOpRRR::And,
-                                        IntBinaryOp::Or => AluOpRRR::Or,
-                                        IntBinaryOp::Xor => AluOpRRR::Xor,
-                                        IntBinaryOp::ICmp { cond } => match cond {
-                                            IntCmpCond::Eq => {
-                                                let tmp_rd =
-                                                    Reg::V(self.mctx.new_vreg(RegKind::General));
-                                                let minst = MInst::new(
-                                                    &mut self.mctx,
-                                                    MInstKind::AluRRR {
-                                                        op: AluOpRRR::Subw,
-                                                        rd: tmp_rd,
-                                                        rs1: src1.as_reg(),
-                                                        rs2: src2,
-                                                    },
-                                                );
-                                                mblock.push_back(&mut self.mctx, minst).unwrap();
-                                                let minst = MInst::new(
-                                                    &mut self.mctx,
-                                                    MInstKind::Compare {
-                                                        op: CompareOp::Seqz,
-                                                        rd: dst.as_reg(),
-                                                        rs1: tmp_rd,
-                                                        rs2: None,
-                                                    },
-                                                );
-                                                mblock.push_back(&mut self.mctx, minst).unwrap();
-                                                return;
-                                            }
-                                            IntCmpCond::Ne => {
-                                                let tmp_rd =
-                                                    Reg::V(self.mctx.new_vreg(RegKind::General));
-                                                let minst = MInst::new(
-                                                    &mut self.mctx,
-                                                    MInstKind::AluRRR {
-                                                        op: AluOpRRR::Subw,
-                                                        rd: tmp_rd,
-                                                        rs1: src1.as_reg(),
-                                                        rs2: src2,
-                                                    },
-                                                );
-                                                mblock.push_back(&mut self.mctx, minst).unwrap();
-                                                let minst = MInst::new(
-                                                    &mut self.mctx,
-                                                    MInstKind::Compare {
-                                                        op: CompareOp::Snez,
-                                                        rd: dst.as_reg(),
-                                                        rs1: tmp_rd,
-                                                        rs2: None,
-                                                    },
-                                                );
-                                                mblock.push_back(&mut self.mctx, minst).unwrap();
-                                                return;
-                                            }
-                                            IntCmpCond::Slt => {
-                                                let minst = MInst::new(
-                                                    &mut self.mctx,
-                                                    MInstKind::Compare {
-                                                        op: CompareOp::Slt,
-                                                        rd: dst.as_reg(),
-                                                        rs1: src1.as_reg(),
-                                                        rs2: Some(src2),
-                                                    },
-                                                );
-                                                mblock.push_back(&mut self.mctx, minst).unwrap();
-                                                return;
-                                            }
-                                            IntCmpCond::Sle => {
-                                                let minst = MInst::new(
-                                                    &mut self.mctx,
-                                                    MInstKind::Compare {
-                                                        op: CompareOp::Slt,
-                                                        rd: dst.as_reg(),
-                                                        rs1: src2,
-                                                        rs2: Some(src1.as_reg()),
-                                                    },
-                                                );
-                                                mblock.push_back(&mut self.mctx, minst).unwrap();
-                                                let minst = MInst::new(
-                                                    &mut self.mctx,
-                                                    MInstKind::AluRRI {
-                                                        op: super::inst::AluOpRRI::Xori,
-                                                        rd: dst.as_reg(),
-                                                        rs: dst.as_reg(),
-                                                        imm: Imm12::try_from_u64(1).unwrap(),
-                                                    },
-                                                );
-                                                mblock.push_back(&mut self.mctx, minst).unwrap();
-                                                return;
-                                            }
-                                        },
-                                    };
-                                    let minst = MInst::new(
-                                        &mut self.mctx,
-                                        MInstKind::AluRRR {
-                                            op: mop,
-                                            rd: dst.as_reg(),
-                                            rs1: src1.as_reg(),
-                                            rs2: src2,
-                                        },
-                                    );
-                                    mblock.push_back(&mut self.mctx, minst).unwrap();
-                                }
-                                MOperandKind::Imm(src2, imm) => {
-                                    let mop = match op {
-                                        // XXX：此处用32位还是64位版本？？
-                                        IntBinaryOp::Add => AluOpRRI::Addi,
-                                        IntBinaryOp::Sub => {
-                                            if swapped {
-                                                let mop = AluOpRRR::Sub;
-                                                let minst = MInst::new(
-                                                    &mut self.mctx,
-                                                    MInstKind::AluRRR {
-                                                        op: mop,
-                                                        rd: dst.as_reg(),
-                                                        rs1: src2,
-                                                        rs2: src1.as_reg(),
-                                                    },
-                                                );
-                                                mblock.push_back(&mut self.mctx, minst).unwrap();
-                                                return;
-                                            }
-                                            let minst = MInst::new(
-                                                &mut self.mctx,
-                                                MInstKind::AluRRI {
-                                                    op: AluOpRRI::Addi,
-                                                    rd: dst.as_reg(),
-                                                    rs: src1.as_reg(),
-                                                    imm: Imm12::try_from_i64(-imm).unwrap(),
-                                                },
-                                            );
-                                            mblock.push_back(&mut self.mctx, minst).unwrap();
-                                            return;
-                                        }
-                                        IntBinaryOp::Shl => {
-                                            if swapped {
-                                                let mop = AluOpRRR::Sll;
-                                                let minst = MInst::new(
-                                                    &mut self.mctx,
-                                                    MInstKind::AluRRR {
-                                                        op: mop,
-                                                        rd: dst.as_reg(),
-                                                        rs1: src2,
-                                                        rs2: src1.as_reg(),
-                                                    },
-                                                );
-                                                mblock.push_back(&mut self.mctx, minst).unwrap();
-                                                return;
-                                            }
-                                            AluOpRRI::Slli
-                                        }
-                                        IntBinaryOp::LShr => {
-                                            if swapped {
-                                                let mop = AluOpRRR::Srl;
-                                                let minst = MInst::new(
-                                                    &mut self.mctx,
-                                                    MInstKind::AluRRR {
-                                                        op: mop,
-                                                        rd: dst.as_reg(),
-                                                        rs1: src2,
-                                                        rs2: src1.as_reg(),
-                                                    },
-                                                );
-                                                mblock.push_back(&mut self.mctx, minst).unwrap();
-                                                return;
-                                            }
-                                            AluOpRRI::Srli
-                                        }
-                                        IntBinaryOp::AShr => {
-                                            if swapped {
-                                                let mop = AluOpRRR::Sra;
-                                                let minst = MInst::new(
-                                                    &mut self.mctx,
-                                                    MInstKind::AluRRR {
-                                                        op: mop,
-                                                        rd: dst.as_reg(),
-                                                        rs1: src2,
-                                                        rs2: src1.as_reg(),
-                                                    },
-                                                );
-                                                mblock.push_back(&mut self.mctx, minst).unwrap();
-                                                return;
-                                            }
-                                            AluOpRRI::Srai
-                                        }
-                                        IntBinaryOp::And => AluOpRRI::Andi,
-                                        IntBinaryOp::Or => AluOpRRI::Ori,
-                                        IntBinaryOp::Xor => AluOpRRI::Xori,
-                                        _ => {
-                                            eprintln!("Unsupported kind: {:?}", op);
-                                            unreachable!()
-                                        }
-                                    };
-                                    let minst = MInst::new(
-                                        &mut self.mctx,
-                                        MInstKind::AluRRI {
-                                            op: mop,
-                                            rd: dst.as_reg(),
-                                            rs: src1.as_reg(),
-                                            imm: Imm12::try_from_i64(imm).unwrap(),
-                                        },
-                                    );
-                                    mblock.push_back(&mut self.mctx, minst).unwrap();
-                                }
-                                _ => {
-                                    eprintln!("Unsupported kind: {:?}", src2.kind);
-                                    unreachable!()
-                                }
-                            }
-                        }
-                        ir::InstKind::FloatBinary { op } => {
-                            let src1 = inst.operand(&self.ctx, 0);
-                            let src2 = inst.operand(&self.ctx, 1);
-                            let dst = inst.result(&self.ctx).unwrap();
-
-                            let mut swapped = false;
-                            let mut src1 = self.lowered[&src1];
-                            let mut src2 = self.lowered[&src2];
-                            let dst = self.lowered[&dst];
-                            // 确保src1是寄存器
-                            match (src1.kind, src2.kind) {
-                                (MOperandKind::Imm(..), MOperandKind::Reg(..)) => {
-                                    std::mem::swap(&mut src1, &mut src2);
-                                    swapped = true;
-                                }
-                                _ => {}
-                            }
-                            match src2.kind {
-                                MOperandKind::Reg(src2) => {
-                                    let src1 = src1.as_reg();
-                                    let dst = dst.as_reg();
-                                    let mop = match op {
-                                        FloatBinaryOp::Fadd => FpuOpRRR::FaddS,
-                                        FloatBinaryOp::Fsub => FpuOpRRR::FsubS,
-                                        FloatBinaryOp::Fmul => FpuOpRRR::FmulS,
-                                        FloatBinaryOp::Fdiv => FpuOpRRR::FdivS,
-                                        FloatBinaryOp::FCmp { cond } => {
-                                            let mop = match cond {
-                                                FloatCmpCond::Oeq => FpuCompareOp::FeqS,
-                                                FloatCmpCond::Ole => FpuCompareOp::FleS,
-                                                FloatCmpCond::Olt => FpuCompareOp::FltS,
-                                                FloatCmpCond::One | FloatCmpCond::Une => {
-                                                    let minst = MInst::new(
-                                                        &mut self.mctx,
-                                                        MInstKind::FpuCompare {
-                                                            op: FpuCompareOp::FeqS,
-                                                            rd: dst,
-                                                            rs1: src1,
-                                                            rs2: src2,
-                                                        },
-                                                    );
-                                                    mblock
-                                                        .push_back(&mut self.mctx, minst)
-                                                        .unwrap();
-                                                    let minst = MInst::new(
-                                                        &mut self.mctx,
-                                                        MInstKind::AluRRI {
-                                                            op: AluOpRRI::Xori,
-                                                            rd: dst,
-                                                            rs: dst,
-                                                            imm: Imm12::try_from_u64(1).unwrap(),
-                                                        },
-                                                    );
-                                                    mblock
-                                                        .push_back(&mut self.mctx, minst)
-                                                        .unwrap();
-                                                    return;
-                                                }
-                                                FloatCmpCond::Ueq => FpuCompareOp::FeqS,
-                                                FloatCmpCond::Ule => FpuCompareOp::FleS,
-                                                FloatCmpCond::Ult => FpuCompareOp::FltS,
-                                                _ => {
-                                                    eprintln!("Unsupported kind: {:?}", cond);
-                                                    todo!();
-                                                }
-                                            };
-                                            let minst = MInst::new(
-                                                &mut self.mctx,
-                                                MInstKind::FpuCompare {
-                                                    op: mop,
-                                                    rd: dst,
-                                                    rs1: src1,
-                                                    rs2: src2,
-                                                },
-                                            );
-                                            mblock.push_back(&mut self.mctx, minst).unwrap();
-                                            return;
-                                        }
-                                    };
-                                    let minst = MInst::new(
-                                        &mut self.mctx,
-                                        MInstKind::FpuRRR {
-                                            op: mop,
-                                            rd: dst,
-                                            rs1: src1,
-                                            rs2: src2,
-                                        },
-                                    );
-                                    mblock.push_back(&mut self.mctx, minst).unwrap();
-                                }
-                                _ => {
-                                    eprintln!("Unsupported kind: {:?}", src2.kind);
-                                    unreachable!()
-                                }
-                            }
                         }
                         ir::InstKind::Cast { op } => todo!(),
                     }
@@ -772,7 +508,29 @@ impl<'s> CodegenContext<'s> {
             ir::ValueKind::Constant { value } => {
                 // XXX: You also might want to encapsulate this check into a function.
                 match value {
-                    ir::ConstantValue::Int32 { value, .. } => {
+                    ConstantValue::Int1 { value, .. } => {
+                        if value == &false {
+                            // Use zero register for zero value.
+                            regs::zero().into()
+                        } else {
+                            // Sign-extend the 32-bit value to 64-bit
+                            let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                            curr_block.push_back(&mut self.mctx, li).unwrap();
+                            r
+                        }
+                    }
+                    ConstantValue::Int8 { value, .. } => {
+                        if value == &0 {
+                            // Use zero register for zero value.
+                            regs::zero().into()
+                        } else {
+                            // Sign-extend the 32-bit value to 64-bit
+                            let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                            curr_block.push_back(&mut self.mctx, li).unwrap();
+                            r
+                        }
+                    }
+                    ConstantValue::Int32 { value, .. } => {
                         if value == &0 {
                             // Use zero register for zero value.
                             regs::zero().into()
@@ -787,7 +545,21 @@ impl<'s> CodegenContext<'s> {
                         // We treat undef as zero temporarily.
                         regs::zero().into()
                     }
-                    _ => todo!(),
+                    ConstantValue::Float32 { value, .. } => {
+                        if value == &0 {
+                            // Use zero register for zero value.
+                            regs::f0().into()
+                        } else {
+                            // Sign-extend the 32-bit value to 64-bit
+                            let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                            curr_block.push_back(&mut self.mctx, li).unwrap();
+                            r
+                        }
+                    }
+                    _ => {
+                        eprintln!("Unsupported constant: {:?}", value);
+                        unreachable!()
+                    }
                 }
             }
             ir::ValueKind::InstResult { .. } => {
@@ -795,14 +567,40 @@ impl<'s> CodegenContext<'s> {
                 let mopd = self.lowered[&val];
                 match mopd.kind {
                     MOperandKind::Reg(reg) => reg,
-                    _ => todo!(),
+                    MOperandKind::Imm(.., imm) => {
+                        let (li, r) = MInst::li(&mut self.mctx, imm as u64);
+                        curr_block.push_back(&mut self.mctx, li).unwrap();
+                        r
+                    }
+                    MOperandKind::Mem(mem) => {
+                        let ty = val.ty(self.ctx);
+                        let mop = self.gen_load(ty, mem);
+                        match mop.kind {
+                            MOperandKind::Reg(reg) => reg,
+                            _ => todo!(),
+                        }
+                    }
+                    MOperandKind::Undef => regs::zero().into(),
                 }
             }
-            ir::ValueKind::Param { .. } => {
-                // TODO: Handle parameters.
-                todo!()
+            ir::ValueKind::Param { ty, index, .. } => {
+                let param_reg = match ty.kind(self.ctx) {
+                    ir::TyData::Int1 | ir::TyData::Int8 | ir::TyData::Int32 => {
+                        regs::get_arg(*index as usize).into()
+                    }
+                    ir::TyData::Float32 => regs::get_farg(*index as usize).into(),
+                    // XXX：对于基本类型以外的参数均不支持
+                    _ => {
+                        eprintln!("Unsupported type: {:?}", ty.kind(self.ctx));
+                        unreachable!()
+                    }
+                };
+                param_reg
             }
-            _ => todo!(),
+            _ => {
+                eprintln!("Unsupported kind: {:?}", val.kind(self.ctx));
+                unreachable!()
+            }
         };
 
         let bitwidth = val.ty(self.ctx).bitwidth(self.ctx);
@@ -852,37 +650,140 @@ impl<'s> CodegenContext<'s> {
     pub fn gen_int_binary(&mut self, op: IntBinaryOp, lhs: Value, rhs: Value) -> MOperand {
         let curr_block = self.curr_block.unwrap();
 
-        // TODO: We only handle reg + reg here, you need to handle other cases.
         let lhs_reg = match &lhs.try_deref(self.ctx).unwrap().kind {
-            ir::ValueKind::Constant { .. } => {
-                todo!()
-            }
+            ir::ValueKind::Constant { value } => match value {
+                ir::ConstantValue::Int32 { value, .. } => {
+                    let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                    curr_block.push_back(&mut self.mctx, li);
+                    r
+                }
+                ir::ConstantValue::Int8 { value, .. } => {
+                    let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                    curr_block.push_back(&mut self.mctx, li);
+                    r
+                }
+                ir::ConstantValue::Int1 { value, .. } => {
+                    let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                    curr_block.push_back(&mut self.mctx, li);
+                    r
+                }
+                ir::ConstantValue::Float32 { value, .. } => {
+                    let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                    curr_block.push_back(&mut self.mctx, li);
+                    r
+                }
+                ir::ConstantValue::Undef { .. } => {
+                    let (li, r) = MInst::li(&mut self.mctx, 0);
+                    curr_block.push_back(&mut self.mctx, li);
+                    r
+                }
+                _ => {
+                    eprintln!("Unsupported constant: {:?}", value);
+                    unreachable!()
+                }
+            },
             ir::ValueKind::InstResult { .. } => {
                 let mopd = self.lowered[&lhs];
                 match mopd.kind {
                     MOperandKind::Reg(reg) => reg,
-                    _ => todo!(),
+                    MOperandKind::Imm(reg, imm) => {
+                        let (li, r) = MInst::li(&mut self.mctx, imm as u64);
+                        curr_block.push_back(&mut self.mctx, li);
+                        r
+                    }
+                    MOperandKind::Undef => regs::zero().into(),
+                    MOperandKind::Mem(loc) => {
+                        let mop = self.gen_load(lhs.ty(self.ctx), loc);
+                        match mop.kind {
+                            MOperandKind::Reg(reg) => reg,
+                            _ => todo!(),
+                        }
+                    }
                 }
             }
             ir::ValueKind::Param { .. } => {
-                todo!()
+                let mopd = self.lowered[&lhs];
+                match mopd.kind {
+                    MOperandKind::Reg(reg) => reg,
+                    MOperandKind::Imm(reg, imm) => {
+                        let (li, r) = MInst::li(&mut self.mctx, imm as u64);
+                        curr_block.push_back(&mut self.mctx, li);
+                        r
+                    }
+                    MOperandKind::Undef => regs::zero().into(),
+                    MOperandKind::Mem(loc) => {
+                        let mop = self.gen_load(lhs.ty(self.ctx), loc);
+                        match mop.kind {
+                            MOperandKind::Reg(reg) => reg,
+                            _ => todo!(),
+                        }
+                    }
+                }
             }
             _ => todo!(),
         };
 
-        let rhs_reg = match &rhs.try_deref(self.ctx).unwrap().kind {
-            ir::ValueKind::Constant { .. } => {
-                todo!()
-            }
+        let (rhs_reg, rhs_imm) = match &rhs.try_deref(self.ctx).unwrap().kind {
+            ir::ValueKind::Constant { value } => match value {
+                ir::ConstantValue::Int32 { value, .. } => {
+                    let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                    curr_block.push_back(&mut self.mctx, li);
+                    (Some(r), None)
+                }
+                ir::ConstantValue::Int8 { value, .. } => {
+                    let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                    curr_block.push_back(&mut self.mctx, li);
+                    (Some(r), None)
+                }
+                ir::ConstantValue::Int1 { value, .. } => {
+                    let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                    curr_block.push_back(&mut self.mctx, li);
+                    (Some(r), None)
+                }
+                ir::ConstantValue::Float32 { value, .. } => {
+                    let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                    curr_block.push_back(&mut self.mctx, li);
+                    (Some(r), None)
+                }
+                ir::ConstantValue::Undef { .. } => {
+                    let (li, r) = MInst::li(&mut self.mctx, 0);
+                    curr_block.push_back(&mut self.mctx, li);
+                    (Some(r), None)
+                }
+                _ => {
+                    eprintln!("Unsupported constant: {:?}", value);
+                    unreachable!()
+                }
+            },
             ir::ValueKind::InstResult { .. } => {
-                let mopd = self.lowered[&rhs];
+                let mopd = self.lowered[&lhs];
                 match mopd.kind {
-                    MOperandKind::Reg(reg) => reg,
-                    _ => todo!(),
+                    MOperandKind::Reg(reg) => (Some(reg), None),
+                    MOperandKind::Imm(_, imm) => (None, Some(imm)),
+                    MOperandKind::Undef => (Some(regs::zero().into()), None),
+                    MOperandKind::Mem(loc) => {
+                        let mop = self.gen_load(lhs.ty(self.ctx), loc);
+                        match mop.kind {
+                            MOperandKind::Reg(reg) => (Some(reg), None),
+                            _ => todo!(),
+                        }
+                    }
                 }
             }
             ir::ValueKind::Param { .. } => {
-                todo!()
+                let mopd = self.lowered[&lhs];
+                match mopd.kind {
+                    MOperandKind::Reg(reg) => (Some(reg), None),
+                    MOperandKind::Imm(_, imm) => (None, Some(imm)),
+                    MOperandKind::Undef => (Some(regs::zero().into()), None),
+                    MOperandKind::Mem(loc) => {
+                        let mop = self.gen_load(lhs.ty(self.ctx), loc);
+                        match mop.kind {
+                            MOperandKind::Reg(reg) => (Some(reg), None),
+                            _ => todo!(),
+                        }
+                    }
+                }
             }
             _ => todo!(),
         };
@@ -891,22 +792,600 @@ impl<'s> CodegenContext<'s> {
 
         match op {
             IntBinaryOp::Add => {
-                // addw rd, rs1, rs2
-                let alu_op = match bitwidth {
-                    32 => AluOpRRR::Addw,
-                    // TODO: other bitwidths?
-                    _ => todo!(),
+                // addw rd, rs1, rs2 | imm
+                let (add, rd) = if let Some(rhs_reg) = rhs_reg {
+                    let alu_op = match bitwidth {
+                        1 | 8 | 32 => AluOpRRR::Addw,
+                        64 => AluOpRRR::Add,
+                        _ => todo!(),
+                    };
+                    MInst::alu_rrr(&mut self.mctx, alu_op, lhs_reg, rhs_reg)
+                } else if let Some(rhs_imm) = rhs_imm {
+                    let alu_op = match bitwidth {
+                        1 | 8 | 32 => AluOpRRI::Addiw,
+                        64 => AluOpRRI::Addi,
+                        _ => todo!(),
+                    };
+                    MInst::alu_rri(
+                        &mut self.mctx,
+                        alu_op,
+                        lhs_reg,
+                        Imm12::try_from_i64(rhs_imm).unwrap(),
+                    )
+                } else {
+                    todo!()
                 };
-                let (add, rd) = MInst::alu_rrr(&mut self.mctx, alu_op, lhs_reg, rhs_reg);
+
                 curr_block.push_back(&mut self.mctx, add).unwrap();
+                MOperand {
+                    ty: lhs.ty(self.ctx),
+                    kind: MOperandKind::Reg(rd),
+                }
+            }
+            IntBinaryOp::Sub => {
+                // addw rd, rs1, rs2 | imm
+                let (sub, rd) = if let Some(rhs_reg) = rhs_reg {
+                    let alu_op = match bitwidth {
+                        1 | 8 | 32 => AluOpRRR::Subw,
+                        64 => AluOpRRR::Sub,
+                        _ => todo!(),
+                    };
+                    MInst::alu_rrr(&mut self.mctx, alu_op, lhs_reg, rhs_reg)
+                } else if let Some(rhs_imm) = rhs_imm {
+                    let alu_op = match bitwidth {
+                        1 | 8 | 32 => AluOpRRI::Addiw,
+                        64 => AluOpRRI::Addi,
+                        _ => todo!(),
+                    };
+                    MInst::alu_rri(
+                        &mut self.mctx,
+                        alu_op,
+                        lhs_reg,
+                        Imm12::try_from_i64(-rhs_imm).unwrap(),
+                    )
+                } else {
+                    todo!()
+                };
+                curr_block.push_back(&mut self.mctx, sub).unwrap();
 
                 MOperand {
                     ty: lhs.ty(self.ctx),
                     kind: MOperandKind::Reg(rd),
                 }
             }
-            // TODO: Add more ops.
-            _ => todo!(),
+            IntBinaryOp::Mul => {
+                let alu_op = match bitwidth {
+                    1 | 8 | 32 => AluOpRRR::Mulw,
+                    64 => AluOpRRR::Mul,
+                    _ => todo!(),
+                };
+                let (mul, rd) = if let Some(rhs_reg) = rhs_reg {
+                    MInst::alu_rrr(&mut self.mctx, alu_op, lhs_reg, rhs_reg)
+                } else if let Some(rhs_imm) = rhs_imm {
+                    let (li, rd) = MInst::li(&mut self.mctx, rhs_imm as u64);
+                    curr_block.push_back(&mut self.mctx, li).unwrap();
+                    MInst::alu_rrr(&mut self.mctx, alu_op, lhs_reg, rd)
+                } else {
+                    todo!()
+                };
+
+                curr_block.push_back(&mut self.mctx, mul).unwrap();
+                MOperand {
+                    ty: lhs.ty(self.ctx),
+                    kind: MOperandKind::Reg(rd),
+                }
+            }
+            IntBinaryOp::SDiv => {
+                let alu_op = match bitwidth {
+                    1 | 8 | 32 => AluOpRRR::Divw,
+                    64 => AluOpRRR::Div,
+                    _ => todo!(),
+                };
+
+                let (sdiv, rd) = if let Some(rhs_reg) = rhs_reg {
+                    MInst::alu_rrr(&mut self.mctx, alu_op, lhs_reg, rhs_reg)
+                } else if let Some(rhs_imm) = rhs_imm {
+                    let (li, rd) = MInst::li(&mut self.mctx, rhs_imm as u64);
+                    curr_block.push_back(&mut self.mctx, li).unwrap();
+                    MInst::alu_rrr(&mut self.mctx, alu_op, lhs_reg, rd)
+                } else {
+                    todo!()
+                };
+                curr_block.push_back(&mut self.mctx, sdiv).unwrap();
+
+                MOperand {
+                    ty: lhs.ty(self.ctx),
+                    kind: MOperandKind::Reg(rd),
+                }
+            }
+            IntBinaryOp::UDiv => {
+                let alu_op = match bitwidth {
+                    1 | 8 | 32 => AluOpRRR::Divuw,
+                    64 => AluOpRRR::Divu,
+                    _ => todo!(),
+                };
+                let (udiv, rd) = if let Some(rhs_reg) = rhs_reg {
+                    MInst::alu_rrr(&mut self.mctx, alu_op, lhs_reg, rhs_reg)
+                } else if let Some(rhs_imm) = rhs_imm {
+                    let (li, rd) = MInst::li(&mut self.mctx, rhs_imm as u64);
+                    curr_block.push_back(&mut self.mctx, li).unwrap();
+                    MInst::alu_rrr(&mut self.mctx, alu_op, lhs_reg, rd)
+                } else {
+                    todo!()
+                };
+                curr_block.push_back(&mut self.mctx, udiv).unwrap();
+
+                MOperand {
+                    ty: lhs.ty(self.ctx),
+                    kind: MOperandKind::Reg(rd),
+                }
+            }
+            IntBinaryOp::SRem => {
+                let alu_op = match bitwidth {
+                    1 | 8 | 32 => AluOpRRR::Remw,
+                    64 => AluOpRRR::Rem,
+                    _ => todo!(),
+                };
+                let (srem, rd) = if let Some(rhs_reg) = rhs_reg {
+                    MInst::alu_rrr(&mut self.mctx, alu_op, lhs_reg, rhs_reg)
+                } else if let Some(rhs_imm) = rhs_imm {
+                    let (li, rd) = MInst::li(&mut self.mctx, rhs_imm as u64);
+                    curr_block.push_back(&mut self.mctx, li).unwrap();
+                    MInst::alu_rrr(&mut self.mctx, alu_op, lhs_reg, rd)
+                } else {
+                    todo!()
+                };
+                curr_block.push_back(&mut self.mctx, srem).unwrap();
+
+                MOperand {
+                    ty: lhs.ty(self.ctx),
+                    kind: MOperandKind::Reg(rd),
+                }
+            }
+            IntBinaryOp::URem => {
+                let alu_op = match bitwidth {
+                    1 | 8 | 32 => AluOpRRR::Remuw,
+                    64 => AluOpRRR::Remu,
+                    _ => todo!(),
+                };
+                let (urem, rd) = if let Some(rhs_reg) = rhs_reg {
+                    MInst::alu_rrr(&mut self.mctx, alu_op, lhs_reg, rhs_reg)
+                } else if let Some(rhs_imm) = rhs_imm {
+                    let (li, rd) = MInst::li(&mut self.mctx, rhs_imm as u64);
+                    curr_block.push_back(&mut self.mctx, li).unwrap();
+                    MInst::alu_rrr(&mut self.mctx, alu_op, lhs_reg, rd)
+                } else {
+                    todo!()
+                };
+                curr_block.push_back(&mut self.mctx, urem).unwrap();
+
+                MOperand {
+                    ty: lhs.ty(self.ctx),
+                    kind: MOperandKind::Reg(rd),
+                }
+            }
+            IntBinaryOp::Shl => {
+                let alu_op = match bitwidth {
+                    1 | 8 | 32 => AluOpRRI::Slliw,
+                    64 => AluOpRRI::Slli,
+                    _ => todo!(),
+                };
+                let (shl, rd) = MInst::alu_rri(
+                    &mut self.mctx,
+                    alu_op,
+                    lhs_reg,
+                    Imm12::try_from_i64(rhs_imm.unwrap()).unwrap(),
+                );
+                curr_block.push_back(&mut self.mctx, shl).unwrap();
+
+                MOperand {
+                    ty: lhs.ty(self.ctx),
+                    kind: MOperandKind::Reg(rd),
+                }
+            }
+            IntBinaryOp::LShr => {
+                let alu_op = match bitwidth {
+                    1 | 8 | 32 => AluOpRRI::Srliw,
+                    64 => AluOpRRI::Srli,
+                    _ => todo!(),
+                };
+                let (lshr, rd) = MInst::alu_rri(
+                    &mut self.mctx,
+                    alu_op,
+                    lhs_reg,
+                    Imm12::try_from_i64(rhs_imm.unwrap()).unwrap(),
+                );
+                curr_block.push_back(&mut self.mctx, lshr).unwrap();
+
+                MOperand {
+                    ty: lhs.ty(self.ctx),
+                    kind: MOperandKind::Reg(rd),
+                }
+            }
+            IntBinaryOp::AShr => {
+                let alu_op = match bitwidth {
+                    1 | 8 | 32 => AluOpRRI::Sraiw,
+                    64 => AluOpRRI::Srai,
+                    _ => todo!(),
+                };
+                let (ashr, rd) = MInst::alu_rri(
+                    &mut self.mctx,
+                    alu_op,
+                    lhs_reg,
+                    Imm12::try_from_i64(rhs_imm.unwrap()).unwrap(),
+                );
+                curr_block.push_back(&mut self.mctx, ashr).unwrap();
+
+                MOperand {
+                    ty: lhs.ty(self.ctx),
+                    kind: MOperandKind::Reg(rd),
+                }
+            }
+            IntBinaryOp::And => {
+                let (and, rd) = if let Some(rhs_reg) = rhs_reg {
+                    MInst::alu_rrr(&mut self.mctx, AluOpRRR::And, lhs_reg, rhs_reg)
+                } else if let Some(rhs_imm) = rhs_imm {
+                    MInst::alu_rri(
+                        &mut self.mctx,
+                        AluOpRRI::Andi,
+                        lhs_reg,
+                        Imm12::try_from_i64(rhs_imm).unwrap(),
+                    )
+                } else {
+                    todo!()
+                };
+                curr_block.push_back(&mut self.mctx, and).unwrap();
+
+                MOperand {
+                    ty: lhs.ty(self.ctx),
+                    kind: MOperandKind::Reg(rd),
+                }
+            }
+            IntBinaryOp::Or => {
+                let (or, rd) = if let Some(rhs_reg) = rhs_reg {
+                    MInst::alu_rrr(&mut self.mctx, AluOpRRR::Or, lhs_reg, rhs_reg)
+                } else if let Some(rhs_imm) = rhs_imm {
+                    MInst::alu_rri(
+                        &mut self.mctx,
+                        AluOpRRI::Ori,
+                        lhs_reg,
+                        Imm12::try_from_i64(rhs_imm).unwrap(),
+                    )
+                } else {
+                    todo!()
+                };
+                curr_block.push_back(&mut self.mctx, or).unwrap();
+
+                MOperand {
+                    ty: lhs.ty(self.ctx),
+                    kind: MOperandKind::Reg(rd),
+                }
+            }
+            IntBinaryOp::Xor => {
+                let (xor, rd) = if let Some(rhs_reg) = rhs_reg {
+                    MInst::alu_rrr(&mut self.mctx, AluOpRRR::Xor, lhs_reg, rhs_reg)
+                } else if let Some(rhs_imm) = rhs_imm {
+                    MInst::alu_rri(
+                        &mut self.mctx,
+                        AluOpRRI::Xori,
+                        lhs_reg,
+                        Imm12::try_from_i64(rhs_imm).unwrap(),
+                    )
+                } else {
+                    todo!()
+                };
+                curr_block.push_back(&mut self.mctx, xor).unwrap();
+
+                MOperand {
+                    ty: lhs.ty(self.ctx),
+                    kind: MOperandKind::Reg(rd),
+                }
+            }
+            IntBinaryOp::ICmp { cond } => {
+                let rd = match cond {
+                    IntCmpCond::Eq => {
+                        let (xor, rd) = if let Some(rhs_reg) = rhs_reg {
+                            MInst::alu_rrr(&mut self.mctx, AluOpRRR::Xor, lhs_reg, rhs_reg)
+                        } else if let Some(rhs_imm) = rhs_imm {
+                            let (li, rd) = MInst::li(&mut self.mctx, rhs_imm as u64);
+                            curr_block.push_back(&mut self.mctx, li).unwrap();
+                            MInst::alu_rrr(&mut self.mctx, AluOpRRR::Xor, lhs_reg, rd)
+                        } else {
+                            todo!()
+                        };
+                        curr_block.push_back(&mut self.mctx, xor).unwrap();
+                        let (seqz, rd) = MInst::alu_rri(
+                            &mut self.mctx,
+                            AluOpRRI::Sltiu,
+                            rd,
+                            Imm12::try_from_u64(1).unwrap(),
+                        );
+                        curr_block.push_back(&mut self.mctx, seqz).unwrap();
+                        rd
+                    }
+                    IntCmpCond::Ne => {
+                        let (xor, rd) = if let Some(rhs_reg) = rhs_reg {
+                            MInst::alu_rrr(&mut self.mctx, AluOpRRR::Xor, lhs_reg, rhs_reg)
+                        } else if let Some(rhs_imm) = rhs_imm {
+                            let (li, rd) = MInst::li(&mut self.mctx, rhs_imm as u64);
+                            curr_block.push_back(&mut self.mctx, li).unwrap();
+                            MInst::alu_rrr(&mut self.mctx, AluOpRRR::Xor, lhs_reg, rd)
+                        } else {
+                            todo!()
+                        };
+                        curr_block.push_back(&mut self.mctx, xor).unwrap();
+                        let (snez, rd) =
+                            MInst::alu_rrr(&mut self.mctx, AluOpRRR::Sltu, regs::zero().into(), rd);
+                        curr_block.push_back(&mut self.mctx, snez).unwrap();
+                        rd
+                    }
+                    IntCmpCond::Slt => {
+                        let (slt, rd) = if let Some(rhs_reg) = rhs_reg {
+                            MInst::alu_rrr(&mut self.mctx, AluOpRRR::Slt, lhs_reg, rhs_reg)
+                        } else if let Some(rhs_imm) = rhs_imm {
+                            let (li, rd) = MInst::li(&mut self.mctx, rhs_imm as u64);
+                            curr_block.push_back(&mut self.mctx, li).unwrap();
+                            MInst::alu_rrr(&mut self.mctx, AluOpRRR::Slt, lhs_reg, rd)
+                        } else {
+                            todo!()
+                        };
+                        curr_block.push_back(&mut self.mctx, slt).unwrap();
+                        rd
+                    }
+                    IntCmpCond::Sle => {
+                        let (slt, rd) = if let Some(rhs_reg) = rhs_reg {
+                            MInst::alu_rrr(&mut self.mctx, AluOpRRR::Slt, rhs_reg, lhs_reg)
+                        } else if let Some(rhs_imm) = rhs_imm {
+                            let (li, rd) = MInst::li(&mut self.mctx, rhs_imm as u64);
+                            curr_block.push_back(&mut self.mctx, li).unwrap();
+                            MInst::alu_rrr(&mut self.mctx, AluOpRRR::Slt, rd, lhs_reg)
+                        } else {
+                            todo!()
+                        };
+                        curr_block.push_back(&mut self.mctx, slt).unwrap();
+                        let (xor, rd) = MInst::alu_rri(
+                            &mut self.mctx,
+                            AluOpRRI::Xori,
+                            lhs_reg,
+                            Imm12::try_from_u64(1).unwrap(),
+                        );
+                        curr_block.push_back(&mut self.mctx, xor).unwrap();
+
+                        rd
+                    }
+                };
+
+                MOperand {
+                    ty: lhs.ty(self.ctx),
+                    kind: MOperandKind::Reg(rd),
+                }
+            }
+        }
+    }
+
+    pub fn get_float_binary(&mut self, op: FloatBinaryOp, lhs: Value, rhs: Value) -> MOperand {
+        let curr_block = self.curr_block.unwrap();
+
+        let mut get_reg = |val: &Value| -> Reg {
+            match &val.try_deref(self.ctx).unwrap().kind {
+                ir::ValueKind::Constant { value } => match value {
+                    ConstantValue::Int32 { value, .. } => {
+                        let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                        curr_block.push_back(&mut self.mctx, li).unwrap();
+                        r
+                    }
+                    ConstantValue::Int8 { value, .. } => {
+                        let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                        curr_block.push_back(&mut self.mctx, li).unwrap();
+                        r
+                    }
+                    ConstantValue::Int1 { value, .. } => {
+                        let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                        curr_block.push_back(&mut self.mctx, li).unwrap();
+                        r
+                    }
+                    ConstantValue::Float32 { value, .. } => {
+                        let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                        curr_block.push_back(&mut self.mctx, li).unwrap();
+                        r
+                    }
+                    ConstantValue::Undef { .. } => {
+                        let (li, r) = MInst::li(&mut self.mctx, 0);
+                        curr_block.push_back(&mut self.mctx, li).unwrap();
+                        r
+                    }
+                    _ => {
+                        eprintln!("Unsupported constant: {:?}", value);
+                        unreachable!()
+                    }
+                },
+                ir::ValueKind::InstResult { .. } => {
+                    let mopd = self.lowered[&lhs];
+                    match mopd.kind {
+                        MOperandKind::Reg(reg) => reg,
+                        MOperandKind::Imm(reg, imm) => {
+                            let (li, r) = MInst::li(&mut self.mctx, imm as u64);
+                            curr_block.push_back(&mut self.mctx, li).unwrap();
+                            let fs1 = self.mctx.new_vreg(RegKind::Float).into();
+                            let fmv = MInst::fpu_move(&mut self.mctx, FpuMoveOp::FmvSX, fs1, r);
+                            curr_block.push_back(&mut self.mctx, fmv).unwrap();
+                            fs1
+                        }
+                        MOperandKind::Undef => regs::zero().into(),
+                        MOperandKind::Mem(loc) => {
+                            let mop = self.gen_load(lhs.ty(self.ctx), loc);
+                            match mop.kind {
+                                MOperandKind::Reg(reg) => reg,
+                                _ => todo!(),
+                            }
+                        }
+                    }
+                }
+                ir::ValueKind::Param { .. } => {
+                    let mopd = self.lowered[&lhs];
+                    match mopd.kind {
+                        MOperandKind::Reg(reg) => reg,
+                        MOperandKind::Imm(_, imm) => {
+                            let (li, r) = MInst::li(&mut self.mctx, imm as u64);
+                            curr_block.push_back(&mut self.mctx, li).unwrap();
+                            let fs1 = self.mctx.new_vreg(RegKind::Float).into();
+                            let fmv = MInst::fpu_move(&mut self.mctx, FpuMoveOp::FmvSX, fs1, r);
+                            curr_block.push_back(&mut self.mctx, fmv).unwrap();
+                            fs1
+                        }
+                        MOperandKind::Undef => regs::zero().into(),
+                        MOperandKind::Mem(loc) => {
+                            let mop = self.gen_load(lhs.ty(self.ctx), loc);
+                            match mop.kind {
+                                MOperandKind::Reg(reg) => reg,
+                                _ => todo!(),
+                            }
+                        }
+                    }
+                }
+                _ => todo!(),
+            }
+        };
+
+        let lhs_reg = get_reg(&lhs);
+        let rhs_reg = get_reg(&rhs);
+
+        let bitwidth = lhs.ty(self.ctx).bitwidth(self.ctx);
+
+        match op {
+            FloatBinaryOp::Fadd => {
+                // fadd.s rd, rs1, rs2
+                let fpu_op = match bitwidth {
+                    1 | 8 | 32 => FpuOpRRR::FaddS,
+                    64 => FpuOpRRR::FaddD,
+                    _ => todo!(),
+                };
+
+                let (fadd, rd) = MInst::fpu_rrr(&mut self.mctx, fpu_op, lhs_reg, rhs_reg);
+
+                curr_block.push_back(&mut self.mctx, fadd).unwrap();
+                MOperand {
+                    ty: lhs.ty(self.ctx),
+                    kind: MOperandKind::Reg(rd),
+                }
+            }
+            FloatBinaryOp::Fsub => {
+                // fsub.s rd, rs1, rs2
+                let fpu_op = match bitwidth {
+                    1 | 8 | 32 => FpuOpRRR::FsubS,
+                    64 => FpuOpRRR::FsubD,
+                    _ => todo!(),
+                };
+
+                let (fsub, rd) = MInst::fpu_rrr(&mut self.mctx, fpu_op, lhs_reg, rhs_reg);
+
+                curr_block.push_back(&mut self.mctx, fsub).unwrap();
+                MOperand {
+                    ty: lhs.ty(self.ctx),
+                    kind: MOperandKind::Reg(rd),
+                }
+            }
+            FloatBinaryOp::Fmul => {
+                // fmul.s rd, rs1, rs2
+                let fpu_op = match bitwidth {
+                    1 | 8 | 32 => FpuOpRRR::FmulS,
+                    64 => FpuOpRRR::FmulD,
+                    _ => todo!(),
+                };
+
+                let (fmul, rd) = MInst::fpu_rrr(&mut self.mctx, fpu_op, lhs_reg, rhs_reg);
+
+                curr_block.push_back(&mut self.mctx, fmul).unwrap();
+                MOperand {
+                    ty: lhs.ty(self.ctx),
+                    kind: MOperandKind::Reg(rd),
+                }
+            }
+            FloatBinaryOp::Fdiv => {
+                // fdiv.s rd, rs1, rs2
+                let fpu_op = match bitwidth {
+                    1 | 8 | 32 => FpuOpRRR::FdivS,
+                    64 => FpuOpRRR::FdivD,
+                    _ => todo!(),
+                };
+
+                let (fdiv, rd) = MInst::fpu_rrr(&mut self.mctx, fpu_op, lhs_reg, rhs_reg);
+
+                curr_block.push_back(&mut self.mctx, fdiv).unwrap();
+                MOperand {
+                    ty: lhs.ty(self.ctx),
+                    kind: MOperandKind::Reg(rd),
+                }
+            }
+            FloatBinaryOp::FCmp { cond } => {
+                // fcmp.s rd, rs1, rs2
+                let (fcmp, rd) = match cond {
+                    // XXX：暂时不考虑 NaN 的情况
+                    FloatCmpCond::Oeq | FloatCmpCond::Ueq => {
+                        let fpu_op = match bitwidth {
+                            1 | 8 | 32 => FpuOpRRR::FCmp {
+                                op: FpuCompareOp::FeqS,
+                            },
+                            64 => FpuOpRRR::FCmp {
+                                op: FpuCompareOp::FeqD,
+                            },
+                            _ => todo!(),
+                        };
+                        MInst::fpu_rrr(&mut self.mctx, fpu_op, lhs_reg, rhs_reg)
+                    }
+                    FloatCmpCond::Olt | FloatCmpCond::Ult => {
+                        let fpu_op = match bitwidth {
+                            1 | 8 | 32 => FpuOpRRR::FCmp {
+                                op: FpuCompareOp::FltS,
+                            },
+                            64 => FpuOpRRR::FCmp {
+                                op: FpuCompareOp::FltD,
+                            },
+                            _ => todo!(),
+                        };
+                        MInst::fpu_rrr(&mut self.mctx, fpu_op, lhs_reg, rhs_reg)
+                    }
+                    FloatCmpCond::Ole | FloatCmpCond::Ule => {
+                        let fpu_op = match bitwidth {
+                            1 | 8 | 32 => FpuOpRRR::FCmp {
+                                op: FpuCompareOp::FleS,
+                            },
+                            64 => FpuOpRRR::FCmp {
+                                op: FpuCompareOp::FleD,
+                            },
+                            _ => todo!(),
+                        };
+                        MInst::fpu_rrr(&mut self.mctx, fpu_op, lhs_reg, rhs_reg)
+                    }
+                    FloatCmpCond::One | FloatCmpCond::Une => {
+                        let fpu_op = match bitwidth {
+                            1 | 8 | 32 => FpuOpRRR::FCmp {
+                                op: FpuCompareOp::FeqS,
+                            },
+                            64 => FpuOpRRR::FCmp {
+                                op: FpuCompareOp::FeqD,
+                            },
+                            _ => todo!(),
+                        };
+                        let (fcmp, rd) = MInst::fpu_rrr(&mut self.mctx, fpu_op, lhs_reg, rhs_reg);
+                        curr_block.push_back(&mut self.mctx, fcmp).unwrap();
+                        MInst::alu_rri(
+                            &mut self.mctx,
+                            AluOpRRI::Xori,
+                            rd,
+                            Imm12::try_from_u64(1).unwrap(),
+                        )
+                    }
+                    _ => {
+                        todo!("Unsupported condition: {:?}", cond);
+                    }
+                };
+                curr_block.push_back(&mut self.mctx, fcmp).unwrap();
+                MOperand {
+                    ty: lhs.ty(self.ctx),
+                    kind: MOperandKind::Reg(rd),
+                }
+            }
         }
     }
 
