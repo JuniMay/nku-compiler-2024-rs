@@ -123,6 +123,7 @@ impl MFunc {
     /// Add the function's storage stack size by `size`.
     pub fn add_storage_stack_size(self, mctx: &mut MContext, size: u64) {
         self.deref_mut(mctx).storage_stack_size += size;
+        println!("{}: {}", self.label(mctx), self.storage_stack_size(mctx));
     }
 
     /// Get the function's storage stack size.
@@ -166,6 +167,11 @@ impl MFunc {
     /// Get the head block of the function.
     pub fn head(self, mctx: &MContext) -> Option<MBlock> {
         self.deref(mctx).head
+    }
+
+    /// Set external flag of the function.
+    pub fn set_external(self, mctx: &mut MContext, is_external: bool) {
+        self.deref_mut(mctx).is_external = is_external;
     }
 }
 

@@ -94,6 +94,9 @@ impl Func {
         DisplayFunc { ctx, func: self }
     }
 
+    pub fn is_define(self, ctx: &Context) -> bool {
+        self.deref(ctx).is_define
+    }
 }
 
 impl fmt::Display for DisplayFunc<'_> {

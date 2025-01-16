@@ -1,6 +1,6 @@
 //! The operands in the backend framework.
 
-use super::{func::MLabel, regs::Reg};
+use super::regs::Reg;
 use crate::ir;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,8 +125,4 @@ pub enum MemLoc {
     /// The offset is relative to the frame pointer, i.e., the start of the
     /// saved registers.
     Incoming { offset: i64 },
-    /// An Label.
-    /// 
-    /// The offset is the label's name.
-    Label { offset: &'static MLabel },
 }

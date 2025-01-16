@@ -72,15 +72,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut opt = Optimize::new(ir, opt_level.parse().unwrap());
     opt.optmize();
 
-    // let mut cg = CodegenContext::new(&ir);
-    // cg.codegen();
-
     if let Some(ir_file) = emit_llvm_ir {
         std::fs::write(ir_file, opt.ir().to_string()).unwrap();
     }
-    // else if let Some(ir_file) = emit_ir {
-    //     std::fs::write(ir_file, cg.to_string()).unwrap();
-    // }
+
+    if let Some(asm_file) = output {
+        let mut ctx = CodegenContext::new(opt.ir());
+        ctx.codegen();
+        let asm = ctx.finish();
+        std::fs::write(asm_file, asm.display().to_string()).unwrap();
+    }
 
     Ok(())
 }

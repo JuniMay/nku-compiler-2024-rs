@@ -63,6 +63,8 @@ pub enum MInstKind {
     Store { op: StoreOp, rs: Reg, loc: MemLoc },
     /// Load immediate pseudo instruction.
     Li { rd: Reg, imm: u64 },
+    /// Load address pseudo instruction.
+    La { rd: Reg, loc: String },
     /// Jump instructions.
     J {
         target: MBlock,
@@ -551,12 +553,42 @@ impl MInst {
         };
         mctx.alloc(data)
     }
+
+    /// Create a new `call` instruction.
+    ///
+    /// target: The target block.
+    ///
+    /// Returns the instruction.
+    pub fn call(mctx: &mut MContext, target: MBlock) -> Self {
+        let kind = MInstKind::Call { target };
+        let data = MInstData {
+            kind,
+            next: None,
+            prev: None,
+            parent: None,
+        };
+        mctx.alloc(data)
+    }
+
+    /// Create a new `load address` instruction.
+    pub fn la(mctx: &mut MContext, loc: &String) -> (Self, Reg) {
+        let rd = mctx.new_vreg(RegKind::Float).into();
+        let kind = MInstKind::La { rd, loc: loc.clone() };
+        let data = MInstData {
+            kind,
+            next: None,
+            prev: None,
+            parent: None,
+        };
+        (mctx.alloc(data), rd)
+    }
 }
 
 impl fmt::Display for DisplayMInst<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.inst.deref(self.mctx).kind {
             MInstKind::Li { rd, imm } => write!(f, "li {}, {}", rd, imm),
+            MInstKind::La { rd, loc } => write!(f, "la {}, {}", rd, loc),
             MInstKind::Load { op, rd, loc } => {
                 let slot = match loc {
                     MemLoc::RegOffset { base, offset } => {
@@ -567,9 +599,6 @@ impl fmt::Display for DisplayMInst<'_> {
                     }
                     MemLoc::Incoming { offset } => {
                         format!("{}(??? INCOMING)", offset)
-                    }
-                    MemLoc::Label { offset } => {
-                        format!("{}", offset)
                     }
                 };
                 write!(f, "{} {}, {}", op, rd, slot)
@@ -584,9 +613,6 @@ impl fmt::Display for DisplayMInst<'_> {
                     }
                     MemLoc::Incoming { offset } => {
                         format!("{}(??? INCOMING)", offset)
-                    }
-                    MemLoc::Label { offset } => {
-                        format!("{}", offset)
                     }
                 };
                 write!(f, "{} {}, {}", op, rs, slot)
