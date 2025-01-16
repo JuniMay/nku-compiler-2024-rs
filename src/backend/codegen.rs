@@ -1312,6 +1312,75 @@ impl<'s> CodegenContext<'s> {
         }
     }
 
+    pub fn gen_block(&mut self, block: ir::Block) {
+        // 设置当前块为给定块
+        self.curr_block = Some(self.blocks[&block]);
+
+        // 遍历块中的每条指令并生成机器码
+        for inst in block.iter(self.ctx) {
+            match inst.kind(self.ctx) {
+                ir::InstKind::Alloca { ty } => {
+                    let size = (ty.bitwidth(self.ctx) + 7) / 8;
+                    let mfunc = self.curr_func.unwrap();
+                    mfunc.add_storage_stack_size(&mut self.mctx, size as u64);
+
+                    let offset = -(mfunc.storage_stack_size(&self.mctx) as i64);
+                    let mem_loc = MemLoc::Slot { offset };
+                    let ty = inst.result(self.ctx).unwrap().ty(self.ctx);
+                    let mopd = MOperand {
+                        ty,
+                        kind: MOperandKind::Mem(mem_loc),
+                    };
+                    self.lowered.insert(inst.result(self.ctx).unwrap(), mopd);
+
+                    let default_value = self.get_default_value(ty);
+                    self.gen_store_from_constant(default_value, mem_loc);
+                }
+                ir::InstKind::Store => {
+                    let val = inst.operand(self.ctx, 0);
+                    let ptr = inst.operand(self.ctx, 1);
+                    let mem_loc = match self.lowered[&ptr].kind {
+                        MOperandKind::Mem(mem_loc) => mem_loc,
+                        _ => unreachable!(),
+                    };
+                    self.gen_store(val, mem_loc);
+                }
+                ir::InstKind::Load => {
+                    let ptr = inst.operand(self.ctx, 0);
+                    let mem_loc = match self.lowered[&ptr].kind {
+                        MOperandKind::Mem(mem_loc) => mem_loc,
+                        _ => unreachable!(),
+                    };
+                    let ty = inst.result(self.ctx).unwrap().ty(self.ctx);
+                    let mopd = self.gen_load(ty, mem_loc);
+                    self.lowered.insert(inst.result(self.ctx).unwrap(), mopd);
+                }
+                ir::InstKind::Br => {
+                    if inst.operand_iter(self.ctx).count() == 0 {
+                        let target = inst.successor(self.ctx, 0);
+                        let target_block = self.blocks[&target];
+                        let j = MInst::j(&mut self.mctx, None, target_block);
+                        self.curr_block.unwrap().push_back(&mut self.mctx, j).unwrap();
+                    }
+                }
+                ir::InstKind::CondBr => {
+                    let cond = inst.operand(self.ctx, 0);
+                    let then_dst = inst.successor(self.ctx, 0);
+                    let else_dst = inst.successor(self.ctx, 1);
+
+                    let then_block = self.blocks[&then_dst];
+                    let else_block = self.blocks.get(&else_dst).copied();
+                    let end_block = self.blocks[&block.next(self.ctx).unwrap()];
+
+                    self.gen_cond_branch(cond, then_block, else_block, end_block);
+                }
+                _ => {
+                    println!("Unsupported instruction: {:?}", inst.kind(self.ctx));
+                }
+            }
+        }
+    }
+
     /// Generate a move instruction needed for return value and append it to the
     /// current block.
     ///
@@ -1336,6 +1405,58 @@ impl<'s> CodegenContext<'s> {
 
         regs::a0().into()
     }
+
+    // pub fn gen_ret_move(&mut self, val: Value) {
+    //     let curr_block = self.curr_block.unwrap();
+    
+    //     // 根据返回值类型确定目标寄存器
+    //     let ty = val.ty(self.ctx);
+    //     let ret_reg = match ty.kind(self.ctx) {
+    //         ir::TyData::Int32 | ir::TyData::Int1 => regs::a0().into(),
+    //         ir::TyData::Float32 => regs::fa0().into(),
+    //         _ => panic!("Unsupported return type: {:?}", ty),
+    //     };
+    
+    //     // 获取返回值来源
+    //     let src = match &val.try_deref(self.ctx).unwrap().kind {
+    //         ir::ValueKind::Constant { value } => {
+    //             let imm = match value {
+    //                 ir::ConstantValue::Int32 { value, .. } => *value as u64,
+    //                 ir::ConstantValue::Float32 { value, .. } => *value as u64, // Bit cast for floats
+    //                 _ => panic!("Unsupported constant value: {:?}", value),
+    //             };
+    //             let (li, reg) = MInst::li(&mut self.mctx, imm);
+    //             curr_block.push_back(&mut self.mctx, li).unwrap();
+    //             reg
+    //         }
+    //         ir::ValueKind::InstResult { .. } => {
+    //             let mopd = self.lowered[&val];
+    //             match mopd.kind {
+    //                 MOperandKind::Reg(reg) => reg,
+    //                 _ => panic!("Unsupported InstResult kind: {:?}", mopd.kind),
+    //             }
+    //         }
+    //         ir::ValueKind::Param { .. } => {
+    //             let param_reg = match ty.kind(self.ctx) {
+    //                 ir::TyData::Int32 => regs::a0().into(),
+    //                 ir::TyData::Float32 => regs::fa0().into(),
+    //                 _ => panic!("Unsupported parameter type: {:?}", ty),
+    //             };
+    //             param_reg
+    //         }
+    //         _ => panic!("Unsupported return value kind: {:?}", val.kind(self.ctx)),
+    //     };
+    
+    //     // 生成返回值存储指令
+    //     let mv = MInst::raw_alu_rri(
+    //         &mut self.mctx,
+    //         AluOpRRI::Addi,
+    //         ret_reg,
+    //         src,
+    //         Imm12::try_from_i64(0).unwrap(),
+    //     );
+    //     curr_block.push_back(&mut self.mctx, mv).unwrap();
+    // }
 
     pub fn gen_cond_branch(
         &mut self,
@@ -1394,31 +1515,6 @@ impl<'s> CodegenContext<'s> {
         }
     }
 
-    // pub fn gen_while(&mut self, cond: ir::Value, body: ir::Block) {
-    //     // 创建基本块：条件判断块、循环体块、结束块
-    //     let cond_block = MBlock::new(&mut self.mctx, "while_cond");
-    //     let body_block = MBlock::new(&mut self.mctx, "while_body");
-    //     let end_block = MBlock::new(&mut self.mctx, "while_end");
-
-    //     // 当前块跳转到条件判断块
-    //     let curr_block = self.curr_block.unwrap();
-    //     let j_to_cond = MInst::j(&mut self.mctx, None, cond_block);
-    //     curr_block.push_back(&mut self.mctx, j_to_cond).unwrap();
-
-    //     // 生成条件判断块
-    //     self.curr_block = Some(cond_block);
-    //     self.gen_cond_branch(cond, body_block, None, end_block);
-
-    //     // 生成循环体块
-    //     self.curr_block = Some(body_block);
-    //     self.gen_block(body); // 生成循环体代码
-    //     let j_back_to_cond = MInst::j(&mut self.mctx, None, cond_block);
-    //     body_block.push_back(&mut self.mctx, j_back_to_cond).unwrap();
-
-    //     // 结束块：跳转到循环后的逻辑
-    //     self.curr_block = Some(end_block);
-    // }
-
     // TODO: Add more helper functions.
 
     /// Generate a function call instruction and append it to the current block.
@@ -1466,6 +1562,37 @@ impl<'s> CodegenContext<'s> {
         } else {
             None
         }
+    }
+
+    pub fn gen_while(&mut self, cond: ir::Value, body: ir::Block) {
+        // 创建块：条件检查块、循环体块、结束块
+        let cond_block = MBlock::new(&mut self.mctx, "while_cond");
+        let body_block = MBlock::new(&mut self.mctx, "while_body");
+        let end_block = MBlock::new(&mut self.mctx, "while_end");
+    
+        // 将块插入当前函数
+        let curr_func = self.curr_func.unwrap();
+        curr_func.push_back(&mut self.mctx, cond_block).unwrap();
+        curr_func.push_back(&mut self.mctx, body_block).unwrap();
+        curr_func.push_back(&mut self.mctx, end_block).unwrap();
+    
+        // 当前块跳转到条件检查块
+        let curr_block = self.curr_block.unwrap();
+        let j_to_cond = MInst::j(&mut self.mctx, None, cond_block);
+        curr_block.push_back(&mut self.mctx, j_to_cond).unwrap();
+    
+        // 生成条件检查块
+        self.curr_block = Some(cond_block);
+        self.gen_cond_branch(cond, body_block, None, end_block);
+    
+        // 生成循环体块
+        self.curr_block = Some(body_block);
+        self.gen_block(body); // 调用方法生成循环体代码
+        let j_back_to_cond = MInst::j(&mut self.mctx, None, cond_block);
+        body_block.push_back(&mut self.mctx, j_back_to_cond).unwrap();
+    
+        // 结束块
+        self.curr_block = Some(end_block);
     }
 
     /// Generate a getelementptr instruction and append it to the current block.
