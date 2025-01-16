@@ -582,6 +582,14 @@ impl MInst {
         };
         (mctx.alloc(data), rd)
     }
+
+    pub fn replace(&mut self, mctx: &mut MContext, new_kind: MInstKind) {
+        // 获取 `MInst` 的可变引用
+        let data = self.deref_mut(mctx);
+        // 替换 `kind`
+        data.kind = new_kind;
+    }
+
 }
 
 impl fmt::Display for DisplayMInst<'_> {

@@ -279,7 +279,7 @@ impl<'s> CodegenContext<'s> {
                                 self.gen_ret_move(val);
                             }
                         }
-                        ir::InstKind::Phi => todo!(),
+                        ir::InstKind::Phi => todo!(),//iakke
                         ir::InstKind::GetElementPtr { bound_ty } => {
                             let base = inst.operand(&self.ctx, 0);
                             let offsets = inst.operand_iter(&self.ctx).skip(1).collect();
@@ -345,7 +345,7 @@ impl<'s> CodegenContext<'s> {
                             // 调用 gen_cond_branch 方法生成条件分支指令
                             self.gen_cond_branch(cond, then_block, else_block, end_block);
                         }
-                        ir::InstKind::Cast { op } => todo!(),
+                        ir::InstKind::Cast { op } => todo!(),//iakke
                     }
                 }
             }
@@ -353,117 +353,116 @@ impl<'s> CodegenContext<'s> {
     }
 
     pub fn regalloc(&mut self) {
-        // This is an extremely simple register allocator, which just assigns
-        // the first available register to each virtual register. It's only for
-        // demonstration.
-        // TODO: You need to implement a real register allocator to replace this.
-        let mut available_regs = vec![
-            regs::t0(),
-            regs::t1(),
-            regs::t2(),
-            regs::t3(),
-            regs::t4(),
-            regs::t5(),
-            regs::t6(),
-        ];
-
+        // 使用栈分配虚拟寄存器，初始化栈偏移和寄存器映射
         for function in self.funcs.values() {
-            let mut reg_map: HashMap<Reg, Reg> = HashMap::new();
-
-            // Map virtual registers to physical registers.
+            let mut stack_offset: i64 = 0; // 栈向下增长
+            let mut reg_map: HashMap<Reg, MemLoc> = HashMap::new(); // 虚拟寄存器 -> 栈位置的映射
+    
+            // 遍历每个基本块中的每条指令，分配栈空间
             for block in function.iter(&self.mctx) {
                 for inst in block.iter(&self.mctx) {
                     match inst.kind(self.mctx()) {
+                        // 为所有操作数分配栈空间
                         MInstKind::AluRRI { rd, rs, .. } => {
                             for reg in [rd, rs] {
-                                if reg.is_vreg() && !reg_map.contains_key(reg) {
-                                    let preg = available_regs.pop().unwrap();
-                                    reg_map.insert(*reg, preg.into());
+                                if reg.is_vreg() && !reg_map.contains_key(&reg) {
+                                    stack_offset -= 8; // 每个虚拟寄存器占用8字节
+                                    reg_map.insert(*reg, MemLoc::Slot { offset: stack_offset });
                                 }
                             }
                         }
                         MInstKind::AluRRR { rd, rs1, rs2, .. } => {
                             for reg in [rd, rs1, rs2] {
                                 if reg.is_vreg() && !reg_map.contains_key(&reg) {
-                                    let preg = available_regs.pop().unwrap();
-                                    reg_map.insert(*reg, preg.into());
+                                    stack_offset -= 8;
+                                    reg_map.insert(*reg, MemLoc::Slot { offset: stack_offset });
                                 }
                             }
                         }
                         MInstKind::Load { rd, .. } => {
-                            if rd.is_vreg() && !reg_map.contains_key(&rd) {
-                                let preg = available_regs.pop().unwrap();
-                                reg_map.insert(*rd, preg.into());
+                            if rd.is_vreg() && !reg_map.contains_key(rd) {
+                                stack_offset -= 8;
+                                reg_map.insert(*rd, MemLoc::Slot { offset: stack_offset });
                             }
                         }
                         MInstKind::Store { rs, .. } => {
-                            if rs.is_vreg() && !reg_map.contains_key(&rs) {
-                                let preg = available_regs.pop().unwrap();
-                                reg_map.insert(*rs, preg.into());
+                            if rs.is_vreg() && !reg_map.contains_key(rs) {
+                                stack_offset -= 8;
+                                reg_map.insert(*rs, MemLoc::Slot { offset: stack_offset });
                             }
                         }
                         MInstKind::Li { rd, .. } => {
-                            if rd.is_vreg() && !reg_map.contains_key(&rd) {
-                                let preg = available_regs.pop().unwrap();
-                                reg_map.insert(*rd, preg.into());
+                            if rd.is_vreg() && !reg_map.contains_key(rd) {
+                                stack_offset -= 8;
+                                reg_map.insert(*rd, MemLoc::Slot { offset: stack_offset });
                             }
                         }
-                        MInstKind::J { .. } => {} /* XXX: We do not encourage using this naive
-                        * register allocator in your work. But if you
-                         * really want to use, you may need to handle
-                         * other instructions. */
-                        _ => todo!(),
+                        _ => {}
                     }
                 }
             }
-
-            // Replace virtual registers with physical registers.
+    
+            // 更新函数所需的栈空间大小
+            function.add_storage_stack_size(&mut self.mctx, (-stack_offset) as u64);
+    
+            // 遍历基本块并替换虚拟寄存器为栈操作
             let mut curr_block = function.head(&self.mctx);
             while let Some(block) = curr_block {
-                let mut curr_inst = block.head(&self.mctx);
-                while let Some(inst) = curr_inst {
+                let mut curr_inst = block.head(&mut self.mctx); // 获取可变引用
+                while let Some(mut inst) = curr_inst {
                     match &mut inst.kind_mut(&mut self.mctx) {
                         MInstKind::AluRRI { rd, rs, .. } => {
-                            for reg in [rd, rs] {
-                                if let Some(vreg) = reg_map.get(reg) {
-                                    *reg = *vreg;
-                                }
+                            let replacements: Vec<MInstKind> = [rd, rs]
+                                .iter()
+                                .filter_map(|reg| {
+                                    reg_map.get(reg).map(|&mem_loc| {
+                                        MInstKind::Store {
+                                            op: StoreOp::Sw,
+                                            rs: regs::sp().into(),
+                                            loc: mem_loc,
+                                        }
+                                    })
+                                })
+                                .collect();
+                        
+                            for new_kind in replacements {
+                                inst.replace(&mut self.mctx, new_kind); // 替换指令
                             }
                         }
-                        MInstKind::AluRRR { rd, rs1, rs2, .. } => {
-                            for reg in [rd, rs1, rs2] {
-                                if let Some(vreg) = reg_map.get(reg) {
-                                    *reg = *vreg;
-                                }
+                        
+                        MInstKind::Li { rd, imm } => {
+                            if let Some(mem_loc) = reg_map.get(rd) {
+                                *rd = regs::sp().into(); // 替换寄存器为栈指针
+                                let new_kind = MInstKind::Store {
+                                    op: StoreOp::Sw,
+                                    rs: *rd,
+                                    loc: *mem_loc,
+                                };
+                                inst.replace(&mut self.mctx, new_kind); // 替换指令
+                            }
+                        }                        
+                        MInstKind::Load { rd, loc,.. } => {
+                            if let Some(mem_loc) = reg_map.get(rd) {
+                                *rd = regs::sp().into();
+                                *loc = *mem_loc; // 替换目标寄存器位置
                             }
                         }
-                        MInstKind::Load { rd, .. } => {
-                            if let Some(vreg) = reg_map.get(rd) {
-                                *rd = *vreg;
+                        MInstKind::Store { rs, loc,.. } => {
+                            if let Some(mem_loc) = reg_map.get(rs) {
+                                *rs = regs::sp().into();
+                                *loc = *mem_loc; // 替换源寄存器位置
                             }
                         }
-                        MInstKind::Store { rs, .. } => {
-                            if let Some(vreg) = reg_map.get(rs) {
-                                *rs = *vreg;
-                            }
-                        }
-                        MInstKind::Li { rd, .. } => {
-                            if let Some(vreg) = reg_map.get(rd) {
-                                *rd = *vreg;
-                            }
-                        }
-                        MInstKind::J { .. } => {} /* XXX: We do not encourage using this naive
-                        * register allocator in your work. But if you
-                         * really want to use, you may need to handle
-                         * other instructions. */
-                        _ => todo!(),
+                        _ => {}
                     }
-                    curr_inst = inst.next(&self.mctx);
+                    curr_inst = inst.next(&self.mctx); // 移动到下一个指令
                 }
-                curr_block = block.next(&self.mctx);
-            }
-        }
+                curr_block = block.next(&self.mctx); // 移动到下一个基本块
+}
+
+
     }
+}
 
     /// Do the code generation after register allocation.
     pub fn after_regalloc(&mut self) {
@@ -1564,36 +1563,36 @@ impl<'s> CodegenContext<'s> {
         }
     }
 
-    pub fn gen_while(&mut self, cond: ir::Value, body: ir::Block) {
-        // 创建块：条件检查块、循环体块、结束块
-        let cond_block = MBlock::new(&mut self.mctx, "while_cond");
-        let body_block = MBlock::new(&mut self.mctx, "while_body");
-        let end_block = MBlock::new(&mut self.mctx, "while_end");
+    // pub fn gen_while(&mut self, cond: ir::Value, body: ir::Block) {
+    //     // 创建块：条件检查块、循环体块、结束块
+    //     let cond_block = MBlock::new(&mut self.mctx, "while_cond");
+    //     let body_block = MBlock::new(&mut self.mctx, "while_body");
+    //     let end_block = MBlock::new(&mut self.mctx, "while_end");
     
-        // 将块插入当前函数
-        let curr_func = self.curr_func.unwrap();
-        curr_func.push_back(&mut self.mctx, cond_block).unwrap();
-        curr_func.push_back(&mut self.mctx, body_block).unwrap();
-        curr_func.push_back(&mut self.mctx, end_block).unwrap();
+    //     // 将块插入当前函数
+    //     let curr_func = self.curr_func.unwrap();
+    //     curr_func.push_back(&mut self.mctx, cond_block).unwrap();
+    //     curr_func.push_back(&mut self.mctx, body_block).unwrap();
+    //     curr_func.push_back(&mut self.mctx, end_block).unwrap();
     
-        // 当前块跳转到条件检查块
-        let curr_block = self.curr_block.unwrap();
-        let j_to_cond = MInst::j(&mut self.mctx, None, cond_block);
-        curr_block.push_back(&mut self.mctx, j_to_cond).unwrap();
+    //     // 当前块跳转到条件检查块
+    //     let curr_block = self.curr_block.unwrap();
+    //     let j_to_cond = MInst::j(&mut self.mctx, None, cond_block);
+    //     curr_block.push_back(&mut self.mctx, j_to_cond).unwrap();
     
-        // 生成条件检查块
-        self.curr_block = Some(cond_block);
-        self.gen_cond_branch(cond, body_block, None, end_block);
+    //     // 生成条件检查块
+    //     self.curr_block = Some(cond_block);
+    //     self.gen_cond_branch(cond, body_block, None, end_block);
     
-        // 生成循环体块
-        self.curr_block = Some(body_block);
-        self.gen_block(body); // 调用方法生成循环体代码
-        let j_back_to_cond = MInst::j(&mut self.mctx, None, cond_block);
-        body_block.push_back(&mut self.mctx, j_back_to_cond).unwrap();
+    //     // 生成循环体块
+    //     self.curr_block = Some(body_block);
+    //     self.gen_block(body); // 调用方法生成循环体代码
+    //     let j_back_to_cond = MInst::j(&mut self.mctx, None, cond_block);
+    //     body_block.push_back(&mut self.mctx, j_back_to_cond).unwrap();
     
-        // 结束块
-        self.curr_block = Some(end_block);
-    }
+    //     // 结束块
+    //     self.curr_block = Some(end_block);
+    // }
 
     /// Generate a getelementptr instruction and append it to the current block.
     ///

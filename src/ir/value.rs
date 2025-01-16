@@ -233,7 +233,7 @@ impl<'ctx> fmt::Display for DisplayValue<'ctx> {
 }
 
 impl Value {
-    fn new(ctx: &mut Context, kind: ValueKind) -> Self {
+    pub fn new(ctx: &mut Context, kind: ValueKind) -> Self {
         ctx.alloc_with(|self_ptr| ValueData {
             _self_ptr: self_ptr,
             kind,
