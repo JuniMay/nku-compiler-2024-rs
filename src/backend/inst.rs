@@ -702,3 +702,13 @@ impl Arena<MInst> for MContext {
         self.insts.try_dealloc(ptr.0)
     }
 }
+
+impl MInstKind {
+    pub fn extract_mem_loc_mut(&mut self) -> Option<&mut MemLoc> {
+        match self {
+            MInstKind::Load { loc, .. } => Some(loc),
+            MInstKind::Store { loc, .. } => Some(loc),
+            _ => None,
+        }
+    }
+}
