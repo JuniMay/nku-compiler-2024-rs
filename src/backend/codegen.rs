@@ -18,7 +18,8 @@ use crate::backend::inst::BranchOp;
 use crate::infra::linked_list::{LinkedListContainer, LinkedListNode};
 use crate::infra::storage::ArenaPtr;
 use crate::ir::{
-    self, ConstantValue, FloatBinaryOp, FloatCmpCond, IntBinaryOp, IntCmpCond, Ty, Value, ValueKind,
+    self, ConstantValue, FloatBinaryOp, FloatCmpCond, IntBinaryOp, IntCmpCond, Ty, TyData, Value,
+    ValueKind,
 };
 
 pub struct CodegenContext<'s> {
@@ -124,11 +125,10 @@ impl<'s> CodegenContext<'s> {
             let mfunc = self.curr_func.unwrap();
 
             if mfunc.is_external(&self.mctx) {
-                // self.curr_block.unwrap().push_back(&mut self.mctx, );
                 continue;
             }
 
-            // TODO: Incoming parameters can be handled here.
+            // Incoming arguments.
             for (i, param) in func.params(self.ctx).iter().enumerate() {
                 let mopd = if i < 8 {
                     let reg = match param.ty(self.ctx).kind(self.ctx) {
@@ -174,6 +174,7 @@ impl<'s> CodegenContext<'s> {
                 let mblock = self.curr_block.unwrap();
 
                 for inst in block.iter(self.ctx) {
+                    println!("{}", inst.display(&self.ctx));
                     match inst.kind(self.ctx) {
                         ir::InstKind::Alloca { ty } => {
                             // Allocate space on the stack.
@@ -195,67 +196,24 @@ impl<'s> CodegenContext<'s> {
                         }
                         ir::InstKind::Store => {
                             let val = inst.operand(self.ctx, 0);
-                            let ptr = inst.operand(self.ctx, 1);
-                            let mem_loc = match self.lowered[&ptr].kind {
-                                MOperandKind::Mem(mem_loc) => match mem_loc {
-                                    MemLoc::RegOffset { .. } => mem_loc,
-                                    MemLoc::Slot { offset } => MemLoc::RegOffset {
-                                        base: regs::sp().into(),
-                                        offset,
-                                    },
-                                    _ => todo!(),
-                                },
-                                MOperandKind::Reg(reg) => {
-                                    let mem_loc = MemLoc::RegOffset {
-                                        base: reg,
-                                        offset: 0,
-                                    };
-                                    mem_loc
-                                }
-                                // There might be other cases, but i'll just panic for now.
-                                _ => {
-                                    eprintln!(
-                                        "Unsupported instruction: {}",
-                                        inst.display(&self.ctx)
-                                    );
-                                    panic!()
-                                }
+                            let ptr: Value = inst.operand(self.ctx, 1);
+                            let memloc = MemLoc::RegOffset {
+                                base: self.memloc_reg_from_value(&ptr),
+                                offset: 0,
                             };
-                            println!("store inst: {}", inst.display(&self.ctx));
                             // Here we use a helper function to generate the store instruction.
                             // You can change the implementation of the helper functions as you
                             // like. Or you can also not use helper functions.
-                            self.gen_store(val, mem_loc);
+                            self.gen_store(val, memloc);
                         }
                         ir::InstKind::Load => {
                             let ptr = inst.operand(self.ctx, 0);
-                            let mem_loc = match self.lowered[&ptr].kind {
-                                MOperandKind::Mem(mem_loc) => match mem_loc {
-                                    MemLoc::RegOffset { .. } => mem_loc,
-                                    MemLoc::Slot { offset } => MemLoc::RegOffset {
-                                        base: regs::sp().into(),
-                                        offset,
-                                    },
-                                    _ => todo!(),
-                                },
-                                MOperandKind::Reg(reg) => {
-                                    let mem_loc = MemLoc::RegOffset {
-                                        base: reg,
-                                        offset: 0,
-                                    };
-                                    mem_loc
-                                }
-                                // There might be other cases, but i'll just panic for now.
-                                _ => {
-                                    eprintln!(
-                                        "Unsupported instruction: {}",
-                                        inst.display(&self.ctx)
-                                    );
-                                    panic!()
-                                }
+                            let memloc = MemLoc::RegOffset {
+                                base: self.memloc_reg_from_value(&ptr),
+                                offset: 0,
                             };
                             let ty = inst.result(self.ctx).unwrap().ty(self.ctx);
-                            let mopd = self.gen_load(ty, mem_loc);
+                            let mopd = self.gen_load(ty, memloc);
                             self.lowered.insert(inst.result(self.ctx).unwrap(), mopd);
                         }
                         ir::InstKind::IntBinary { op } => {
@@ -290,10 +248,19 @@ impl<'s> CodegenContext<'s> {
                         ir::InstKind::Call => {
                             let callee = inst.operand(&self.ctx, 0);
                             let args: Vec<_> = inst.operand_iter(&self.ctx).skip(1).collect();
-                            let ret = inst.result(&self.ctx);
+                            let ret = match inst.result(&self.ctx) {
+                                Some(ret) => {
+                                    if ret.ty(&self.ctx).is_void(&self.ctx) {
+                                        None
+                                    } else {
+                                        Some(ret)
+                                    }
+                                }
+                                None => None,
+                            };
                             let callee_name = match &callee.try_deref(&self.ctx).unwrap().kind {
                                 ir::ValueKind::Constant { value } => match value {
-                                    ir::ConstantValue::GlobalRef { ty, name, value_ty } => name,
+                                    ir::ConstantValue::GlobalRef { name, .. } => name,
                                     _ => {
                                         eprintln!("Unsupported callee: {:?}", callee);
                                         unreachable!()
@@ -350,6 +317,9 @@ impl<'s> CodegenContext<'s> {
                 }
             }
         }
+        
+        // regalloc
+        self.regalloc();
     }
 
     pub fn regalloc(&mut self) {
@@ -1311,75 +1281,6 @@ impl<'s> CodegenContext<'s> {
         }
     }
 
-    pub fn gen_block(&mut self, block: ir::Block) {
-        // 设置当前块为给定块
-        self.curr_block = Some(self.blocks[&block]);
-
-        // 遍历块中的每条指令并生成机器码
-        for inst in block.iter(self.ctx) {
-            match inst.kind(self.ctx) {
-                ir::InstKind::Alloca { ty } => {
-                    let size = (ty.bitwidth(self.ctx) + 7) / 8;
-                    let mfunc = self.curr_func.unwrap();
-                    mfunc.add_storage_stack_size(&mut self.mctx, size as u64);
-
-                    let offset = -(mfunc.storage_stack_size(&self.mctx) as i64);
-                    let mem_loc = MemLoc::Slot { offset };
-                    let ty = inst.result(self.ctx).unwrap().ty(self.ctx);
-                    let mopd = MOperand {
-                        ty,
-                        kind: MOperandKind::Mem(mem_loc),
-                    };
-                    self.lowered.insert(inst.result(self.ctx).unwrap(), mopd);
-
-                    let default_value = self.get_default_value(ty);
-                    self.gen_store_from_constant(default_value, mem_loc);
-                }
-                ir::InstKind::Store => {
-                    let val = inst.operand(self.ctx, 0);
-                    let ptr = inst.operand(self.ctx, 1);
-                    let mem_loc = match self.lowered[&ptr].kind {
-                        MOperandKind::Mem(mem_loc) => mem_loc,
-                        _ => unreachable!(),
-                    };
-                    self.gen_store(val, mem_loc);
-                }
-                ir::InstKind::Load => {
-                    let ptr = inst.operand(self.ctx, 0);
-                    let mem_loc = match self.lowered[&ptr].kind {
-                        MOperandKind::Mem(mem_loc) => mem_loc,
-                        _ => unreachable!(),
-                    };
-                    let ty = inst.result(self.ctx).unwrap().ty(self.ctx);
-                    let mopd = self.gen_load(ty, mem_loc);
-                    self.lowered.insert(inst.result(self.ctx).unwrap(), mopd);
-                }
-                ir::InstKind::Br => {
-                    if inst.operand_iter(self.ctx).count() == 0 {
-                        let target = inst.successor(self.ctx, 0);
-                        let target_block = self.blocks[&target];
-                        let j = MInst::j(&mut self.mctx, None, target_block);
-                        self.curr_block.unwrap().push_back(&mut self.mctx, j).unwrap();
-                    }
-                }
-                ir::InstKind::CondBr => {
-                    let cond = inst.operand(self.ctx, 0);
-                    let then_dst = inst.successor(self.ctx, 0);
-                    let else_dst = inst.successor(self.ctx, 1);
-
-                    let then_block = self.blocks[&then_dst];
-                    let else_block = self.blocks.get(&else_dst).copied();
-                    let end_block = self.blocks[&block.next(self.ctx).unwrap()];
-
-                    self.gen_cond_branch(cond, then_block, else_block, end_block);
-                }
-                _ => {
-                    println!("Unsupported instruction: {:?}", inst.kind(self.ctx));
-                }
-            }
-        }
-    }
-
     /// Generate a move instruction needed for return value and append it to the
     /// current block.
     ///
@@ -1405,58 +1306,6 @@ impl<'s> CodegenContext<'s> {
         regs::a0().into()
     }
 
-    // pub fn gen_ret_move(&mut self, val: Value) {
-    //     let curr_block = self.curr_block.unwrap();
-    
-    //     // 根据返回值类型确定目标寄存器
-    //     let ty = val.ty(self.ctx);
-    //     let ret_reg = match ty.kind(self.ctx) {
-    //         ir::TyData::Int32 | ir::TyData::Int1 => regs::a0().into(),
-    //         ir::TyData::Float32 => regs::fa0().into(),
-    //         _ => panic!("Unsupported return type: {:?}", ty),
-    //     };
-    
-    //     // 获取返回值来源
-    //     let src = match &val.try_deref(self.ctx).unwrap().kind {
-    //         ir::ValueKind::Constant { value } => {
-    //             let imm = match value {
-    //                 ir::ConstantValue::Int32 { value, .. } => *value as u64,
-    //                 ir::ConstantValue::Float32 { value, .. } => *value as u64, // Bit cast for floats
-    //                 _ => panic!("Unsupported constant value: {:?}", value),
-    //             };
-    //             let (li, reg) = MInst::li(&mut self.mctx, imm);
-    //             curr_block.push_back(&mut self.mctx, li).unwrap();
-    //             reg
-    //         }
-    //         ir::ValueKind::InstResult { .. } => {
-    //             let mopd = self.lowered[&val];
-    //             match mopd.kind {
-    //                 MOperandKind::Reg(reg) => reg,
-    //                 _ => panic!("Unsupported InstResult kind: {:?}", mopd.kind),
-    //             }
-    //         }
-    //         ir::ValueKind::Param { .. } => {
-    //             let param_reg = match ty.kind(self.ctx) {
-    //                 ir::TyData::Int32 => regs::a0().into(),
-    //                 ir::TyData::Float32 => regs::fa0().into(),
-    //                 _ => panic!("Unsupported parameter type: {:?}", ty),
-    //             };
-    //             param_reg
-    //         }
-    //         _ => panic!("Unsupported return value kind: {:?}", val.kind(self.ctx)),
-    //     };
-    
-    //     // 生成返回值存储指令
-    //     let mv = MInst::raw_alu_rri(
-    //         &mut self.mctx,
-    //         AluOpRRI::Addi,
-    //         ret_reg,
-    //         src,
-    //         Imm12::try_from_i64(0).unwrap(),
-    //     );
-    //     curr_block.push_back(&mut self.mctx, mv).unwrap();
-    // }
-
     pub fn gen_cond_branch(
         &mut self,
         cond: ir::Value,
@@ -1466,19 +1315,7 @@ impl<'s> CodegenContext<'s> {
     ) {
         let curr_block = self.curr_block.unwrap();
 
-        let cond_reg = match self.lowered.get(&cond) {
-            Some(mopd) => match mopd.kind {
-                MOperandKind::Reg(reg) => reg,
-                MOperandKind::Imm(_, imm) => {
-                    let (li, reg) = MInst::li(&mut self.mctx, imm as u64);
-                    curr_block.push_back(&mut self.mctx, li).unwrap();
-                    reg
-                }
-                MOperandKind::Undef => regs::zero().into(),
-                _ => panic!("Unsupported condition operand kind: {:?}", mopd.kind),
-            },
-            None => panic!("Condition value not lowered: {:?}", cond),
-        };
+        let cond_reg = self.reg_from_value(&cond);
 
         if let Some(else_block) = else_block {
             let bnez = MInst::new(
@@ -1544,12 +1381,11 @@ impl<'s> CodegenContext<'s> {
             curr_block.push_back(&mut self.mctx, mv).unwrap();
         }
 
-        // find the function block
-        let func = self.funcs.get(callee_name).unwrap();
-        let block = func.head(&self.mctx).unwrap();
+        // Ensure the callee function exists.
+        assert!(self.funcs.contains_key(callee_name));
 
         // jal func
-        let call = MInst::call(&mut self.mctx, block);
+        let call = MInst::call(&mut self.mctx, MLabel::from(callee_name.clone()));
         curr_block.push_back(&mut self.mctx, call).unwrap();
 
         // Handle return value.
@@ -1562,37 +1398,6 @@ impl<'s> CodegenContext<'s> {
             None
         }
     }
-
-    // pub fn gen_while(&mut self, cond: ir::Value, body: ir::Block) {
-    //     // 创建块：条件检查块、循环体块、结束块
-    //     let cond_block = MBlock::new(&mut self.mctx, "while_cond");
-    //     let body_block = MBlock::new(&mut self.mctx, "while_body");
-    //     let end_block = MBlock::new(&mut self.mctx, "while_end");
-    
-    //     // 将块插入当前函数
-    //     let curr_func = self.curr_func.unwrap();
-    //     curr_func.push_back(&mut self.mctx, cond_block).unwrap();
-    //     curr_func.push_back(&mut self.mctx, body_block).unwrap();
-    //     curr_func.push_back(&mut self.mctx, end_block).unwrap();
-    
-    //     // 当前块跳转到条件检查块
-    //     let curr_block = self.curr_block.unwrap();
-    //     let j_to_cond = MInst::j(&mut self.mctx, None, cond_block);
-    //     curr_block.push_back(&mut self.mctx, j_to_cond).unwrap();
-    
-    //     // 生成条件检查块
-    //     self.curr_block = Some(cond_block);
-    //     self.gen_cond_branch(cond, body_block, None, end_block);
-    
-    //     // 生成循环体块
-    //     self.curr_block = Some(body_block);
-    //     self.gen_block(body); // 调用方法生成循环体代码
-    //     let j_back_to_cond = MInst::j(&mut self.mctx, None, cond_block);
-    //     body_block.push_back(&mut self.mctx, j_back_to_cond).unwrap();
-    
-    //     // 结束块
-    //     self.curr_block = Some(end_block);
-    // }
 
     /// Generate a getelementptr instruction and append it to the current block.
     ///
@@ -1644,151 +1449,177 @@ impl<'s> CodegenContext<'s> {
 
     pub fn reg_from_value(&mut self, val: &Value) -> Reg {
         let curr_block = self.curr_block.unwrap();
-        match &val.try_deref(self.ctx).unwrap().kind {
-            ir::ValueKind::Constant { value } => match value {
-                ConstantValue::Int32 { value, .. } => {
-                    let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+        let ty = val.ty(self.ctx);
+        if let Some(mopd) = self.lowered.get(&val) {
+            match mopd.kind {
+                MOperandKind::Reg(reg) => reg,
+                MOperandKind::Imm(.., imm) => {
+                    let (li, r) = MInst::li(&mut self.mctx, imm as u64);
                     curr_block.push_back(&mut self.mctx, li).unwrap();
-                    r
-                }
-                ConstantValue::Int8 { value, .. } => {
-                    let (li, r) = MInst::li(&mut self.mctx, *value as u64);
-                    curr_block.push_back(&mut self.mctx, li).unwrap();
-                    r
-                }
-                ConstantValue::Int1 { value, .. } => {
-                    let (li, r) = MInst::li(&mut self.mctx, *value as u64);
-                    curr_block.push_back(&mut self.mctx, li).unwrap();
-                    r
-                }
-                ConstantValue::Float32 { value, .. } => {
-                    let (li, r) = MInst::li(&mut self.mctx, *value as u64);
-                    curr_block.push_back(&mut self.mctx, li).unwrap();
-                    r
-                }
-                ConstantValue::Undef { .. } => {
-                    let (li, r) = MInst::li(&mut self.mctx, 0);
-                    curr_block.push_back(&mut self.mctx, li).unwrap();
-                    r
-                }
-                _ => {
-                    eprintln!("Unsupported constant: {:?}", value);
-                    unreachable!()
-                }
-            },
-            ir::ValueKind::InstResult { .. } => {
-                let mopd = self.lowered[&val];
-                match mopd.kind {
-                    MOperandKind::Reg(reg) => reg,
-                    MOperandKind::Imm(reg, imm) => {
-                        let (li, r) = MInst::li(&mut self.mctx, imm as u64);
-                        curr_block.push_back(&mut self.mctx, li).unwrap();
-                        let fs1 = self.mctx.new_vreg(RegKind::Float).into();
-                        let fmv = MInst::fpu_move(&mut self.mctx, FpuMoveOp::FmvSX, fs1, r);
-                        curr_block.push_back(&mut self.mctx, fmv).unwrap();
-                        fs1
-                    }
-                    MOperandKind::Undef => regs::zero().into(),
-                    MOperandKind::Mem(loc) => {
-                        let mop = self.gen_load(val.ty(self.ctx), loc);
-                        match mop.kind {
-                            MOperandKind::Reg(reg) => reg,
-                            _ => todo!(),
+                    match ty.kind(&self.ctx) {
+                        TyData::Int1 | TyData::Int8 | TyData::Int32 => r,
+                        TyData::Float32 => {
+                            let fs1 = self.mctx.new_vreg(RegKind::Float).into();
+                            let fmv = MInst::fpu_move(&mut self.mctx, FpuMoveOp::FmvSX, fs1, r);
+                            curr_block.push_back(&mut self.mctx, fmv).unwrap();
+                            fs1
                         }
+                        _ => todo!(),
+                    }
+                }
+                MOperandKind::Undef => regs::zero().into(),
+                MOperandKind::Mem(loc) => {
+                    let mop = self.gen_load(val.ty(self.ctx), loc);
+                    match mop.kind {
+                        MOperandKind::Reg(reg) => reg,
+                        _ => todo!(),
                     }
                 }
             }
-            ir::ValueKind::Param { .. } => {
-                let mopd = self.lowered[&val];
-                match mopd.kind {
-                    MOperandKind::Reg(reg) => reg,
-                    MOperandKind::Imm(_, imm) => {
-                        let (li, r) = MInst::li(&mut self.mctx, imm as u64);
+        } else {
+            match &val.try_deref(self.ctx).unwrap().kind {
+                ir::ValueKind::Constant { value } => match value {
+                    ConstantValue::Int32 { value, .. } => {
+                        let (li, r) = MInst::li(&mut self.mctx, *value as u64);
                         curr_block.push_back(&mut self.mctx, li).unwrap();
-                        let fs1 = self.mctx.new_vreg(RegKind::Float).into();
-                        let fmv = MInst::fpu_move(&mut self.mctx, FpuMoveOp::FmvSX, fs1, r);
-                        curr_block.push_back(&mut self.mctx, fmv).unwrap();
-                        fs1
+                        r
                     }
-                    MOperandKind::Undef => regs::zero().into(),
-                    MOperandKind::Mem(loc) => {
-                        let mop = self.gen_load(val.ty(self.ctx), loc);
-                        match mop.kind {
-                            MOperandKind::Reg(reg) => reg,
-                            _ => todo!(),
+                    ConstantValue::Int8 { value, .. } => {
+                        let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                        curr_block.push_back(&mut self.mctx, li).unwrap();
+                        r
+                    }
+                    ConstantValue::Int1 { value, .. } => {
+                        let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                        curr_block.push_back(&mut self.mctx, li).unwrap();
+                        r
+                    }
+                    ConstantValue::Float32 { value, .. } => {
+                        let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                        curr_block.push_back(&mut self.mctx, li).unwrap();
+                        r
+                    }
+                    ConstantValue::Undef { .. } => {
+                        let (li, r) = MInst::li(&mut self.mctx, 0);
+                        curr_block.push_back(&mut self.mctx, li).unwrap();
+                        r
+                    }
+                    _ => {
+                        eprintln!("Unsupported constant: {:?}", value);
+                        unreachable!()
+                    }
+                },
+                ir::ValueKind::InstResult { .. } | ir::ValueKind::Param { .. } => {
+                    let vreg = match ty.kind(&self.ctx) {
+                        TyData::Int1 | TyData::Int8 | TyData::Int32 => {
+                            self.mctx.new_vreg(RegKind::General)
                         }
-                    }
+                        TyData::Float32 => self.mctx.new_vreg(RegKind::Float),
+                        _ => todo!(),
+                    };
+                    let reg = vreg.into();
+                    self.lowered.insert(
+                        val.clone(),
+                        MOperand {
+                            ty,
+                            kind: MOperandKind::Reg(reg),
+                        },
+                    );
+                    reg
                 }
+                _ => todo!(),
             }
-            _ => todo!(),
         }
     }
 
     pub fn reg_or_imm_from_value(&mut self, val: &Value) -> (Option<Reg>, Option<Imm12>) {
         let curr_block = self.curr_block.unwrap();
-        match &val.try_deref(self.ctx).unwrap().kind {
-            ir::ValueKind::Constant { value } => match value {
-                ir::ConstantValue::Int32 { value, .. } => {
-                    let (li, r) = MInst::li(&mut self.mctx, *value as u64);
-                    curr_block.push_back(&mut self.mctx, li).unwrap();
-                    (Some(r), None)
-                }
-                ir::ConstantValue::Int8 { value, .. } => {
-                    let (li, r) = MInst::li(&mut self.mctx, *value as u64);
-                    curr_block.push_back(&mut self.mctx, li).unwrap();
-                    (Some(r), None)
-                }
-                ir::ConstantValue::Int1 { value, .. } => {
-                    let (li, r) = MInst::li(&mut self.mctx, *value as u64);
-                    curr_block.push_back(&mut self.mctx, li).unwrap();
-                    (Some(r), None)
-                }
-                ir::ConstantValue::Float32 { value, .. } => {
-                    let (li, r) = MInst::li(&mut self.mctx, *value as u64);
-                    curr_block.push_back(&mut self.mctx, li).unwrap();
-                    (Some(r), None)
-                }
-                ir::ConstantValue::Undef { .. } => {
-                    let (li, r) = MInst::li(&mut self.mctx, 0);
-                    curr_block.push_back(&mut self.mctx, li).unwrap();
-                    (Some(r), None)
-                }
-                _ => {
-                    eprintln!("Unsupported constant: {:?}", value);
-                    unreachable!()
-                }
-            },
-            ir::ValueKind::InstResult { .. } => {
-                let mopd = self.lowered[&val];
-                match mopd.kind {
-                    MOperandKind::Reg(reg) => (Some(reg), None),
-                    MOperandKind::Imm(_, imm) => (None, Imm12::try_from_i64(imm)),
-                    MOperandKind::Undef => (Some(regs::zero().into()), None),
-                    MOperandKind::Mem(loc) => {
-                        let mop = self.gen_load(val.ty(self.ctx), loc);
-                        match mop.kind {
-                            MOperandKind::Reg(reg) => (Some(reg), None),
-                            _ => todo!(),
+        let ty = val.ty(self.ctx);
+        if let Some(mopd) = self.lowered.get(&val) {
+            match mopd.kind {
+                MOperandKind::Reg(reg) => (Some(reg), None),
+                MOperandKind::Imm(.., imm) => match ty.kind(&self.ctx) {
+                    TyData::Int1 | TyData::Int8 | TyData::Int32 => {
+                        if let Some(imm) = Imm12::try_from_i64(imm) {
+                            (None, Some(imm))
+                        } else {
+                            let (li, r) = MInst::li(&mut self.mctx, imm as u64);
+                            curr_block.push_back(&mut self.mctx, li).unwrap();
+                            (Some(r), None)
                         }
+                    }
+                    TyData::Float32 => {
+                        let (li, r) = MInst::li(&mut self.mctx, imm as u64);
+                        curr_block.push_back(&mut self.mctx, li).unwrap();
+                        let fs1 = self.mctx.new_vreg(RegKind::Float).into();
+                        let fmv = MInst::fpu_move(&mut self.mctx, FpuMoveOp::FmvSX, fs1, r);
+                        curr_block.push_back(&mut self.mctx, fmv).unwrap();
+                        (Some(fs1), None)
+                    }
+                    _ => todo!(),
+                },
+                MOperandKind::Undef => (Some(regs::zero().into()), None),
+                MOperandKind::Mem(loc) => {
+                    let mop = self.gen_load(val.ty(self.ctx), loc);
+                    match mop.kind {
+                        MOperandKind::Reg(reg) => (Some(reg), None),
+                        _ => todo!(),
                     }
                 }
             }
-            ir::ValueKind::Param { .. } => {
-                let mopd = self.lowered[&val];
-                match mopd.kind {
-                    MOperandKind::Reg(reg) => (Some(reg), None),
-                    MOperandKind::Imm(_, imm) => (None, Imm12::try_from_i64(imm)),
-                    MOperandKind::Undef => (Some(regs::zero().into()), None),
-                    MOperandKind::Mem(loc) => {
-                        let mop = self.gen_load(val.ty(self.ctx), loc);
-                        match mop.kind {
-                            MOperandKind::Reg(reg) => (Some(reg), None),
-                            _ => todo!(),
-                        }
+        } else {
+            match &val.try_deref(self.ctx).unwrap().kind {
+                ir::ValueKind::Constant { value } => match value {
+                    ir::ConstantValue::Int32 { value, .. } => {
+                        let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                        curr_block.push_back(&mut self.mctx, li).unwrap();
+                        (Some(r), None)
                     }
+                    ir::ConstantValue::Int8 { value, .. } => {
+                        let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                        curr_block.push_back(&mut self.mctx, li).unwrap();
+                        (Some(r), None)
+                    }
+                    ir::ConstantValue::Int1 { value, .. } => {
+                        let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                        curr_block.push_back(&mut self.mctx, li).unwrap();
+                        (Some(r), None)
+                    }
+                    ir::ConstantValue::Float32 { value, .. } => {
+                        let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                        curr_block.push_back(&mut self.mctx, li).unwrap();
+                        (Some(r), None)
+                    }
+                    ir::ConstantValue::Undef { .. } => {
+                        let (li, r) = MInst::li(&mut self.mctx, 0);
+                        curr_block.push_back(&mut self.mctx, li).unwrap();
+                        (Some(r), None)
+                    }
+                    _ => {
+                        eprintln!("Unsupported constant: {:?}", value);
+                        unreachable!()
+                    }
+                },
+                ir::ValueKind::InstResult { .. } | ir::ValueKind::Param { .. } => {
+                    let vreg = match ty.kind(&self.ctx) {
+                        TyData::Int1 | TyData::Int8 | TyData::Int32 => {
+                            self.mctx.new_vreg(RegKind::General)
+                        }
+                        TyData::Float32 => self.mctx.new_vreg(RegKind::Float),
+                        _ => todo!(),
+                    };
+                    let reg = vreg.into();
+                    self.lowered.insert(
+                        val.clone(),
+                        MOperand {
+                            ty,
+                            kind: MOperandKind::Reg(reg),
+                        },
+                    );
+                    (Some(reg), None)
                 }
+                _ => todo!(),
             }
-            _ => todo!(),
         }
     }
 
@@ -1799,7 +1630,17 @@ impl<'s> CodegenContext<'s> {
                 ir::ConstantValue::GlobalRef { name, .. } => {
                     let (la, rd) = MInst::la(&mut self.mctx, &name);
                     curr_block.push_back(&mut self.mctx, la).unwrap();
-                    rd
+                    match val.ty(&self.ctx).kind(&self.ctx) {
+                        TyData::Int1 | TyData::Int8 | TyData::Int32 => rd,
+                        TyData::Float32 => {
+                            let fs1 = self.mctx.new_vreg(RegKind::Float).into();
+                            let fmv = MInst::fpu_move(&mut self.mctx, FpuMoveOp::FmvSX, fs1, rd);
+                            curr_block.push_back(&mut self.mctx, fmv).unwrap();
+                            fs1
+                        }
+                        TyData::Ptr { .. } => rd,
+                        _ => todo!(),
+                    }
                 }
                 _ => {
                     eprintln!("Unsupported constant: {:?}", value);

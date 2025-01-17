@@ -149,7 +149,7 @@ impl fmt::Display for VReg {
             "{}{}",
             match self.1 {
                 RegKind::General => "$r",
-                _ => todo!("float register"),
+                RegKind::Float => "$f",
             },
             self.0
         )

@@ -2,6 +2,7 @@ use std::fmt::{self, write};
 
 use super::block::MBlock;
 use super::context::MContext;
+use super::func::MLabel;
 use super::imm::Imm12;
 use super::operand::MemLoc;
 use super::regs::{Reg, RegKind};
@@ -72,7 +73,7 @@ pub enum MInstKind {
         rs: Option<Reg>,
     },
     /// Call instructions.
-    Call { target: MBlock },
+    Call { target: MLabel },
     /// FPU move instructions.
     FpuMove { op: FpuMoveOp, rd: Reg, rs: Reg },
     /// Branch instructions.
@@ -559,7 +560,7 @@ impl MInst {
     /// target: The target block.
     ///
     /// Returns the instruction.
-    pub fn call(mctx: &mut MContext, target: MBlock) -> Self {
+    pub fn call(mctx: &mut MContext, target: MLabel) -> Self {
         let kind = MInstKind::Call { target };
         let data = MInstData {
             kind,
@@ -572,7 +573,7 @@ impl MInst {
 
     /// Create a new `load address` instruction.
     pub fn la(mctx: &mut MContext, loc: &String) -> (Self, Reg) {
-        let rd = mctx.new_vreg(RegKind::Float).into();
+        let rd = mctx.new_vreg(RegKind::General).into();
         let kind = MInstKind::La { rd, loc: loc.clone() };
         let data = MInstData {
             kind,
@@ -629,20 +630,20 @@ impl fmt::Display for DisplayMInst<'_> {
             MInstKind::AluRRI { op, rd, rs, imm } => write!(f, "{} {}, {}, {}", op, rd, rs, imm),
             MInstKind::J { target, rd, rs } => {
                 if let Some(rs) = rs {
-                    write!(f, "jalr {}, {}, {}", rd, rs, target.label(self.mctx))
+                    write!(f, "jalr {}, {}, {}", rd, rs, &target.label(self.mctx).to_string()[1..])
                 } else {
-                    write!(f, "jal {}, {}", rd, target.label(self.mctx))
+                    write!(f, "jal {}, {}", rd, &target.label(self.mctx).to_string()[1..])
                 }
             }
             MInstKind::FpuRRR { op, rd, rs1, rs2 } => write!(f, "{} {}, {}, {}", op, rd, rs1, rs2),
-            MInstKind::Call { target } => write!(f, "call {}", target.label(self.mctx)),
+            MInstKind::Call { target } => write!(f, "call {}", target),
             MInstKind::FpuMove { op, rd, rs } => write!(f, "{} {}, {}", op, rd, rs),
             MInstKind::Branch {
                 op,
                 rs1,
                 rs2,
                 target,
-            } => write!(f, "{} {}, {}, {}", op, rs1, rs2, target.label(self.mctx)),
+            } => write!(f, "{} {}, {}, {}", op, rs1, rs2, &target.label(self.mctx).to_string()[1..]),
         }
     }
 }

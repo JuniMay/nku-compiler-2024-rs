@@ -1,6 +1,6 @@
 use clap::{Arg, ArgMatches, Command};
 use nkucc::{
-    backend::codegen::{self, CodegenContext},
+    backend::codegen::CodegenContext,
     frontend::{irgen, preprocess, Optimize, SysYParser},
 };
 
