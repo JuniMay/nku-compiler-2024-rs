@@ -247,7 +247,10 @@ impl<'s> CodegenContext<'s> {
             }
 
             for block in func.iter(self.ctx) {
-                let mblock = MBlock::new(&mut self.mctx, format!(".L{}", block.name(self.ctx)[1..].to_string().to_uppercase()));
+                let mblock = MBlock::new(
+                    &mut self.mctx,
+                    format!(".L{}", block.name(self.ctx)[1..].to_string().to_uppercase()),
+                );
                 let _ = mfunc.push_back(&mut self.mctx, mblock);
                 self.blocks.insert(block, mblock);
             }
@@ -464,34 +467,35 @@ impl<'s> CodegenContext<'s> {
                     }
                 }
             }
-            // sp adjustment
-            let offset = -(mfunc.storage_stack_size(&self.mctx) as i64);
-            if offset != 0 {
-                let addi = MInst::raw_alu_rri(
-                    &mut self.mctx,
-                    AluOpRRI::Addi,
-                    regs::sp().into(),
-                    regs::sp().into(),
-                    Imm12::try_from_i64(offset).unwrap(),
-                );
-                mfunc
-                    .iter(&self.mctx)
-                    .nth(0)
-                    .unwrap()
-                    .push_front(&mut self.mctx, addi)
-                    .unwrap();
-            }
+            // // sp adjustment
+            // let offset = -(mfunc.storage_stack_size(&self.mctx) as i64);
+            // if offset != 0 {
+            //     let addi = MInst::raw_alu_rri(
+            //         &mut self.mctx,
+            //         AluOpRRI::Addi,
+            //         regs::sp().into(),
+            //         regs::sp().into(),
+            //         Imm12::try_from_i64(offset).unwrap(),
+            //     );
+            //     mfunc
+            //         .iter(&self.mctx)
+            //         .nth(0)
+            //         .unwrap()
+            //         .push_front(&mut self.mctx, addi)
+            //         .unwrap();
+            // }
 
             // clear the lowered map
             self.lowered.clear();
         }
 
         // regalloc
-        // self.regalloc();
-        // self.after_regalloc();
+        self.regalloc();
+        self.after_regalloc();
 
         // set arch
-        self.mctx.set_arch("rv64i2p1_m2p0_a2p1_f2p2_d2p2_c2p0_zicsr2p0");
+        self.mctx
+            .set_arch("rv64i2p1_m2p0_a2p1_f2p2_d2p2_c2p0_zicsr2p0");
     }
 
     pub fn regalloc(&mut self) {
@@ -1589,18 +1593,30 @@ impl<'s> CodegenContext<'s> {
     /// return: The register that stores the return value.
     pub fn gen_ret_move(&mut self, val: Value) -> Reg {
         let curr_block = self.curr_block.unwrap();
-        let curr_func = self.curr_func.unwrap();
+        // let curr_func = self.curr_func.unwrap();
 
-        // addi sp, sp, stack_size
-        let stack_size = curr_func.storage_stack_size(&self.mctx);
+        // handle return value.
+        let val_reg = self.reg_from_value(&val);
+        let ret_reg = regs::a0().into();
         let mv = MInst::raw_alu_rri(
             &mut self.mctx,
             AluOpRRI::Addi,
-            regs::sp().into(),
-            regs::sp().into(),
-            Imm12::try_from_u64(stack_size).unwrap(),
+            ret_reg,
+            val_reg,
+            Imm12::try_from_i64(0).unwrap(),
         );
         curr_block.push_back(&mut self.mctx, mv).unwrap();
+
+        // // addi sp, sp, stack_size
+        // let stack_size = curr_func.storage_stack_size(&self.mctx);
+        // let mv = MInst::raw_alu_rri(
+        //     &mut self.mctx,
+        //     AluOpRRI::Addi,
+        //     regs::sp().into(),
+        //     regs::sp().into(),
+        //     Imm12::try_from_u64(stack_size).unwrap(),
+        // );
+        // curr_block.push_back(&mut self.mctx, mv).unwrap();
 
         // add ret
         let ret = MInst::ret(&mut self.mctx);
