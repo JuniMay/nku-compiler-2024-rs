@@ -1,0 +1,57 @@
+=== After Register Allocation ===
+        .text
+        .attribute arch, "rv64i2p1_m2p0_a2p1_f2p2_d2p2_c2p0_zicsr2p0"
+        .globl getint
+        .globl getch
+        .globl getfloat
+        .globl getarray
+        .globl getfarray
+        .globl putint
+        .globl putch
+        .globl putfloat
+        .globl putarray
+        .globl putfarray
+        .globl putf
+        .globl starttime
+        .globl stoptime
+        .globl llvm.memset.p0i8.i32
+        .globl main
+        .align 1
+        .type main, @function
+main:
+.LBB_0:
+        addi sp, sp, -64
+        sw s0, -8(sp)
+        li t0, 1
+        sw t0, -16(sp)
+        lw t0, -16(sp)
+        sw t0, 4(sp)
+        li t0, 2
+        sw t0, -24(sp)
+        lw t0, -24(sp)
+        sw t0, 8(sp)
+        lw t0, 4(sp)
+        sw t0, -32(sp)
+        lw t0, 8(sp)
+        sw t0, -40(sp)
+        lw t0, -32(sp)
+        lw t1, -40(sp)
+        addw t2, t0, t1
+        sw t2, -48(sp)
+        lw t0, -48(sp)
+        sw t0, 12(sp)
+        lw t0, 12(sp)
+        sw t0, -56(sp)
+        lw t0, -56(sp)
+        sw t0, 0(sp)
+        j .LBB_1
+.LBB_2:
+        j .LBB_1
+.LBB_1:
+        lw t0, 0(sp)
+        sw t0, -64(sp)
+        lw t0, -64(sp)
+        addi a0, t0, 0
+        lw s0, -8(sp)
+        addi sp, sp, 64
+        ret

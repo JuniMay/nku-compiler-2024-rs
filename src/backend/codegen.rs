@@ -682,68 +682,117 @@ impl<'s> CodegenContext<'s> {
     /// Do the code generation after register allocation.
     pub fn after_regalloc(&mut self) {
         for function in self.funcs.values_mut() {
-            // 计算栈帧大小
-            let stack_size = function.storage_stack_size(&self.mctx);
-
-            // 创建 Prologue 指令
-            let prologue_addi = MInst::raw_alu_rri(
-                &mut self.mctx,
-                AluOpRRI::Addi,
-                regs::sp().into(),
-                regs::sp().into(),
-                Imm12::try_from_i64(-(stack_size as i64)).unwrap(),
-            );
-
-            let prologue_store = MInst::store(
-                &mut self.mctx,
-                StoreOp::Sw,
-                regs::s0().into(),
-                MemLoc::RegOffset {
-                    base: regs::sp().into(),
-                    offset: -8,
-                },
-            );
-
-            // 将 Prologue 指令插入函数的头部，注意顺序
+            // 计算栈帧大小，确保16字节对齐
+            let stack_size = (function.storage_stack_size(&self.mctx) + 15) & !15;
+            
+            // 创建 Prologue 指令序列
             let entry_block = function.head(&self.mctx);
             if let Some(block) = entry_block {
-                block.push_front(&mut self.mctx, prologue_store).unwrap(); // 先插入 store
-                block.push_front(&mut self.mctx, prologue_addi).unwrap(); // 再插入 addi
+                // 1. 分配栈空间
+                let prologue_addi = MInst::raw_alu_rri(
+                    &mut self.mctx,
+                    AluOpRRI::Addi,
+                    regs::sp().into(),
+                    regs::sp().into(),
+                    Imm12::try_from_i64(-(stack_size as i64)).unwrap(),
+                );
+                
+                // 2. 保存调用者保存的寄存器
+                // 保存 ra (返回地址)
+                let save_ra = MInst::store(
+                    &mut self.mctx,
+                    StoreOp::Sw,
+                    regs::ra().into(),
+                    MemLoc::RegOffset {
+                        base: regs::sp().into(),
+                        offset: stack_size as i64 - 4,
+                    },
+                );
+                
+                // 保存 s0/fp (帧指针)
+                let save_s0 = MInst::store(
+                    &mut self.mctx,
+                    StoreOp::Sw,
+                    regs::s0().into(),
+                    MemLoc::RegOffset {
+                        base: regs::sp().into(),
+                        offset: stack_size as i64 - 8,
+                    },
+                );
+                
+                // 设置帧指针
+                let setup_fp = MInst::raw_alu_rri(
+                    &mut self.mctx,
+                    AluOpRRI::Addi,
+                    regs::s0().into(),
+                    regs::sp().into(),
+                    Imm12::try_from_i64(stack_size as i64).unwrap(),
+                );
+
+                // 按照顺序插入 prologue 指令
+                block.push_front(&mut self.mctx, setup_fp).unwrap();
+                block.push_front(&mut self.mctx, save_s0).unwrap();
+                block.push_front(&mut self.mctx, save_ra).unwrap();
+                block.push_front(&mut self.mctx, prologue_addi).unwrap();
             }
 
-            // 将 Epilogue 指令插入函数的尾部
+            // 在每个 ret 指令之前插入 Epilogue 指令
             let mut curr_block = function.head(&self.mctx);
             while let Some(block) = curr_block {
-                if block.next(&self.mctx).is_none() {
-                    // 这是最后一个基本块
-                    let epilogue_load = MInst::load(
-                        &mut self.mctx,
-                        LoadOp::Lw,
-                        MemLoc::RegOffset {
-                            base: regs::sp().into(),
-                            offset: -8,
-                        },
-                    )
-                    .0;
+                let mut curr_inst = block.head(&mut self.mctx);
+                while let Some(inst) = curr_inst {
+                    let next_inst = inst.next(&self.mctx);
+                    
+                    // 如果是 ret 指令，在其之前插入 epilogue 序列
+                    if let MInstKind::Ret = inst.kind(&self.mctx) {
+                        // 1. 恢复调用者保存的寄存器
+                        // 恢复 ra
+                        let (restore_ra, _) = MInst::load(
+                            &mut self.mctx,
+                            LoadOp::Lw,
+                            MemLoc::RegOffset {
+                                base: regs::sp().into(),
+                                offset: stack_size as i64 - 4,
+                            },
+                        );
+                        // 确保使用正确的物理寄存器
+                        match restore_ra.kind_mut(&mut self.mctx) {
+                            MInstKind::Load { rd, .. } => *rd = regs::ra().into(),
+                            _ => unreachable!(),
+                        }
+                        
+                        // 恢复 s0/fp
+                        let (restore_s0, _) = MInst::load(
+                            &mut self.mctx,
+                            LoadOp::Lw,
+                            MemLoc::RegOffset {
+                                base: regs::sp().into(),
+                                offset: stack_size as i64 - 8,
+                            },
+                        );
+                        // 确保使用正确的物理寄存器
+                        match restore_s0.kind_mut(&mut self.mctx) {
+                            MInstKind::Load { rd, .. } => *rd = regs::s0().into(),
+                            _ => unreachable!(),
+                        }
+                        
+                        // 2. 恢复栈指针
+                        let epilogue_addi = MInst::raw_alu_rri(
+                            &mut self.mctx,
+                            AluOpRRI::Addi,
+                            regs::sp().into(),
+                            regs::sp().into(),
+                            Imm12::try_from_i64(stack_size as i64).unwrap(),
+                        );
 
-                    let epilogue_addi = MInst::raw_alu_rri(
-                        &mut self.mctx,
-                        AluOpRRI::Addi,
-                        regs::sp().into(),
-                        regs::sp().into(),
-                        Imm12::try_from_i64(stack_size as i64).unwrap(),
-                    );
-
-                    // 修改 load 指令的目标寄存器为 s0
-                    match epilogue_load.kind_mut(&mut self.mctx) {
-                        MInstKind::Load { rd, .. } => *rd = regs::s0().into(),
-                        _ => unreachable!(),
+                        // 按照顺序插入 epilogue 指令
+                        // 注意顺序：先恢复寄存器，再调整栈指针
+                        inst.insert_before(&mut self.mctx, restore_ra).unwrap();
+                        inst.insert_before(&mut self.mctx, restore_s0).unwrap();
+                        inst.insert_before(&mut self.mctx, epilogue_addi).unwrap();
                     }
-
-                    // 先恢复 s0，再调整栈指针
-                    block.push_back(&mut self.mctx, epilogue_load).unwrap();
-                    block.push_back(&mut self.mctx, epilogue_addi).unwrap();
-                    break;
+                    
+                    curr_inst = next_inst;
                 }
                 curr_block = block.next(&self.mctx);
             }
@@ -1687,7 +1736,7 @@ impl<'s> CodegenContext<'s> {
     ) -> Option<MOperand> {
         let curr_block = self.curr_block.unwrap();
 
-        // Prepare arguments.
+        // Prepare arguments
         for (index, arg) in args.iter().enumerate() {
             let (arg_reg, arg_imm) = self.reg_or_imm_from_value(&arg);
             let mv = if let Some(arg_reg) = arg_reg {
@@ -1712,18 +1761,17 @@ impl<'s> CodegenContext<'s> {
             curr_block.push_back(&mut self.mctx, mv).unwrap();
         }
 
-        // Ensure the callee function exists.
+        // Call function
         assert!(self.funcs.contains_key(callee_name));
-
-        // jal func
         let call = MInst::call(&mut self.mctx, MLabel::from(callee_name.clone()));
         curr_block.push_back(&mut self.mctx, call).unwrap();
 
-        // Handle return value.
+        // Handle return value if needed
         if let Some(ret) = ret {
+            let ret_reg = regs::a0().into();
             Some(MOperand {
                 ty: ret.ty(self.ctx),
-                kind: MOperandKind::Reg(self.gen_ret_move(ret)),
+                kind: MOperandKind::Reg(ret_reg),
             })
         } else {
             None
@@ -2284,14 +2332,51 @@ mod tests {
         codegen_ctx.mctx_mut().set_arch("rv64imafdc_zba_zbb");
 
         codegen_ctx.codegen();
-        println!("\n=== Before Register Allocation ===");
-        println!("{}", codegen_ctx.mctx().display());
+        println!("\n=== Final Assembly ===");
+        println!("{}", codegen_ctx.finish().display());
+    }
 
-        codegen_ctx.regalloc();
-        println!("\n=== After Register Allocation ===");
-        println!("{}", codegen_ctx.mctx().display());
+    #[test]
+    fn test_multi_function_calls() {
+        let source = r#"
+        int add(int a, int b) {
+            return a + b;
+        }
 
-        codegen_ctx.after_regalloc();
+        int factorial(int n) {
+            if (n <= 1) {
+                return 1;
+            }
+            return n * factorial(n - 1);
+        }
+
+        int fibonacci(int n) {
+            if (n <= 1) {
+                return n;
+            }
+            return fibonacci(n - 1) + fibonacci(n - 2);
+        }
+
+        int main() {
+            int result1 = add(3, 4);          // Should be 7
+            int result2 = factorial(5);        // Should be 120
+            int result3 = fibonacci(6);        // Should be 8
+            return result1 + result2 + result3; // Should be 135
+        }
+        "#;
+
+        let src = preprocess(source);
+        let mut ast = SysYParser::new().parse(&src).unwrap();
+        ast.type_check();
+
+        let ir = irgen(&ast, 8);
+        println!("=== IR ===");
+        println!("{}", ir);
+
+        let mut codegen_ctx = CodegenContext::new(&ir);
+        codegen_ctx.mctx_mut().set_arch("rv64imafdc_zba_zbb");
+
+        codegen_ctx.codegen();
         println!("\n=== Final Assembly ===");
         println!("{}", codegen_ctx.finish().display());
     }
