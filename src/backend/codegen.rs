@@ -54,6 +54,112 @@ pub struct CodegenContext<'s> {
     label_counter: u32,
 }
 
+trait InstRegAccess {
+    fn def_reg(&self, mctx: &MContext) -> Option<Reg>;
+    fn use_regs(&self, mctx: &MContext) -> Vec<Reg>;
+    fn replace_reg(&mut self, mctx: &mut MContext, old_reg: Reg, new_reg: Reg);
+}
+
+impl InstRegAccess for MInst {
+    fn def_reg(&self, mctx: &MContext) -> Option<Reg> {
+        match self.kind(mctx) {
+            MInstKind::AluRRI { rd, .. } => Some(*rd),
+            MInstKind::AluRRR { rd, .. } => Some(*rd),
+            MInstKind::Load { rd, .. } => Some(*rd),
+            MInstKind::Li { rd, .. } => Some(*rd),
+            MInstKind::La { rd, .. } => Some(*rd),
+            MInstKind::FpuRRR { rd, .. } => Some(*rd),
+            MInstKind::FpuMove { rd, .. } => Some(*rd),
+            MInstKind::J { rd, .. } => Some(*rd),  // 添加这一行
+            _ => None,
+        }
+    }
+
+    fn use_regs(&self, mctx: &MContext) -> Vec<Reg> {
+        match self.kind(mctx) {
+            MInstKind::AluRRI { rs, .. } => vec![*rs],
+            MInstKind::AluRRR { rs1, rs2, .. } => vec![*rs1, *rs2],
+            MInstKind::Store { rs, loc, .. } => {
+                let mut regs = vec![*rs];
+                if let MemLoc::RegOffset { base, .. } = loc {
+                    regs.push(*base);
+                }
+                regs
+            }
+            MInstKind::Load { rd: _, loc, .. } => {
+                let mut regs = Vec::new();
+                if let MemLoc::RegOffset { base, .. } = loc {
+                    regs.push(*base);
+                }
+                regs
+            }
+            MInstKind::Branch { rs1, rs2, .. } => vec![*rs1, *rs2],
+            MInstKind::FpuRRR { rs1, rs2, .. } => vec![*rs1, *rs2],
+            MInstKind::FpuMove { rs, .. } => vec![*rs],
+            MInstKind::J { rd: _, rs, .. } => {  // rd 不应该在这里
+                if let Some(rs) = rs {
+                    vec![*rs]
+                } else {
+                    vec![]
+                }
+            }
+            _ => vec![],
+        }
+    }
+
+    fn replace_reg(&mut self, mctx: &mut MContext, old_reg: Reg, new_reg: Reg) {
+        match self.kind_mut(mctx) {
+            MInstKind::AluRRI { rd, rs, .. } => {
+                if *rd == old_reg { *rd = new_reg }
+                if *rs == old_reg { *rs = new_reg }
+            }
+            MInstKind::AluRRR { rd, rs1, rs2, .. } => {
+                if *rd == old_reg { *rd = new_reg }
+                if *rs1 == old_reg { *rs1 = new_reg }
+                if *rs2 == old_reg { *rs2 = new_reg }
+            }
+            MInstKind::Load { rd, loc, .. } => {
+                if *rd == old_reg { *rd = new_reg }
+                if let MemLoc::RegOffset { base, .. } = loc {
+                    if *base == old_reg { *base = new_reg }
+                }
+            }
+            MInstKind::Store { rs, loc, .. } => {
+                if *rs == old_reg { *rs = new_reg }
+                if let MemLoc::RegOffset { base, .. } = loc {
+                    if *base == old_reg { *base = new_reg }
+                }
+            }
+            MInstKind::Li { rd, .. } => {
+                if *rd == old_reg { *rd = new_reg }
+            }
+            MInstKind::La { rd, .. } => {
+                if *rd == old_reg { *rd = new_reg }
+            }
+            MInstKind::Branch { rs1, rs2, .. } => {
+                if *rs1 == old_reg { *rs1 = new_reg }
+                if *rs2 == old_reg { *rs2 = new_reg }
+            }
+            MInstKind::FpuRRR { rd, rs1, rs2, .. } => {
+                if *rd == old_reg { *rd = new_reg }
+                if *rs1 == old_reg { *rs1 = new_reg }
+                if *rs2 == old_reg { *rs2 = new_reg }
+            }
+            MInstKind::FpuMove { rd, rs, .. } => {
+                if *rd == old_reg { *rd = new_reg }
+                if *rs == old_reg { *rs = new_reg }
+            }
+            MInstKind::J { rd, rs, .. } => {
+                if *rd == old_reg { *rd = new_reg }
+                if let Some(r) = rs {
+                    if *r == old_reg { *r = new_reg }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 impl<'s> CodegenContext<'s> {
     pub fn new(ctx: &'s ir::Context) -> Self {
         Self {
@@ -319,182 +425,168 @@ impl<'s> CodegenContext<'s> {
         }
         
         // regalloc
-        self.regalloc();
-        self.after_regalloc();
+        // self.regalloc();
+        // self.after_regalloc();
     }
 
     pub fn regalloc(&mut self) {
         for function in self.funcs.values() {
-            let mut stack_offset: i64 = 0;
+            let mut stack_offset: i64 = -8;  // 从 -8 开始，为 s0 预留空间
             let mut reg_map: HashMap<Reg, MemLoc> = HashMap::new();
+            let mut temp_reg_counter: usize = 0;
 
-            // 第一遍扫描:为所有虚拟寄存器分配栈空间
+            let get_next_temp_reg = |counter: &mut usize| -> Reg {
+                let reg = match *counter {
+                    0 => regs::t0(),
+                    1 => regs::t1(),
+                    2 => regs::t2(),
+                    3 => regs::t3(),
+                    4 => regs::t4(),
+                    5 => regs::t5(),
+                    _ => regs::t6(),
+                };
+                *counter = (*counter + 1) % 7;
+                reg.into()
+            };
+
+            // 第一遍:为所有虚拟寄存器分配栈空间
             for block in function.iter(&self.mctx) {
                 for inst in block.iter(&self.mctx) {
-                    match inst.kind(self.mctx()) {
-                        MInstKind::AluRRI { rd, rs, .. } => {
-                            for reg in [rd, rs] {
-                                if reg.is_vreg() && !reg_map.contains_key(reg) {
-                                    stack_offset -= 8;
-                                    reg_map.insert(*reg, MemLoc::RegOffset {
-                                        base: regs::sp().into(),
-                                        offset: stack_offset
-                                    });
-                                }
-                            }
+                    if let Some(rd) = inst.def_reg(&self.mctx) {
+                        if rd.is_vreg() && !reg_map.contains_key(&rd) {
+                            stack_offset -= 8;
+                            reg_map.insert(rd, MemLoc::RegOffset {
+                                base: regs::sp().into(),
+                                offset: stack_offset
+                            });
                         }
-                        MInstKind::AluRRR { rd, rs1, rs2, .. } => {
-                            for reg in [rd, rs1, rs2] {
-                                if reg.is_vreg() && !reg_map.contains_key(reg) {
-                                    stack_offset -= 8;
-                                    reg_map.insert(*reg, MemLoc::RegOffset {
-                                        base: regs::sp().into(),
-                                        offset: stack_offset
-                                    });
-                                }
-                            }
-                        }
-                        MInstKind::Load { rd, .. } => {
-                            if rd.is_vreg() && !reg_map.contains_key(rd) {
-                                stack_offset -= 8;
-                                reg_map.insert(*rd, MemLoc::RegOffset {
-                                    base: regs::sp().into(),
-                                    offset: stack_offset
-                                });
-                            }
-                        }
-                        MInstKind::Store { rs: rd @ _, .. } => {
-                            if rd.is_vreg() && !reg_map.contains_key(rd) {
-                                stack_offset -= 8;
-                                reg_map.insert(*rd, MemLoc::RegOffset {
-                                    base: regs::sp().into(),
-                                    offset: stack_offset
-                                });
-                            }
-                        }
-                        MInstKind::Li { rd, .. } => {
-                            if rd.is_vreg() && !reg_map.contains_key(rd) {
-                                stack_offset -= 8;
-                                reg_map.insert(*rd, MemLoc::RegOffset {
-                                    base: regs::sp().into(),
-                                    offset: stack_offset
-                                });
-                            }
-                        }
-                        _ => {}
                     }
                 }
             }
 
-            // 更新函数的栈空间大小
-            function.add_storage_stack_size(&mut self.mctx, (-stack_offset) as u64);
+            // 更新函数的栈空间大小，确保是 16 字节对齐
+            let stack_size = (-stack_offset + 15) & !15;
+            function.add_storage_stack_size(&mut self.mctx, stack_size as u64);
 
-            // 第二遍扫描:替换所有虚拟寄存器的使用为栈访问
+            // 第二遍:插入加载/存储指令
             let mut curr_block = function.head(&self.mctx);
             while let Some(block) = curr_block {
                 let mut curr_inst = block.head(&mut self.mctx);
                 while let Some(mut inst) = curr_inst {
-                    // 第一步：生成加载/存储指令
-                    let mut needs = Vec::new();
-                    match inst.kind(self.mctx()) {//first_match
-                        MInstKind::AluRRI { rd, rs, .. } => {
-                            if rs.is_vreg() {
-                                if let Some(mem_loc) = reg_map.get(rs) {
-                                    // 使用 t0-t6 作为临时寄存器
-                                    let temp_reg = regs::t0().into();
-                                    needs.push((*rs, *mem_loc, temp_reg));
-                                }
+                    let next_inst = inst.next(&self.mctx);
+                    temp_reg_counter = 0;
+                    
+                    // 收集所有需要处理的寄存器
+                    let mut regs_to_process = Vec::new();
+                    
+                    // 1. 收集使用的寄存器
+                    let use_regs = inst.use_regs(&self.mctx);
+                    for use_reg in use_regs {
+                        if use_reg.is_vreg() {
+                            if let Some(&stack_loc) = reg_map.get(&use_reg) {
+                                regs_to_process.push((use_reg, stack_loc, true));
                             }
-                        }
-                        MInstKind::AluRRR { rd, rs1, rs2, .. } => {
-                            if rs1.is_vreg() {
-                                if let Some(mem_loc) = reg_map.get(rs1) {
-                                    let temp_reg = regs::t0().into();
-                                    needs.push((*rs1, *mem_loc, temp_reg));
-                                }
-                            }
-                            if rs2.is_vreg() {
-                                if let Some(mem_loc) = reg_map.get(rs2) {
-                                    let temp_reg = regs::t1().into();
-                                    needs.push((*rs2, *mem_loc, temp_reg));
-                                }
-                            }
-                        }
-                        MInstKind::Load { rd, .. } => {
-                            if rd.is_vreg() {
-                                if let Some(mem_loc) = reg_map.get(rd) {
-                                    needs.push((*rd, *mem_loc, regs::zero().into()));
-                                }
-                            }
-                        }
-                        MInstKind::Store { rs, .. } => {
-                            if rs.is_vreg() {
-                                if let Some(mem_loc) = reg_map.get(rs) {
-                                    needs.push((*rs, *mem_loc, regs::zero().into()));
-                                }
-                            }
-                        }
-                        MInstKind::Li { rd, .. } => {
-                            if rd.is_vreg() {
-                                if let Some(mem_loc) = reg_map.get(rd) {
-                                    needs.push((*rd, *mem_loc, regs::zero().into()));
-                                }
-                            }
-                        }
-                        MInstKind::FpuRRR { rd, rs1, rs2, .. } => {
-                            for reg in [rs1, rs2] {
-                                if reg.is_vreg() {
-                                    if let Some(mem_loc) = reg_map.get(reg) {
-                                        needs.push((*reg, *mem_loc, regs::zero().into()));
-                                    }
-                                }
-                            }
-                        }
-                        MInstKind::Branch { rs1, rs2, .. } => {
-                            for reg in [rs1, rs2] {
-                                if reg.is_vreg() {
-                                    if let Some(mem_loc) = reg_map.get(reg) {
-                                        needs.push((*reg, *mem_loc, regs::zero().into()));
-                                    }
-                                }
-                            }
-                        }
-                        MInstKind::FpuMove { rs, .. } => {
-                            if rs.is_vreg() {
-                                if let Some(mem_loc) = reg_map.get(rs) {
-                                    needs.push((*rs, *mem_loc, regs::zero().into()));
-                                }
-                            }
-                        }
-                        _ => {}
-                    };
-
-                    // 第二步：插入指令并替换寄存器
-                    for (reg, mem_loc, temp_reg) in needs {
-                        let load = MInst::load(&mut self.mctx, LoadOp::Lw, mem_loc);
-                        block.push_front(&mut self.mctx, load.0);
-                        match &mut inst.kind_mut(&mut self.mctx) {
-                            MInstKind::AluRRI { rs, .. } if *rs == reg => *rs = temp_reg,
-                            MInstKind::AluRRR { rs1, rs2, .. } => {
-                                if *rs1 == reg { *rs1 = temp_reg }
-                                if *rs2 == reg { *rs2 = temp_reg }
-                            }
-                            MInstKind::Store { rs, .. } if *rs == reg => *rs = temp_reg,
-                            MInstKind::FpuRRR { rs1, rs2, .. } => {
-                                if *rs1 == reg { *rs1 = temp_reg }
-                                if *rs2 == reg { *rs2 = temp_reg }
-                            }
-                            MInstKind::Branch { rs1, rs2, .. } => {
-                                if *rs1 == reg { *rs1 = temp_reg }
-                                if *rs2 == reg { *rs2 = temp_reg }
-                            }
-                            MInstKind::FpuMove { rs, .. } if *rs == reg => *rs = temp_reg,
-                            _ => {}
                         }
                     }
 
-                    curr_inst = inst.next(&self.mctx);
+                    // 2. 收集定义的寄存器
+                    if let Some(def_reg) = inst.def_reg(&self.mctx) {
+                        if def_reg.is_vreg() {
+                            if let Some(&stack_loc) = reg_map.get(&def_reg) {
+                                regs_to_process.push((def_reg, stack_loc, false));
+                            }
+                        }
+                    }
+
+                    // 3. 处理所有寄存器
+                    let mut reg_mapping = HashMap::new();
+                    
+                    // 先处理所有load
+                    for (vreg, stack_loc, is_use) in regs_to_process.iter() {
+                        if *is_use {
+                            let temp_reg = get_next_temp_reg(&mut temp_reg_counter);
+                            reg_mapping.insert(*vreg, temp_reg);
+                            
+                            let (load, _) = MInst::load(&mut self.mctx, LoadOp::Lw, *stack_loc);
+                            // 修改load指令使用正确的目标寄存器
+                            match load.kind_mut(&mut self.mctx) {
+                                MInstKind::Load { rd, .. } => *rd = temp_reg,
+                                _ => unreachable!(),
+                            }
+                            inst.insert_before(&mut self.mctx, load);
+                        }
+                    }
+
+                    // 更新指令中的寄存器
+                    for (vreg, temp_reg) in reg_mapping.iter() {
+                        inst.replace_reg(&mut self.mctx, *vreg, *temp_reg);
+                    }
+
+                    // 再处理所有store
+                    for (vreg, stack_loc, is_use) in regs_to_process {
+                        if !is_use {
+                            let temp_reg = get_next_temp_reg(&mut temp_reg_counter);
+                            inst.replace_reg(&mut self.mctx, vreg, temp_reg);
+                            
+                            let store = MInst::store(&mut self.mctx, StoreOp::Sw, temp_reg, stack_loc);
+                            inst.insert_after(&mut self.mctx, store);
+                        }
+                    }
+
+                    curr_inst = next_inst;
                 }
+
+                // 如果这是最后一个基本块，处理返回值
+                if block.next(&self.mctx).is_none() {
+                    // 遍历最后一个基本块的所有指令
+                    let mut curr_inst = block.head(&mut self.mctx);
+                    while let Some(mut inst) = curr_inst {
+                        let next_inst = inst.next(&self.mctx);
+                        
+                        // 替换所有虚拟寄存器为 s0
+                        match inst.kind_mut(&mut self.mctx) {
+                            MInstKind::Load { rd, loc, .. } => {
+                                if rd.is_vreg() {
+                                    *rd = regs::s0().into();
+                                }
+                                if let MemLoc::RegOffset { base, .. } = loc {
+                                    if base.is_vreg() {
+                                        *base = regs::sp().into();
+                                    }
+                                }
+                            }
+                            MInstKind::Store { rs, loc, .. } => {
+                                if rs.is_vreg() {
+                                    *rs = regs::s0().into();
+                                }
+                                if let MemLoc::RegOffset { base, .. } = loc {
+                                    if base.is_vreg() {
+                                        *base = regs::sp().into();
+                                    }
+                                }
+                            }
+                            MInstKind::AluRRI { rd, rs, .. } => {
+                                if rd.is_vreg() { *rd = regs::s0().into(); }
+                                if rs.is_vreg() { *rs = regs::s0().into(); }
+                            }
+                            MInstKind::AluRRR { rd, rs1, rs2, .. } => {
+                                if rd.is_vreg() { *rd = regs::s0().into(); }
+                                if rs1.is_vreg() { *rs1 = regs::s0().into(); }
+                                if rs2.is_vreg() { *rs2 = regs::s0().into(); }
+                            }
+                            MInstKind::J { rd, rs, .. } => {
+                                if rd.is_vreg() { *rd = regs::s0().into(); }
+                                if let Some(r) = rs {
+                                    if r.is_vreg() { *r = regs::s0().into(); }
+                                }
+                            }
+                            _ => {}
+                        }
+                        
+                        curr_inst = next_inst;
+                    }
+                }
+
                 curr_block = block.next(&self.mctx);
             }
         }
@@ -505,85 +597,67 @@ impl<'s> CodegenContext<'s> {
         for function in self.funcs.values_mut() {
             // 计算栈帧大小
             let stack_size = function.storage_stack_size(&self.mctx);
-    
+
             // 创建 Prologue 指令
-            let inst = MInst::raw_alu_rri(
+            let prologue_addi = MInst::raw_alu_rri(
                 &mut self.mctx,
                 AluOpRRI::Addi,
                 regs::sp().into(),
                 regs::sp().into(),
                 Imm12::try_from_i64(-(stack_size as i64)).unwrap(),
             );
-    
-            let prologue = vec![
-                // 假设我们要保存 s0 寄存器到栈
-                MInst::store(
-                    &mut self.mctx,
-                    StoreOp::Sw,
-                    regs::s0().into(),
-                    MemLoc::RegOffset {
-                        base: regs::sp().into(),
-                        offset: -8,
-                    },
-                ),
-                // 调整栈指针
-                inst,
-            ];
-    
-            // 将 Prologue 指令插入函数的头部
+
+            let prologue_store = MInst::store(
+                &mut self.mctx,
+                StoreOp::Sw,
+                regs::s0().into(),
+                MemLoc::RegOffset {
+                    base: regs::sp().into(),
+                    offset: -8,
+                },
+            );
+
+            // 将 Prologue 指令插入函数的头部，注意顺序
             let entry_block = function.head(&self.mctx);
             if let Some(block) = entry_block {
-                for inst in prologue {
-                    block.push_front(&mut self.mctx, inst);
-                }
+                block.push_front(&mut self.mctx, prologue_store);  // 先插入 store
+                block.push_front(&mut self.mctx, prologue_addi);   // 再插入 addi
             }
-    
-            // 遍历函数中的所有指令，转换 MemLoc::Slot 为 MemLoc::RegOffset
+
+            // 将 Epilogue 指令插入函数的尾部
             let mut curr_block = function.head(&self.mctx);
             while let Some(block) = curr_block {
-                let mut curr_inst = block.head(&self.mctx);
-                while let Some(inst) = curr_inst {
-                    if let Some(mem_loc) = inst.kind_mut(&mut self.mctx).extract_mem_loc_mut() {
-                        if let MemLoc::Slot { offset } = *mem_loc {
-                            // 将 Slot 转换为 RegOffset，基于 sp 进行偏移
-                            *mem_loc = MemLoc::RegOffset {
-                                base: regs::sp().into(),
-                                offset,
-                            };
-                        }
+                if block.next(&self.mctx).is_none() {
+                    // 这是最后一个基本块
+                    let epilogue_load = MInst::load(
+                        &mut self.mctx,
+                        LoadOp::Lw,
+                        MemLoc::RegOffset {
+                            base: regs::sp().into(),
+                            offset: -8,
+                        },
+                    ).0;
+
+                    let epilogue_addi = MInst::raw_alu_rri(
+                        &mut self.mctx,
+                        AluOpRRI::Addi,
+                        regs::sp().into(),
+                        regs::sp().into(),
+                        Imm12::try_from_i64(stack_size as i64).unwrap(),
+                    );
+
+                    // 修改 load 指令的目标寄存器为 s0
+                    match epilogue_load.kind_mut(&mut self.mctx) {
+                        MInstKind::Load { rd, .. } => *rd = regs::s0().into(),
+                        _ => unreachable!(),
                     }
-                    curr_inst = inst.next(&self.mctx);
+
+                    // 先恢复 s0，再调整栈指针
+                    block.push_back(&mut self.mctx, epilogue_load);
+                    block.push_back(&mut self.mctx, epilogue_addi);
+                    break;
                 }
                 curr_block = block.next(&self.mctx);
-            }
-    
-            // 插入 Epilogue 指令：恢复寄存器和栈指针
-            let epilogue = vec![
-                // 恢复寄存器
-                MInst::load(
-                    &mut self.mctx,
-                    LoadOp::Lw,
-                    MemLoc::RegOffset {
-                        base: regs::sp().into(),
-                        offset: -8,
-                    },
-                ).0,  // load 返回 (MInst, Reg)，所以需要 .0
-                // 恢复栈指针
-                MInst::raw_alu_rri(
-                    &mut self.mctx,
-                    AluOpRRI::Addi,
-                    regs::sp().into(),
-                    regs::sp().into(),
-                    Imm12::try_from_i64(stack_size as i64).unwrap(),
-                ),  // raw_alu_rri 直接返回 MInst，不需要 .0
-            ];
-    
-            // 将 Epilogue 指令插入函数的尾部
-            let mut tail_block = function.tail(&self.mctx);
-            if let Some(block) = tail_block {
-                for inst in epilogue {
-                    block.push_back(&mut self.mctx, inst);
-                }
             }
         }
     }
