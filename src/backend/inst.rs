@@ -1,4 +1,4 @@
-use std::fmt::{self, write};
+use std::fmt::{self};
 
 use super::block::MBlock;
 use super::context::MContext;
@@ -62,12 +62,8 @@ pub enum MInstKind {
     Load { op: LoadOp, rd: Reg, loc: MemLoc },
     /// Store instructions.
     Store { op: StoreOp, rs: Reg, loc: MemLoc },
-    /// Load immediate pseudo instruction.
-    Li { rd: Reg, imm: u64 },
-    /// Load address pseudo instruction.
-    La { rd: Reg, loc: String },
     /// Jump instructions.
-    J {
+    Jal {
         target: MBlock,
         rd: Reg,
         rs: Option<Reg>,
@@ -83,6 +79,16 @@ pub enum MInstKind {
         rs2: Reg,
         target: MBlock,
     },
+
+    // Pseudo instruction are below.
+    /// Jump pseudo instruction.
+    J { target: MBlock },
+    /// Load immediate pseudo instruction.
+    Li { rd: Reg, imm: u64 },
+    /// Load address pseudo instruction.
+    La { rd: Reg, loc: String },
+    /// Return pseudo instruction.
+    Ret,
 }
 
 #[derive(Copy, Clone)]
@@ -313,6 +319,8 @@ impl fmt::Display for FpuCompareOp {
 
 #[derive(Copy, Clone)]
 pub enum FpuMoveOp {
+    FmvS,
+    FmvD,
     FmvXS,
     FmvXD,
     FmvSX,
@@ -324,6 +332,8 @@ pub enum FpuMoveOp {
 impl fmt::Display for FpuMoveOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            FpuMoveOp::FmvS => write!(f, "fmv.s"),
+            FpuMoveOp::FmvD => write!(f, "fmv.d"),
             FpuMoveOp::FmvXS => write!(f, "fmv.x.s"),
             FpuMoveOp::FmvXD => write!(f, "fmv.x.s"),
             FpuMoveOp::FmvSX => write!(f, "fmv.s.x"),
@@ -498,14 +508,31 @@ impl MInst {
         mctx.alloc(data)
     }
 
-    /// Creatr a new `jump` instruction.
+    /// Create a new `jump` instruction.
     ///
     /// target: The target block.
     ///
     /// Returns the instruction.
-    pub fn j(mctx: &mut MContext, rs: Option<Reg>, target: MBlock) -> Self {
+    pub fn j(mctx: &mut MContext, target: MBlock) -> Self {
+        let kind = MInstKind::J { target };
+        let data = MInstData {
+            kind,
+            next: None,
+            prev: None,
+            parent: None,
+        };
+        mctx.alloc(data)
+    }
+
+    /// Creatr a new `jump and link` instruction.
+    ///
+    /// rs: The source register.
+    /// target: The target block.
+    ///
+    /// Returns the instruction.
+    pub fn jal(mctx: &mut MContext, rs: Option<Reg>, target: MBlock) -> Self {
         let rd = mctx.new_vreg(RegKind::General).into();
-        let kind = MInstKind::J { rd, rs, target };
+        let kind = MInstKind::Jal { rd, rs, target };
         let data = MInstData {
             kind,
             next: None,
@@ -574,7 +601,10 @@ impl MInst {
     /// Create a new `load address` instruction.
     pub fn la(mctx: &mut MContext, loc: &String) -> (Self, Reg) {
         let rd = mctx.new_vreg(RegKind::General).into();
-        let kind = MInstKind::La { rd, loc: loc.clone() };
+        let kind = MInstKind::La {
+            rd,
+            loc: loc.clone(),
+        };
         let data = MInstData {
             kind,
             next: None,
@@ -584,20 +614,30 @@ impl MInst {
         (mctx.alloc(data), rd)
     }
 
+    /// Create a new `return` instruction.
+    pub fn ret(mctx: &mut MContext) -> Self {
+        let kind = MInstKind::Ret;
+        let data = MInstData {
+            kind,
+            next: None,
+            prev: None,
+            parent: None,
+        };
+        mctx.alloc(data)
+    }
+
     pub fn replace(&mut self, mctx: &mut MContext, new_kind: MInstKind) {
         // 获取 `MInst` 的可变引用
         let data = self.deref_mut(mctx);
         // 替换 `kind`
         data.kind = new_kind;
     }
-
 }
 
 impl fmt::Display for DisplayMInst<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.inst.deref(self.mctx).kind {
-            MInstKind::Li { rd, imm } => write!(f, "li {}, {}", rd, imm),
-            MInstKind::La { rd, loc } => write!(f, "la {}, {}", rd, loc),
+            // Instructions.
             MInstKind::Load { op, rd, loc } => {
                 let slot = match loc {
                     MemLoc::RegOffset { base, offset } => {
@@ -628,11 +668,22 @@ impl fmt::Display for DisplayMInst<'_> {
             }
             MInstKind::AluRRR { op, rd, rs1, rs2 } => write!(f, "{} {}, {}, {}", op, rd, rs1, rs2),
             MInstKind::AluRRI { op, rd, rs, imm } => write!(f, "{} {}, {}, {}", op, rd, rs, imm),
-            MInstKind::J { target, rd, rs } => {
+            MInstKind::Jal { target, rd, rs } => {
                 if let Some(rs) = rs {
-                    write!(f, "jalr {}, {}, {}", rd, rs, &target.label(self.mctx).to_string()[1..])
+                    write!(
+                        f,
+                        "jalr {}, {}, {}",
+                        rd,
+                        rs,
+                        &target.label(self.mctx).to_string()
+                    )
                 } else {
-                    write!(f, "jal {}, {}", rd, &target.label(self.mctx).to_string()[1..])
+                    write!(
+                        f,
+                        "jal {}, {}",
+                        rd,
+                        &target.label(self.mctx).to_string()
+                    )
                 }
             }
             MInstKind::FpuRRR { op, rd, rs1, rs2 } => write!(f, "{} {}, {}, {}", op, rd, rs1, rs2),
@@ -643,7 +694,21 @@ impl fmt::Display for DisplayMInst<'_> {
                 rs1,
                 rs2,
                 target,
-            } => write!(f, "{} {}, {}, {}", op, rs1, rs2, &target.label(self.mctx).to_string()[1..]),
+            } => write!(
+                f,
+                "{} {}, {}, {}",
+                op,
+                rs1,
+                rs2,
+                &target.label(self.mctx).to_string()
+            ),
+            // Pseudo instructions.
+            MInstKind::J { target } => {
+                write!(f, "j {}", &target.label(self.mctx).to_string())
+            }
+            MInstKind::Li { rd, imm } => write!(f, "li {}, {}", rd, imm),
+            MInstKind::La { rd, loc } => write!(f, "la {}, {}", rd, loc),
+            MInstKind::Ret => write!(f, "ret"),
         }
     }
 }

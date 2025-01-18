@@ -80,11 +80,12 @@ pub struct DisplayMContext<'a> {
 
 impl fmt::Display for DisplayMContext<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // The text section, generating the code.
+        writeln!(f, "\t.text")?;
+
         // The architecture attribute.
         writeln!(f, "\t.attribute arch, \"{}\"", self.mctx.arch())?;
 
-        // The text section, generating the code.
-        writeln!(f, "\t.text")?;
         for func_data in self.mctx.funcs.iter() {
             let func = func_data.self_ptr();
 

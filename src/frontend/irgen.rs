@@ -1,5 +1,8 @@
 //! IR generation from AST.
 
+use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
+
 use super::ast::{
     self,
     BinaryOp,
@@ -88,6 +91,9 @@ pub struct IrGenContext {
     // Return block and slot
     pub curr_ret_slot: Option<Value>,
     pub curr_ret_block: Option<Block>,
+
+    // Global slots
+    pub global_slots: HashMap<Global, Value>,
 }
 
 impl IrGenContext {
@@ -270,7 +276,13 @@ impl IrGenContext {
                     // If the value is a global, get the global reference
                     let name = slot.name(&self.ctx).to_string();
                     let value_ty = slot.ty(&self.ctx);
-                    Value::global_ref(&mut self.ctx, name, value_ty)
+                    if let Some(val) = self.global_slots.get(&slot) {
+                        val.clone()
+                    } else {
+                        let val = Value::global_ref(&mut self.ctx, name, value_ty);
+                        self.global_slots.insert(slot.clone(), val.clone());
+                        val
+                    }
                 } else if let IrGenResult::Value(slot) = ir_value {
                     // If the value is a local, get the value
                     slot
@@ -306,7 +318,13 @@ impl IrGenContext {
                         // If the value is a global, get the global reference
                         let name = slot.name(&self.ctx).to_string();
                         let value_ty = slot.ty(&self.ctx);
-                        Value::global_ref(&mut self.ctx, name, value_ty)
+                        if let Some(val) = self.global_slots.get(&slot) {
+                            val.clone()
+                        } else {
+                            let val = Value::global_ref(&mut self.ctx, name, value_ty);
+                            self.global_slots.insert(slot.clone(), val.clone());
+                            val
+                        }
                     } else if let IrGenResult::Value(slot) = ir_value {
                         // If the value is a local, get the value
                         slot
@@ -1274,9 +1292,16 @@ impl IrGen for Stmt {
                 let ir_value = entry.ir_value.unwrap();
 
                 let slot = if let IrGenResult::Global(slot) = ir_value {
+                    // If the value is a global, get the global reference
                     let name = slot.name(&irgen.ctx).to_string();
                     let value_ty = slot.ty(&irgen.ctx);
-                    Value::global_ref(&mut irgen.ctx, name, value_ty)
+                    if let Some(val) = irgen.global_slots.get(&slot) {
+                        val.clone()
+                    } else {
+                        let val = Value::global_ref(&mut irgen.ctx, name, value_ty);
+                        irgen.global_slots.insert(slot.clone(), val.clone());
+                        val
+                    }
                 } else if let IrGenResult::Value(slot) = ir_value {
                     slot
                 } else {
@@ -1296,9 +1321,16 @@ impl IrGen for Stmt {
                 match &entry.ty.kind() {
                     Tk::Array(_, _) => {
                         let slot = if let IrGenResult::Global(slot) = ir_value {
+                            // If the value is a global, get the global reference
                             let name = slot.name(&irgen.ctx).to_string();
                             let value_ty = slot.ty(&irgen.ctx);
-                            Value::global_ref(&mut irgen.ctx, name, value_ty)
+                            if let Some(val) = irgen.global_slots.get(&slot) {
+                                val.clone()
+                            } else {
+                                let val = Value::global_ref(&mut irgen.ctx, name, value_ty);
+                                irgen.global_slots.insert(slot.clone(), val.clone());
+                                val
+                            }
                         } else if let IrGenResult::Value(slot) = ir_value {
                             slot
                         } else {
@@ -1322,9 +1354,16 @@ impl IrGen for Stmt {
                     }
                     Tk::Ptr(_) => {
                         let mut slot = if let IrGenResult::Global(slot) = ir_value {
+                            // If the value is a global, get the global reference
                             let name = slot.name(&irgen.ctx).to_string();
                             let value_ty = slot.ty(&irgen.ctx);
-                            Value::global_ref(&mut irgen.ctx, name, value_ty)
+                            if let Some(val) = irgen.global_slots.get(&slot) {
+                                val.clone()
+                            } else {
+                                let val = Value::global_ref(&mut irgen.ctx, name, value_ty);
+                                irgen.global_slots.insert(slot.clone(), val.clone());
+                                val
+                            }
                         } else if let IrGenResult::Value(slot) = ir_value {
                             slot
                         } else {

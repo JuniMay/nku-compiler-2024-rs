@@ -18,8 +18,8 @@ use crate::backend::inst::BranchOp;
 use crate::infra::linked_list::{LinkedListContainer, LinkedListNode};
 use crate::infra::storage::ArenaPtr;
 use crate::ir::{
-    self, ConstantValue, FloatBinaryOp, FloatCmpCond, IntBinaryOp, IntCmpCond, Ty, TyData, Value,
-    ValueKind,
+    self, Block, CastOp, ConstantValue, FloatBinaryOp, FloatCmpCond, IntBinaryOp, IntCmpCond, Ty,
+    TyData, Value, ValueKind,
 };
 
 pub struct CodegenContext<'s> {
@@ -70,7 +70,7 @@ impl InstRegAccess for MInst {
             MInstKind::La { rd, .. } => Some(*rd),
             MInstKind::FpuRRR { rd, .. } => Some(*rd),
             MInstKind::FpuMove { rd, .. } => Some(*rd),
-            MInstKind::J { rd, .. } => Some(*rd),  // 添加这一行
+            MInstKind::Jal { rd, .. } => Some(*rd), // 添加这一行
             _ => None,
         }
     }
@@ -96,7 +96,8 @@ impl InstRegAccess for MInst {
             MInstKind::Branch { rs1, rs2, .. } => vec![*rs1, *rs2],
             MInstKind::FpuRRR { rs1, rs2, .. } => vec![*rs1, *rs2],
             MInstKind::FpuMove { rs, .. } => vec![*rs],
-            MInstKind::J { rd: _, rs, .. } => {  // rd 不应该在这里
+            MInstKind::Jal { rd: _, rs, .. } => {
+                // rd 不应该在这里
                 if let Some(rs) = rs {
                     vec![*rs]
                 } else {
@@ -110,49 +111,89 @@ impl InstRegAccess for MInst {
     fn replace_reg(&mut self, mctx: &mut MContext, old_reg: Reg, new_reg: Reg) {
         match self.kind_mut(mctx) {
             MInstKind::AluRRI { rd, rs, .. } => {
-                if *rd == old_reg { *rd = new_reg }
-                if *rs == old_reg { *rs = new_reg }
+                if *rd == old_reg {
+                    *rd = new_reg
+                }
+                if *rs == old_reg {
+                    *rs = new_reg
+                }
             }
             MInstKind::AluRRR { rd, rs1, rs2, .. } => {
-                if *rd == old_reg { *rd = new_reg }
-                if *rs1 == old_reg { *rs1 = new_reg }
-                if *rs2 == old_reg { *rs2 = new_reg }
+                if *rd == old_reg {
+                    *rd = new_reg
+                }
+                if *rs1 == old_reg {
+                    *rs1 = new_reg
+                }
+                if *rs2 == old_reg {
+                    *rs2 = new_reg
+                }
             }
             MInstKind::Load { rd, loc, .. } => {
-                if *rd == old_reg { *rd = new_reg }
+                if *rd == old_reg {
+                    *rd = new_reg
+                }
                 if let MemLoc::RegOffset { base, .. } = loc {
-                    if *base == old_reg { *base = new_reg }
+                    if *base == old_reg {
+                        *base = new_reg
+                    }
                 }
             }
             MInstKind::Store { rs, loc, .. } => {
-                if *rs == old_reg { *rs = new_reg }
+                if *rs == old_reg {
+                    *rs = new_reg
+                }
                 if let MemLoc::RegOffset { base, .. } = loc {
-                    if *base == old_reg { *base = new_reg }
+                    if *base == old_reg {
+                        *base = new_reg
+                    }
                 }
             }
             MInstKind::Li { rd, .. } => {
-                if *rd == old_reg { *rd = new_reg }
+                if *rd == old_reg {
+                    *rd = new_reg
+                }
             }
             MInstKind::La { rd, .. } => {
-                if *rd == old_reg { *rd = new_reg }
+                if *rd == old_reg {
+                    *rd = new_reg
+                }
             }
             MInstKind::Branch { rs1, rs2, .. } => {
-                if *rs1 == old_reg { *rs1 = new_reg }
-                if *rs2 == old_reg { *rs2 = new_reg }
+                if *rs1 == old_reg {
+                    *rs1 = new_reg
+                }
+                if *rs2 == old_reg {
+                    *rs2 = new_reg
+                }
             }
             MInstKind::FpuRRR { rd, rs1, rs2, .. } => {
-                if *rd == old_reg { *rd = new_reg }
-                if *rs1 == old_reg { *rs1 = new_reg }
-                if *rs2 == old_reg { *rs2 = new_reg }
+                if *rd == old_reg {
+                    *rd = new_reg
+                }
+                if *rs1 == old_reg {
+                    *rs1 = new_reg
+                }
+                if *rs2 == old_reg {
+                    *rs2 = new_reg
+                }
             }
             MInstKind::FpuMove { rd, rs, .. } => {
-                if *rd == old_reg { *rd = new_reg }
-                if *rs == old_reg { *rs = new_reg }
+                if *rd == old_reg {
+                    *rd = new_reg
+                }
+                if *rs == old_reg {
+                    *rs = new_reg
+                }
             }
-            MInstKind::J { rd, rs, .. } => {
-                if *rd == old_reg { *rd = new_reg }
+            MInstKind::Jal { rd, rs, .. } => {
+                if *rd == old_reg {
+                    *rd = new_reg
+                }
                 if let Some(r) = rs {
-                    if *r == old_reg { *r = new_reg }
+                    if *r == old_reg {
+                        *r = new_reg
+                    }
                 }
             }
             _ => {}
@@ -206,7 +247,7 @@ impl<'s> CodegenContext<'s> {
             }
 
             for block in func.iter(self.ctx) {
-                let mblock = MBlock::new(&mut self.mctx, format!(".{}", block.name(self.ctx)));
+                let mblock = MBlock::new(&mut self.mctx, format!(".L{}", block.name(self.ctx)[1..].to_string().to_uppercase()));
                 let _ = mfunc.push_back(&mut self.mctx, mblock);
                 self.blocks.insert(block, mblock);
             }
@@ -303,10 +344,7 @@ impl<'s> CodegenContext<'s> {
                         ir::InstKind::Store => {
                             let val = inst.operand(self.ctx, 0);
                             let ptr: Value = inst.operand(self.ctx, 1);
-                            let memloc = MemLoc::RegOffset {
-                                base: self.memloc_reg_from_value(&ptr),
-                                offset: 0,
-                            };
+                            let memloc = self.memloc_from_value(&ptr);
                             // Here we use a helper function to generate the store instruction.
                             // You can change the implementation of the helper functions as you
                             // like. Or you can also not use helper functions.
@@ -314,10 +352,7 @@ impl<'s> CodegenContext<'s> {
                         }
                         ir::InstKind::Load => {
                             let ptr = inst.operand(self.ctx, 0);
-                            let memloc = MemLoc::RegOffset {
-                                base: self.memloc_reg_from_value(&ptr),
-                                offset: 0,
-                            };
+                            let memloc = self.memloc_from_value(&ptr);
                             let ty = inst.result(self.ctx).unwrap().ty(self.ctx);
                             let mopd = self.gen_load(ty, memloc);
                             self.lowered.insert(inst.result(self.ctx).unwrap(), mopd);
@@ -343,7 +378,12 @@ impl<'s> CodegenContext<'s> {
                                 self.gen_ret_move(val);
                             }
                         }
-                        ir::InstKind::Phi => todo!(),//iakke
+                        ir::InstKind::Phi => {
+                            let dst = inst.result(self.ctx).unwrap();
+                            let incomings: Vec<_> = inst.incoming_iter(self.ctx).collect();
+                            let mop = self.gen_phi(&dst, incomings);
+                            self.lowered.insert(dst, mop);
+                        }
                         ir::InstKind::GetElementPtr { bound_ty } => {
                             let base = inst.operand(&self.ctx, 0);
                             let offsets = inst.operand_iter(&self.ctx).skip(1).collect();
@@ -389,11 +429,8 @@ impl<'s> CodegenContext<'s> {
                                 // Unconditional branch.
                                 let target = inst.successor(self.ctx, 0);
                                 let target_block = self.blocks[&target];
-                                let j = MInst::j(&mut self.mctx, None, target_block);
+                                let j = MInst::j(&mut self.mctx, target_block);
                                 mblock.push_back(&mut self.mctx, j).unwrap();
-                            } else {
-                                // TODO: Handle conditional branch.
-                                todo!()
                             }
                         }
                         ir::InstKind::CondBr => {
@@ -418,20 +455,48 @@ impl<'s> CodegenContext<'s> {
                             // 调用 gen_cond_branch 方法生成条件分支指令
                             self.gen_cond_branch(cond, then_block, else_block, end_block);
                         }
-                        ir::InstKind::Cast { op } => todo!(),//iakke
+                        ir::InstKind::Cast { op } => {
+                            let src = inst.operand(self.ctx, 0);
+                            let dst = inst.result(self.ctx).unwrap();
+                            let mopd = self.gen_cast(op, &src, &dst);
+                            self.lowered.insert(dst, mopd);
+                        }
                     }
                 }
             }
+            // sp adjustment
+            let offset = -(mfunc.storage_stack_size(&self.mctx) as i64);
+            if offset != 0 {
+                let addi = MInst::raw_alu_rri(
+                    &mut self.mctx,
+                    AluOpRRI::Addi,
+                    regs::sp().into(),
+                    regs::sp().into(),
+                    Imm12::try_from_i64(offset).unwrap(),
+                );
+                mfunc
+                    .iter(&self.mctx)
+                    .nth(0)
+                    .unwrap()
+                    .push_front(&mut self.mctx, addi)
+                    .unwrap();
+            }
+
+            // clear the lowered map
+            self.lowered.clear();
         }
-        
+
         // regalloc
         // self.regalloc();
         // self.after_regalloc();
+
+        // set arch
+        self.mctx.set_arch("rv64i2p1_m2p0_a2p1_f2p2_d2p2_c2p0_zicsr2p0");
     }
 
     pub fn regalloc(&mut self) {
         for function in self.funcs.values() {
-            let mut stack_offset: i64 = -8;  // 从 -8 开始，为 s0 预留空间
+            let mut stack_offset: i64 = -8; // 从 -8 开始，为 s0 预留空间
             let mut reg_map: HashMap<Reg, MemLoc> = HashMap::new();
             let mut temp_reg_counter: usize = 0;
 
@@ -455,10 +520,13 @@ impl<'s> CodegenContext<'s> {
                     if let Some(rd) = inst.def_reg(&self.mctx) {
                         if rd.is_vreg() && !reg_map.contains_key(&rd) {
                             stack_offset -= 8;
-                            reg_map.insert(rd, MemLoc::RegOffset {
-                                base: regs::sp().into(),
-                                offset: stack_offset
-                            });
+                            reg_map.insert(
+                                rd,
+                                MemLoc::RegOffset {
+                                    base: regs::sp().into(),
+                                    offset: stack_offset,
+                                },
+                            );
                         }
                     }
                 }
@@ -475,10 +543,10 @@ impl<'s> CodegenContext<'s> {
                 while let Some(mut inst) = curr_inst {
                     let next_inst = inst.next(&self.mctx);
                     temp_reg_counter = 0;
-                    
+
                     // 收集所有需要处理的寄存器
                     let mut regs_to_process = Vec::new();
-                    
+
                     // 1. 收集使用的寄存器
                     let use_regs = inst.use_regs(&self.mctx);
                     for use_reg in use_regs {
@@ -500,20 +568,20 @@ impl<'s> CodegenContext<'s> {
 
                     // 3. 处理所有寄存器
                     let mut reg_mapping = HashMap::new();
-                    
+
                     // 先处理所有load
                     for (vreg, stack_loc, is_use) in regs_to_process.iter() {
                         if *is_use {
                             let temp_reg = get_next_temp_reg(&mut temp_reg_counter);
                             reg_mapping.insert(*vreg, temp_reg);
-                            
+
                             let (load, _) = MInst::load(&mut self.mctx, LoadOp::Lw, *stack_loc);
                             // 修改load指令使用正确的目标寄存器
                             match load.kind_mut(&mut self.mctx) {
                                 MInstKind::Load { rd, .. } => *rd = temp_reg,
                                 _ => unreachable!(),
                             }
-                            inst.insert_before(&mut self.mctx, load);
+                            inst.insert_before(&mut self.mctx, load).unwrap();
                         }
                     }
 
@@ -527,9 +595,10 @@ impl<'s> CodegenContext<'s> {
                         if !is_use {
                             let temp_reg = get_next_temp_reg(&mut temp_reg_counter);
                             inst.replace_reg(&mut self.mctx, vreg, temp_reg);
-                            
-                            let store = MInst::store(&mut self.mctx, StoreOp::Sw, temp_reg, stack_loc);
-                            inst.insert_after(&mut self.mctx, store);
+
+                            let store =
+                                MInst::store(&mut self.mctx, StoreOp::Sw, temp_reg, stack_loc);
+                            inst.insert_after(&mut self.mctx, store).unwrap();
                         }
                     }
 
@@ -540,9 +609,9 @@ impl<'s> CodegenContext<'s> {
                 if block.next(&self.mctx).is_none() {
                     // 遍历最后一个基本块的所有指令
                     let mut curr_inst = block.head(&mut self.mctx);
-                    while let Some(mut inst) = curr_inst {
+                    while let Some(inst) = curr_inst {
                         let next_inst = inst.next(&self.mctx);
-                        
+
                         // 替换所有虚拟寄存器为 s0
                         match inst.kind_mut(&mut self.mctx) {
                             MInstKind::Load { rd, loc, .. } => {
@@ -566,23 +635,37 @@ impl<'s> CodegenContext<'s> {
                                 }
                             }
                             MInstKind::AluRRI { rd, rs, .. } => {
-                                if rd.is_vreg() { *rd = regs::s0().into(); }
-                                if rs.is_vreg() { *rs = regs::s0().into(); }
+                                if rd.is_vreg() {
+                                    *rd = regs::s0().into();
+                                }
+                                if rs.is_vreg() {
+                                    *rs = regs::s0().into();
+                                }
                             }
                             MInstKind::AluRRR { rd, rs1, rs2, .. } => {
-                                if rd.is_vreg() { *rd = regs::s0().into(); }
-                                if rs1.is_vreg() { *rs1 = regs::s0().into(); }
-                                if rs2.is_vreg() { *rs2 = regs::s0().into(); }
+                                if rd.is_vreg() {
+                                    *rd = regs::s0().into();
+                                }
+                                if rs1.is_vreg() {
+                                    *rs1 = regs::s0().into();
+                                }
+                                if rs2.is_vreg() {
+                                    *rs2 = regs::s0().into();
+                                }
                             }
-                            MInstKind::J { rd, rs, .. } => {
-                                if rd.is_vreg() { *rd = regs::s0().into(); }
+                            MInstKind::Jal { rd, rs, .. } => {
+                                if rd.is_vreg() {
+                                    *rd = regs::s0().into();
+                                }
                                 if let Some(r) = rs {
-                                    if r.is_vreg() { *r = regs::s0().into(); }
+                                    if r.is_vreg() {
+                                        *r = regs::s0().into();
+                                    }
                                 }
                             }
                             _ => {}
                         }
-                        
+
                         curr_inst = next_inst;
                     }
                 }
@@ -620,8 +703,8 @@ impl<'s> CodegenContext<'s> {
             // 将 Prologue 指令插入函数的头部，注意顺序
             let entry_block = function.head(&self.mctx);
             if let Some(block) = entry_block {
-                block.push_front(&mut self.mctx, prologue_store);  // 先插入 store
-                block.push_front(&mut self.mctx, prologue_addi);   // 再插入 addi
+                block.push_front(&mut self.mctx, prologue_store).unwrap(); // 先插入 store
+                block.push_front(&mut self.mctx, prologue_addi).unwrap(); // 再插入 addi
             }
 
             // 将 Epilogue 指令插入函数的尾部
@@ -636,7 +719,8 @@ impl<'s> CodegenContext<'s> {
                             base: regs::sp().into(),
                             offset: -8,
                         },
-                    ).0;
+                    )
+                    .0;
 
                     let epilogue_addi = MInst::raw_alu_rri(
                         &mut self.mctx,
@@ -653,8 +737,8 @@ impl<'s> CodegenContext<'s> {
                     }
 
                     // 先恢复 s0，再调整栈指针
-                    block.push_back(&mut self.mctx, epilogue_load);
-                    block.push_back(&mut self.mctx, epilogue_addi);
+                    block.push_back(&mut self.mctx, epilogue_load).unwrap();
+                    block.push_back(&mut self.mctx, epilogue_addi).unwrap();
                     break;
                 }
                 curr_block = block.next(&self.mctx);
@@ -669,6 +753,7 @@ impl<'s> CodegenContext<'s> {
     pub fn emit(&mut self) {
         // TODO: Emit the assembly code.
     }
+
     pub fn emit_global_data(&mut self, label: MLabel, ty: Ty, init_value: &ir::ConstantValue) {
         let size = (ty.bitwidth(self.ctx) + 7) / 8;
 
@@ -737,6 +822,7 @@ impl<'s> CodegenContext<'s> {
         // 添加到 `raw_data`
         self.mctx.add_raw_data(label, raw_data);
     }
+
     pub fn get_default_value(&self, ty: Ty) -> ir::ConstantValue {
         match ty.kind(self.ctx) {
             ir::TyData::Int1 => ir::ConstantValue::Int1 {
@@ -1503,19 +1589,22 @@ impl<'s> CodegenContext<'s> {
     /// return: The register that stores the return value.
     pub fn gen_ret_move(&mut self, val: Value) -> Reg {
         let curr_block = self.curr_block.unwrap();
+        let curr_func = self.curr_func.unwrap();
 
-        // We only handle reg here, you need to handle other cases.
-        let src = self.reg_from_value(&val);
-
-        // addi a0, src, 0
+        // addi sp, sp, stack_size
+        let stack_size = curr_func.storage_stack_size(&self.mctx);
         let mv = MInst::raw_alu_rri(
             &mut self.mctx,
             AluOpRRI::Addi,
-            regs::a0().into(),
-            src,
-            Imm12::try_from_i64(0).unwrap(),
+            regs::sp().into(),
+            regs::sp().into(),
+            Imm12::try_from_u64(stack_size).unwrap(),
         );
         curr_block.push_back(&mut self.mctx, mv).unwrap();
+
+        // add ret
+        let ret = MInst::ret(&mut self.mctx);
+        curr_block.push_back(&mut self.mctx, ret).unwrap();
 
         regs::a0().into()
     }
@@ -1543,10 +1632,10 @@ impl<'s> CodegenContext<'s> {
             );
             curr_block.push_back(&mut self.mctx, bnez).unwrap();
 
-            let j_else = MInst::j(&mut self.mctx, None, else_block);
+            let j_else = MInst::j(&mut self.mctx, else_block);
             curr_block.push_back(&mut self.mctx, j_else).unwrap();
 
-            let j_end = MInst::j(&mut self.mctx, None, end_block);
+            let j_end = MInst::j(&mut self.mctx, end_block);
             then_block.push_back(&mut self.mctx, j_end).unwrap();
         } else {
             let bnez = MInst::new(
@@ -1560,7 +1649,7 @@ impl<'s> CodegenContext<'s> {
             );
             curr_block.push_back(&mut self.mctx, bnez).unwrap();
 
-            let j_end = MInst::j(&mut self.mctx, None, end_block);
+            let j_end = MInst::j(&mut self.mctx, end_block);
             then_block.push_back(&mut self.mctx, j_end).unwrap();
         }
     }
@@ -1583,15 +1672,27 @@ impl<'s> CodegenContext<'s> {
         let curr_block = self.curr_block.unwrap();
 
         // Prepare arguments.
-        for arg in args {
-            let arg_reg = self.reg_from_value(&arg);
-            let mv = MInst::raw_alu_rri(
-                &mut self.mctx,
-                AluOpRRI::Addi,
-                regs::a0().into(),
-                arg_reg,
-                Imm12::try_from_i64(0).unwrap(),
-            );
+        for (index, arg) in args.iter().enumerate() {
+            let (arg_reg, arg_imm) = self.reg_or_imm_from_value(&arg);
+            let mv = if let Some(arg_reg) = arg_reg {
+                MInst::raw_alu_rri(
+                    &mut self.mctx,
+                    AluOpRRI::Addi,
+                    regs::get_arg(index).into(),
+                    arg_reg,
+                    Imm12::try_from_i64(0).unwrap(),
+                )
+            } else if let Some(arg_imm) = arg_imm {
+                MInst::raw_alu_rri(
+                    &mut self.mctx,
+                    AluOpRRI::Addi,
+                    regs::get_arg(index).into(),
+                    regs::zero().into(),
+                    arg_imm,
+                )
+            } else {
+                continue;
+            };
             curr_block.push_back(&mut self.mctx, mv).unwrap();
         }
 
@@ -1621,12 +1722,20 @@ impl<'s> CodegenContext<'s> {
     /// Return the result operand.
     pub fn gen_gep(&mut self, base: &Value, indices: Vec<Value>, bound_ty: &Ty) -> MOperand {
         let curr_block = self.curr_block.unwrap();
+        let curr_func = self.curr_func.unwrap();
 
         // Get the base register.
-        let base_reg = self.memloc_reg_from_value(&base);
+        let base_loc = self.memloc_from_value(&base);
+        let (base_reg, mut offset) = match base_loc {
+            MemLoc::RegOffset { base, offset } => (base, offset),
+            MemLoc::Slot { offset } => (
+                regs::sp().into(),
+                offset + curr_func.storage_stack_size(&self.mctx) as i64,
+            ),
+            MemLoc::Incoming { offset } => (regs::fp().into(), offset),
+        };
 
         // Calculate the offset.
-        let mut offset = 0;
         let mut ty = bound_ty.clone();
         for op in indices {
             let size = (ty.bitwidth(&self.ctx) + 7) / 8;
@@ -1637,7 +1746,7 @@ impl<'s> CodegenContext<'s> {
                     ConstantValue::Int1 { value, .. } => *value as i64,
                     _ => todo!(),
                 };
-                offset += value * size as i64;
+                offset -= value * size as i64;
             }
             if let Some((inner_ty, ..)) = ty.as_array(&self.ctx) {
                 ty = inner_ty;
@@ -1657,6 +1766,232 @@ impl<'s> CodegenContext<'s> {
 
         MOperand {
             ty,
+            kind: MOperandKind::Reg(dst_reg),
+        }
+    }
+
+    /// Generate a phi instruction and append it to the current block.
+    ///
+    /// phi: The phi instruction.
+    ///
+    /// Return the result operand.
+    pub fn gen_phi(&mut self, dst: &Value, incomings: Vec<(Block, Value)>) -> MOperand {
+        let dst_reg = match dst.ty(&self.ctx).kind(&self.ctx) {
+            TyData::Int1 | TyData::Int8 | TyData::Int32 => {
+                self.mctx.new_vreg(RegKind::General).into()
+            }
+            TyData::Float32 => self.mctx.new_vreg(RegKind::General).into(),
+            _ => unimplemented!("Unsupported phi type: {:?}", dst.ty(&self.ctx)),
+        };
+        for (block, val) in incomings {
+            let mblock = self.blocks.get(&block).unwrap();
+            if let Some(mop) = self.lowered.get(&val) {
+                let reg = match mop.kind {
+                    MOperandKind::Reg(reg) => reg,
+                    MOperandKind::Imm(.., imm) => {
+                        let raw_alu_rri = MInst::raw_alu_rri(
+                            &mut self.mctx,
+                            AluOpRRI::Addi,
+                            dst_reg,
+                            regs::zero().into(),
+                            Imm12::try_from_i64(imm).unwrap(),
+                        );
+                        mblock.push_back(&mut self.mctx, raw_alu_rri).unwrap();
+                        dst_reg
+                    }
+                    _ => todo!(),
+                };
+                // 更换寄存器
+                let minsts = mblock.iter(&self.mctx).collect::<Vec<_>>();
+                if reg != dst_reg {
+                    for inst in minsts {
+                        match inst.kind_mut(&mut self.mctx) {
+                            MInstKind::AluRRI { rd, rs, .. }
+                            | MInstKind::FpuMove { rd, rs, .. } => {
+                                if rd == &reg {
+                                    *rd = dst_reg;
+                                }
+                                if rs == &reg {
+                                    *rs = dst_reg;
+                                }
+                            }
+                            MInstKind::AluRRR { rd, rs1, rs2, .. }
+                            | MInstKind::FpuRRR { rd, rs1, rs2, .. } => {
+                                if rd == &reg {
+                                    *rd = dst_reg;
+                                }
+                                if rs1 == &reg {
+                                    *rs1 = dst_reg;
+                                }
+                                if rs2 == &reg {
+                                    *rs2 = dst_reg;
+                                }
+                            }
+                            MInstKind::Load { rd, .. }
+                            | MInstKind::Li { rd, .. }
+                            | MInstKind::La { rd, .. } => {
+                                if rd == &reg {
+                                    *rd = dst_reg;
+                                }
+                            }
+                            MInstKind::Store { rs, .. } => {
+                                if rs == &reg {
+                                    *rs = dst_reg;
+                                }
+                            }
+                            MInstKind::Jal { rd, rs, .. } => {
+                                if rd == &reg {
+                                    *rd = dst_reg;
+                                }
+                                if let Some(rs) = rs {
+                                    if rs == &reg {
+                                        *rs = dst_reg;
+                                    }
+                                }
+                            }
+                            MInstKind::Branch { rs1, rs2, .. } => {
+                                if rs1 == &reg {
+                                    *rs1 = dst_reg;
+                                }
+                                if rs2 == &reg {
+                                    *rs2 = dst_reg;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            self.lowered.insert(
+                val.clone(),
+                MOperand {
+                    ty: val.ty(self.ctx),
+                    kind: MOperandKind::Reg(dst_reg),
+                },
+            );
+        }
+
+        MOperand {
+            ty: dst.ty(&self.ctx),
+            kind: MOperandKind::Reg(dst_reg),
+        }
+    }
+
+    pub fn gen_cast(&mut self, op: &CastOp, src: &Value, dst: &Value) -> MOperand {
+        let curr_block = self.curr_block.unwrap();
+
+        let src_reg = self.reg_from_value(src);
+        let src_ty = src.ty(self.ctx);
+        let dst_ty = dst.ty(self.ctx);
+
+        let dst_reg = match op {
+            CastOp::Zext | CastOp::Sext => {
+                if matches!(src_ty.kind(&self.ctx), TyData::Float32)
+                    || matches!(dst_ty.kind(&self.ctx), TyData::Float32)
+                {
+                    unreachable!("zext and sext are not supported for float");
+                }
+                // 这样做的原因在于，load 指令会扩展载入的小数据类型
+                let dst_reg = self.mctx.new_vreg(RegKind::General).into();
+                let mv = MInst::raw_alu_rri(
+                    &mut self.mctx,
+                    AluOpRRI::Addi,
+                    dst_reg,
+                    src_reg,
+                    Imm12::try_from_i64(0).unwrap(),
+                );
+                curr_block.push_back(&mut self.mctx, mv).unwrap();
+                dst_reg
+            }
+            CastOp::Trunc => {
+                let dst_reg = self.mctx.new_vreg(RegKind::General).into();
+                let mv = MInst::raw_alu_rri(
+                    &mut self.mctx,
+                    AluOpRRI::Addi,
+                    dst_reg,
+                    src_reg,
+                    Imm12::try_from_i64(0).unwrap(),
+                );
+                curr_block.push_back(&mut self.mctx, mv).unwrap();
+                let (andi, dst_reg) = MInst::alu_rri(
+                    &mut self.mctx,
+                    AluOpRRI::Andi,
+                    dst_reg,
+                    Imm12::try_from_i64(-1 & ((1 << dst_ty.bitwidth(self.ctx)) - 1) as i64)
+                        .unwrap(),
+                );
+                curr_block.push_back(&mut self.mctx, andi).unwrap();
+                dst_reg
+            }
+            CastOp::Bitcast => match (src_ty.kind(&self.ctx), dst_ty.kind(&self.ctx)) {
+                (TyData::Float32, TyData::Float32) => {
+                    let dst_reg = self.mctx.new_vreg(RegKind::Float).into();
+                    let fmv = MInst::fpu_move(&mut self.mctx, FpuMoveOp::FmvS, dst_reg, src_reg);
+                    curr_block.push_back(&mut self.mctx, fmv).unwrap();
+                    dst_reg
+                }
+                (TyData::Float32, _) => {
+                    let dst_reg = self.mctx.new_vreg(RegKind::General).into();
+                    let fmv = MInst::fpu_move(&mut self.mctx, FpuMoveOp::FmvXW, dst_reg, src_reg);
+                    curr_block.push_back(&mut self.mctx, fmv).unwrap();
+                    dst_reg
+                }
+                (_, TyData::Float32) => {
+                    let dst_reg = self.mctx.new_vreg(RegKind::Float).into();
+                    let fmv = MInst::fpu_move(&mut self.mctx, FpuMoveOp::FmvWX, dst_reg, src_reg);
+                    curr_block.push_back(&mut self.mctx, fmv).unwrap();
+                    dst_reg
+                }
+                (TyData::Void, _) | (_, TyData::Void) => unreachable!(),
+                (TyData::Array { .. }, _)
+                | (_, TyData::Array { .. })
+                | (TyData::Func { .. }, _)
+                | (_, TyData::Func { .. })
+                | (TyData::Ptr { .. }, _)
+                | (_, TyData::Ptr { .. }) => {
+                    todo!("Unsupported cast: {:?} -> {:?}", src_ty, dst_ty)
+                }
+                _ => {
+                    let dst_reg = self.mctx.new_vreg(RegKind::General).into();
+                    let mv = MInst::raw_alu_rri(
+                        &mut self.mctx,
+                        AluOpRRI::Addi,
+                        dst_reg,
+                        src_reg,
+                        Imm12::try_from_i64(0).unwrap(),
+                    );
+                    curr_block.push_back(&mut self.mctx, mv).unwrap();
+                    dst_reg
+                }
+            },
+            CastOp::Fptoui => {
+                let dst_reg = self.mctx.new_vreg(RegKind::General).into();
+                let fmv = MInst::fpu_move(&mut self.mctx, FpuMoveOp::FmvWX, dst_reg, src_reg);
+                curr_block.push_back(&mut self.mctx, fmv).unwrap();
+                dst_reg
+            }
+            CastOp::Fptosi => {
+                let dst_reg = self.mctx.new_vreg(RegKind::General).into();
+                let fmv = MInst::fpu_move(&mut self.mctx, FpuMoveOp::FmvWX, dst_reg, src_reg);
+                curr_block.push_back(&mut self.mctx, fmv).unwrap();
+                dst_reg
+            }
+            CastOp::Uitofp => {
+                let dst_reg = self.mctx.new_vreg(RegKind::Float).into();
+                let fmv = MInst::fpu_move(&mut self.mctx, FpuMoveOp::FmvSX, dst_reg, src_reg);
+                curr_block.push_back(&mut self.mctx, fmv).unwrap();
+                dst_reg
+            }
+            CastOp::Sitofp => {
+                let dst_reg = self.mctx.new_vreg(RegKind::Float).into();
+                let fmv = MInst::fpu_move(&mut self.mctx, FpuMoveOp::FmvSX, dst_reg, src_reg);
+                curr_block.push_back(&mut self.mctx, fmv).unwrap();
+                dst_reg
+            }
+        };
+
+        MOperand {
+            ty: src.ty(self.ctx),
             kind: MOperandKind::Reg(dst_reg),
         }
     }
@@ -1754,6 +2089,7 @@ impl<'s> CodegenContext<'s> {
                 MOperandKind::Reg(reg) => (Some(reg), None),
                 MOperandKind::Imm(.., imm) => match ty.kind(&self.ctx) {
                     TyData::Int1 | TyData::Int8 | TyData::Int32 => {
+                        println!("try from i64: {}", imm);
                         if let Some(imm) = Imm12::try_from_i64(imm) {
                             (None, Some(imm))
                         } else {
@@ -1785,30 +2121,41 @@ impl<'s> CodegenContext<'s> {
             match &val.try_deref(self.ctx).unwrap().kind {
                 ir::ValueKind::Constant { value } => match value {
                     ir::ConstantValue::Int32 { value, .. } => {
-                        let (li, r) = MInst::li(&mut self.mctx, *value as u64);
-                        curr_block.push_back(&mut self.mctx, li).unwrap();
-                        (Some(r), None)
+                        if let Some(imm) = Imm12::try_from_i64(*value as i64) {
+                            (None, Some(imm))
+                        } else {
+                            let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                            curr_block.push_back(&mut self.mctx, li).unwrap();
+                            (Some(r), None)
+                        }
                     }
                     ir::ConstantValue::Int8 { value, .. } => {
-                        let (li, r) = MInst::li(&mut self.mctx, *value as u64);
-                        curr_block.push_back(&mut self.mctx, li).unwrap();
-                        (Some(r), None)
+                        if let Some(imm) = Imm12::try_from_i64(*value as i64) {
+                            (None, Some(imm))
+                        } else {
+                            let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                            curr_block.push_back(&mut self.mctx, li).unwrap();
+                            (Some(r), None)
+                        }
                     }
                     ir::ConstantValue::Int1 { value, .. } => {
-                        let (li, r) = MInst::li(&mut self.mctx, *value as u64);
-                        curr_block.push_back(&mut self.mctx, li).unwrap();
-                        (Some(r), None)
+                        if let Some(imm) = Imm12::try_from_i64(*value as i64) {
+                            (None, Some(imm))
+                        } else {
+                            let (li, r) = MInst::li(&mut self.mctx, *value as u64);
+                            curr_block.push_back(&mut self.mctx, li).unwrap();
+                            (Some(r), None)
+                        }
                     }
                     ir::ConstantValue::Float32 { value, .. } => {
                         let (li, r) = MInst::li(&mut self.mctx, *value as u64);
                         curr_block.push_back(&mut self.mctx, li).unwrap();
-                        (Some(r), None)
+                        let fs1 = self.mctx.new_vreg(RegKind::Float).into();
+                        let fmv = MInst::fpu_move(&mut self.mctx, FpuMoveOp::FmvSX, fs1, r);
+                        curr_block.push_back(&mut self.mctx, fmv).unwrap();
+                        (Some(fs1), None)
                     }
-                    ir::ConstantValue::Undef { .. } => {
-                        let (li, r) = MInst::li(&mut self.mctx, 0);
-                        curr_block.push_back(&mut self.mctx, li).unwrap();
-                        (Some(r), None)
-                    }
+                    ir::ConstantValue::Undef { .. } => (Some(regs::zero().into()), None),
                     _ => {
                         eprintln!("Unsupported constant: {:?}", value);
                         unreachable!()
@@ -1837,54 +2184,57 @@ impl<'s> CodegenContext<'s> {
         }
     }
 
-    pub fn memloc_reg_from_value(&mut self, val: &Value) -> Reg {
+    pub fn memloc_from_value(&mut self, val: &Value) -> MemLoc {
         let curr_block = self.curr_block.unwrap();
-        match &val.try_deref(self.ctx).unwrap().kind {
-            ir::ValueKind::Constant { value } => match value {
-                ir::ConstantValue::GlobalRef { name, .. } => {
-                    let (la, rd) = MInst::la(&mut self.mctx, &name);
-                    curr_block.push_back(&mut self.mctx, la).unwrap();
-                    match val.ty(&self.ctx).kind(&self.ctx) {
-                        TyData::Int1 | TyData::Int8 | TyData::Int32 => rd,
-                        TyData::Float32 => {
-                            let fs1 = self.mctx.new_vreg(RegKind::Float).into();
-                            let fmv = MInst::fpu_move(&mut self.mctx, FpuMoveOp::FmvSX, fs1, rd);
-                            curr_block.push_back(&mut self.mctx, fmv).unwrap();
-                            fs1
-                        }
-                        TyData::Ptr { .. } => rd,
-                        _ => todo!(),
-                    }
-                }
-                _ => {
-                    eprintln!("Unsupported constant: {:?}", value);
-                    unreachable!()
-                }
-            },
-            ir::ValueKind::InstResult { .. }
-            | ir::ValueKind::Param { .. }
-            | ir::ValueKind::Array { .. } => {
-                let mopd = self.lowered[&val];
-                match mopd.kind {
-                    MOperandKind::Reg(reg) => reg,
-                    MOperandKind::Imm(..) => todo!("Imm"),
-                    MOperandKind::Undef => regs::zero().into(),
-                    MOperandKind::Mem(loc) => {
-                        let loc = match loc {
-                            MemLoc::RegOffset { .. } => loc,
-                            MemLoc::Slot { offset, .. } => MemLoc::RegOffset {
-                                base: regs::sp().into(),
-                                offset: offset,
-                            },
-                            _ => todo!(),
+        let curr_func = self.curr_func.unwrap();
+        if let Some(mopd) = self.lowered.get(&val) {
+            match mopd.kind {
+                MOperandKind::Reg(reg) => MemLoc::RegOffset {
+                    base: reg,
+                    offset: 0,
+                },
+                MOperandKind::Imm(..) => todo!(),
+                MOperandKind::Undef => MemLoc::RegOffset {
+                    base: regs::zero().into(),
+                    offset: 0,
+                },
+                MOperandKind::Mem(loc) => match loc {
+                    MemLoc::RegOffset { .. } => loc,
+                    MemLoc::Slot { offset } => MemLoc::RegOffset {
+                        base: regs::sp().into(),
+                        offset: offset + curr_func.storage_stack_size(&self.mctx) as i64,
+                    },
+                    MemLoc::Incoming { offset } => MemLoc::RegOffset {
+                        base: regs::fp().into(),
+                        offset,
+                    },
+                },
+            }
+        } else {
+            match &val.try_deref(self.ctx).unwrap().kind {
+                ir::ValueKind::Constant { value } => match value {
+                    ir::ConstantValue::GlobalRef { name, .. } => {
+                        let (la, rd) = MInst::la(&mut self.mctx, &name);
+                        curr_block.push_back(&mut self.mctx, la).unwrap();
+                        let loc = MemLoc::RegOffset {
+                            base: rd,
+                            offset: 0,
                         };
-                        let mop = self.gen_load(val.ty(self.ctx), loc);
-                        match mop.kind {
-                            MOperandKind::Reg(reg) => reg,
-                            _ => todo!(),
-                        }
+                        self.lowered.insert(
+                            val.clone(),
+                            MOperand {
+                                ty: val.ty(self.ctx),
+                                kind: MOperandKind::Mem(loc),
+                            },
+                        );
+                        loc
                     }
-                }
+                    _ => {
+                        eprintln!("Unsupported constant: {:?}", value);
+                        unreachable!()
+                    }
+                },
+                _ => todo!(),
             }
         }
     }
@@ -1892,8 +2242,8 @@ impl<'s> CodegenContext<'s> {
 
 #[cfg(test)]
 mod tests {
-    use crate::frontend::{irgen, preprocess, SysYParser};
     use super::*;
+    use crate::frontend::{irgen, preprocess, SysYParser};
 
     #[test]
     fn test_register_allocation() {
