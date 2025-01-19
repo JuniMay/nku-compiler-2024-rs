@@ -442,21 +442,7 @@ impl<'s> CodegenContext<'s> {
                             let then_dst = inst.successor(self.ctx, 0); // 条件为真时跳转的目标块
                             let else_dst = inst.successor(self.ctx, 1); // 条件为假时跳转的目标块（如果存在）
 
-                            // 获取对应的基本块
-                            let then_block = self.blocks[&then_dst];
-
-                            // 处理 else 块（如果映射失败，则为 None）
-                            let else_block = if self.blocks.contains_key(&else_dst) {
-                                Some(self.blocks[&else_dst])
-                            } else {
-                                None
-                            };
-
-                            // 获取当前块的下一个块，作为结束块
-                            let end_block = self.blocks[&block.next(self.ctx).unwrap()];
-
-                            // 调用 gen_cond_branch 方法生成条件分支指令
-                            self.gen_cond_branch(cond, then_block, else_block, end_block);
+                            self.gen_cond_branch(&cond, &then_dst, &else_dst);
                         }
                         ir::InstKind::Cast { op } => {
                             let src = inst.operand(self.ctx, 0);
@@ -610,8 +596,12 @@ impl<'s> CodegenContext<'s> {
                     for (vreg, stack_loc, is_use) in regs_to_process.iter() {
                         if *is_use {
                             let temp_reg = match reg_kind {
-                                RegKind::General => get_next_temp_reg(&mut temp_reg_counter, RegKind::General),
-                                RegKind::Float => get_next_temp_reg(&mut temp_freg_counter, RegKind::Float),
+                                RegKind::General => {
+                                    get_next_temp_reg(&mut temp_reg_counter, RegKind::General)
+                                }
+                                RegKind::Float => {
+                                    get_next_temp_reg(&mut temp_freg_counter, RegKind::Float)
+                                }
                             };
                             reg_mapping.insert(*vreg, temp_reg);
 
@@ -621,7 +611,7 @@ impl<'s> CodegenContext<'s> {
                                     RegKind::General => LoadOp::Ld,
                                     RegKind::Float => LoadOp::Fld,
                                 },
-                                *stack_loc
+                                *stack_loc,
                             );
                             match load.kind_mut(&mut self.mctx) {
                                 MInstKind::Load { rd, .. } => *rd = temp_reg,
@@ -640,8 +630,12 @@ impl<'s> CodegenContext<'s> {
                     for (vreg, stack_loc, is_use) in regs_to_process {
                         if !is_use {
                             let temp_reg = match reg_kind {
-                                RegKind::General => get_next_temp_reg(&mut temp_reg_counter, RegKind::General),
-                                RegKind::Float => get_next_temp_reg(&mut temp_freg_counter, RegKind::Float),
+                                RegKind::General => {
+                                    get_next_temp_reg(&mut temp_reg_counter, RegKind::General)
+                                }
+                                RegKind::Float => {
+                                    get_next_temp_reg(&mut temp_freg_counter, RegKind::Float)
+                                }
                             };
                             inst.replace_reg(&mut self.mctx, vreg, temp_reg);
 
@@ -652,7 +646,7 @@ impl<'s> CodegenContext<'s> {
                                     RegKind::Float => StoreOp::Fsd,
                                 },
                                 temp_reg,
-                                stack_loc
+                                stack_loc,
                             );
                             inst.insert_after(&mut self.mctx, store).unwrap();
                         }
@@ -703,7 +697,7 @@ impl<'s> CodegenContext<'s> {
                 let mut curr_inst = block.head(&self.mctx);
                 while let Some(inst) = curr_inst {
                     let next_inst = inst.next(&self.mctx);
-                    
+
                     // 如果是ret指令，在其前面插入epilogue
                     if matches!(inst.kind(&self.mctx), MInstKind::Ret) {
                         // 恢复s0
@@ -715,13 +709,13 @@ impl<'s> CodegenContext<'s> {
                                 offset: -8,
                             },
                         );
-                        
+
                         // 修改load指令的目标寄存器为s0
                         match epilogue_load.kind_mut(&mut self.mctx) {
                             MInstKind::Load { rd, .. } => *rd = regs::s0().into(),
                             _ => unreachable!(),
                         }
-                        
+
                         // 恢复栈指针
                         let epilogue_addi = MInst::raw_alu_rri(
                             &mut self.mctx,
@@ -734,7 +728,7 @@ impl<'s> CodegenContext<'s> {
                         inst.insert_before(&mut self.mctx, epilogue_load).unwrap();
                         inst.insert_before(&mut self.mctx, epilogue_addi).unwrap();
                     }
-                    
+
                     curr_inst = next_inst;
                 }
                 curr_block = block.next(&self.mctx);
@@ -1605,51 +1599,6 @@ impl<'s> CodegenContext<'s> {
         regs::a0().into()
     }
 
-    pub fn gen_cond_branch(
-        &mut self,
-        cond: ir::Value,
-        then_block: MBlock,
-        else_block: Option<MBlock>,
-        end_block: MBlock,
-    ) {
-        let curr_block = self.curr_block.unwrap();
-
-        let cond_reg = self.reg_from_value(&cond);
-
-        if let Some(else_block) = else_block {
-            let bnez = MInst::new(
-                &mut self.mctx,
-                MInstKind::Branch {
-                    op: BranchOp::Bne,
-                    rs1: cond_reg,
-                    rs2: regs::zero().into(),
-                    target: then_block,
-                },
-            );
-            curr_block.push_back(&mut self.mctx, bnez).unwrap();
-
-            let j_else = MInst::j(&mut self.mctx, else_block);
-            curr_block.push_back(&mut self.mctx, j_else).unwrap();
-
-            let j_end = MInst::j(&mut self.mctx, end_block);
-            then_block.push_back(&mut self.mctx, j_end).unwrap();
-        } else {
-            let bnez = MInst::new(
-                &mut self.mctx,
-                MInstKind::Branch {
-                    op: BranchOp::Bne,
-                    rs1: cond_reg,
-                    rs2: regs::zero().into(),
-                    target: then_block,
-                },
-            );
-            curr_block.push_back(&mut self.mctx, bnez).unwrap();
-
-            let j_end = MInst::j(&mut self.mctx, end_block);
-            then_block.push_back(&mut self.mctx, j_end).unwrap();
-        }
-    }
-
     // TODO: Add more helper functions.
 
     /// Generate a function call instruction and append it to the current block.
@@ -1667,7 +1616,7 @@ impl<'s> CodegenContext<'s> {
     ) -> Option<MOperand> {
         let curr_block = self.curr_block.unwrap();
 
-        // Prepare arguments
+        // Prepare arguments.
         for (index, arg) in args.iter().enumerate() {
             let (arg_reg, arg_imm) = self.reg_or_imm_from_value(&arg);
             let mv = if let Some(arg_reg) = arg_reg {
@@ -1692,17 +1641,18 @@ impl<'s> CodegenContext<'s> {
             curr_block.push_back(&mut self.mctx, mv).unwrap();
         }
 
-        // Call function
+        // Ensure the callee function exists.
         assert!(self.funcs.contains_key(callee_name));
+
+        // jal func
         let call = MInst::call(&mut self.mctx, MLabel::from(callee_name.clone()));
         curr_block.push_back(&mut self.mctx, call).unwrap();
 
-        // Handle return value if needed
+        // Handle return value.
         if let Some(ret) = ret {
-            let ret_reg = regs::a0().into();
             Some(MOperand {
                 ty: ret.ty(self.ctx),
-                kind: MOperandKind::Reg(ret_reg),
+                kind: MOperandKind::Reg(self.gen_ret_move(ret)),
             })
         } else {
             None
@@ -1991,6 +1941,26 @@ impl<'s> CodegenContext<'s> {
         }
     }
 
+    pub fn gen_cond_branch(&mut self, cond: &Value, then_block: &Block, else_block: &Block) {
+        let curr_block = self.curr_block.unwrap();
+        let cond_reg = self.reg_from_value(cond);
+
+        let then_block = self.blocks.get(then_block).unwrap();
+        let else_block = self.blocks.get(else_block).unwrap();
+
+        let br = MInst::branch(
+            &mut self.mctx,
+            BranchOp::Beq,
+            cond_reg,
+            regs::zero().into(),
+            *else_block,
+        );
+        curr_block.push_back(&mut self.mctx, br).unwrap();
+
+        let j = MInst::j(&mut self.mctx, *then_block);
+        curr_block.push_back(&mut self.mctx, j).unwrap();
+    }
+
     pub fn reg_from_value(&mut self, val: &Value) -> Reg {
         let curr_block = self.curr_block.unwrap();
         let ty = val.ty(self.ctx);
@@ -2263,6 +2233,14 @@ mod tests {
         codegen_ctx.mctx_mut().set_arch("rv64imafdc_zba_zbb");
 
         codegen_ctx.codegen();
+        println!("\n=== Before Register Allocation ===");
+        println!("{}", codegen_ctx.mctx().display());
+
+        codegen_ctx.regalloc();
+        println!("\n=== After Register Allocation ===");
+        println!("{}", codegen_ctx.mctx().display());
+
+        codegen_ctx.after_regalloc();
         println!("\n=== Final Assembly ===");
         println!("{}", codegen_ctx.finish().display());
     }

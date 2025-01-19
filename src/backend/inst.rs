@@ -508,6 +508,30 @@ impl MInst {
         mctx.alloc(data)
     }
 
+    /// Create a new `branch` instruction.
+    ///
+    /// op: CompareOp
+    /// rs1: The first source register.
+    /// rs2: The second source register.
+    /// target: The target block.
+    ///
+    /// Returns the instruction.
+    pub fn branch(mctx: &mut MContext, op: BranchOp, rs1: Reg, rs2: Reg, target: MBlock) -> Self {
+        let kind = MInstKind::Branch {
+            op,
+            rs1,
+            rs2,
+            target,
+        };
+        let data = MInstData {
+            kind,
+            next: None,
+            prev: None,
+            parent: None,
+        };
+        mctx.alloc(data)
+    }
+
     /// Create a new `jump` instruction.
     ///
     /// target: The target block.
