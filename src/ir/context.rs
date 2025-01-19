@@ -1,6 +1,6 @@
 use std::fmt;
 
-use super::block::BlockData;
+use super::{block::BlockData, Global};
 use super::func::FuncData;
 use super::global::GlobalData;
 use super::inst::InstData;
@@ -33,7 +33,9 @@ pub struct Context {
 }
 
 impl Default for Context {
-    fn default() -> Self { Self::new(4) }
+    fn default() -> Self {
+        Self::new(4)
+    }
 }
 
 impl Context {
@@ -49,10 +51,20 @@ impl Context {
         }
     }
 
-    pub fn set_target_info(&mut self, target: TargetInfo) { self.target = target; }
+    pub fn set_target_info(&mut self, target: TargetInfo) {
+        self.target = target;
+    }
 
     pub fn funcs(&self) -> impl Iterator<Item = Func> + '_ {
         self.funcs.iter().map(|data| data.self_ptr)
+    }
+
+    pub fn globals(&self) -> impl Iterator<Item = Global> + '_ {
+        self.globals.iter().map(|data| data.self_ptr)
+    }
+
+    pub fn ptr_size(&self) -> u32 {
+        self.target.ptr_size
     }
 }
 

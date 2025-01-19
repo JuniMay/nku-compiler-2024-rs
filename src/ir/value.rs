@@ -7,7 +7,9 @@ use super::func::Func;
 use super::inst::Inst;
 use super::ty::Ty;
 use crate::infra::storage::{Arena, ArenaPtr, GenericPtr, Idx};
+use crate::ir::TyData;
 
+#[derive(Debug, Clone)]
 pub enum ConstantValue {
     /// The undefined value.
     Undef { ty: Ty },
@@ -19,6 +21,8 @@ pub enum ConstantValue {
     Int8 { ty: Ty, value: i8 },
     /// A 32-bit integer constant.
     Int32 { ty: Ty, value: i32 },
+    /// A 32-bit floating-point constant.
+    Float32 { ty: Ty, value: u64 },
     /// An array constant.
     Array { ty: Ty, elems: Vec<ConstantValue> },
     /// Global variables/functions are treated as constants, because their
@@ -41,6 +45,7 @@ impl ConstantValue {
             ConstantValue::Int1 { ty, .. } => *ty,
             ConstantValue::Int8 { ty, .. } => *ty,
             ConstantValue::Int32 { ty, .. } => *ty,
+            ConstantValue::Float32 { ty, .. } => *ty,
             ConstantValue::Array { ty, .. } => *ty,
             ConstantValue::GlobalRef { ty, .. } => *ty,
         }
@@ -61,12 +66,29 @@ impl ConstantValue {
         ConstantValue::Int32 { ty: i32, value }
     }
 
-    pub fn global_ref(ctx: &mut Context, name: String, value_ty: Ty) -> ConstantValue {
-        let ty = Ty::ptr(ctx);
-        ConstantValue::GlobalRef { ty, name, value_ty }
+    pub fn f32(ctx: &mut Context, value: f32) -> ConstantValue {
+        //iakkefloattest origin:f32
+        let f64_ty = Ty::f32(ctx);
+        // XXX:此处应该用f32还是int32，取决与LLVM IR中的实现
+        ConstantValue::Float32 {
+            ty: f64_ty,
+            value: (value as f32 as f64).to_bits(),
+        }
     }
 
-    pub fn undef(ctx: &mut Context, ty: Ty) -> ConstantValue { ConstantValue::Undef { ty } }
+    pub fn undef(ctx: &mut Context, ty: Ty) -> ConstantValue {
+        ConstantValue::Undef { ty }
+    }
+
+    pub fn array(ctx: &mut Context, ty: Ty, elems: Vec<ConstantValue>) -> ConstantValue {
+        let array = Ty::array(ctx, ty, elems.len());
+        ConstantValue::Array { ty: array, elems }
+    }
+
+    pub fn global_ref(ctx: &mut Context, name: String, value_ty: Ty) -> ConstantValue {
+        let ty = Ty::ptr(ctx, None);
+        ConstantValue::GlobalRef { ty, name, value_ty }
+    }
 
     pub fn to_string(&self, ctx: &Context, typed: bool) -> String {
         let mut s = if typed {
@@ -76,20 +98,25 @@ impl ConstantValue {
         };
 
         match self {
-            ConstantValue::Undef { .. } => s.push_str("undef"),
+            ConstantValue::Undef { ty } => s.push_str(&format!("{} undef", ty.display(ctx))),
             ConstantValue::AggregateZero { .. } => s.push_str("zeroinitializer"),
             ConstantValue::Int1 { value, .. } => s.push_str(&value.to_string()),
             ConstantValue::Int8 { value, .. } => s.push_str(&value.to_string()),
             ConstantValue::Int32 { value, .. } => s.push_str(&value.to_string()),
+            ConstantValue::Float32 { value, .. } => s.push_str(&format!("0x{:01$x}", value, 16)), //
             ConstantValue::Array { elems, .. } => {
-                s.push('[');
-                for (i, elem) in elems.iter().enumerate() {
-                    if i > 0 {
-                        s.push_str(", ");
+                if self.is_zero_array() {
+                    s = s + "zeroinitializer";
+                } else {
+                    s.push('[');
+                    for (i, elem) in elems.iter().enumerate() {
+                        if i > 0 {
+                            s.push_str(", ");
+                        }
+                        s.push_str(&elem.to_string(ctx, true));
                     }
-                    s.push_str(&elem.to_string(ctx, true));
+                    s.push(']');
                 }
-                s.push(']');
             }
             ConstantValue::GlobalRef { name, .. } => {
                 s.push('@');
@@ -99,8 +126,20 @@ impl ConstantValue {
 
         s
     }
+
+    pub fn is_zero_array(&self) -> bool {
+        match self {
+            ConstantValue::Array { elems, .. } => elems.iter().all(|elem| elem.is_zero_array()),
+            ConstantValue::Int1 { value, .. } => !*value,
+            ConstantValue::Int8 { value, .. } => *value == 0,
+            ConstantValue::Int32 { value, .. } => *value == 0,
+            ConstantValue::Float32 { value, .. } => *value == 0,
+            _ => false,
+        }
+    }
 }
 
+#[derive(Debug)]
 pub enum ValueKind {
     /// The value is the result of an instruction.
     InstResult { inst: Inst, ty: Ty },
@@ -108,6 +147,8 @@ pub enum ValueKind {
     Param { func: Func, ty: Ty, index: u32 },
     /// The value is an invariant constant.
     Constant { value: ConstantValue },
+    /// The value is an array constant.
+    Array { ty: Ty, elems: Vec<Value> },
 }
 
 pub struct ValueData {
@@ -118,6 +159,12 @@ pub struct ValueData {
     /// This is only useful when the value is an instruction result or a
     /// function parameter. For constants, the users are not tracked.
     users: HashSet<User<Value>>,
+}
+
+impl ValueData {
+    pub fn kind(&self) -> &ValueKind {
+        &self.kind
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -142,14 +189,51 @@ impl<'ctx> fmt::Display for DisplayValue<'ctx> {
                 }
             }
             ValueKind::Constant { ref value } => {
-                write!(f, "{}", value.to_string(self.ctx, self.with_type))
+                write!(f, "{}", value.to_string(self.ctx, self.with_type)) //非全局变量处设置const输出---iakke
+            }
+            ValueKind::Array { ty, ref elems } => {
+                write!(f, "{} ", ty.display(self.ctx))?;
+                if elems.len() == 0 {
+                    write!(f, "zeroinitializer")?;
+                    return Ok(());
+                }
+                write!(f, "[")?;
+                for (i, elem) in elems.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    match &elem.try_deref(self.ctx).unwrap().kind {
+                        ValueKind::Constant { value } => {
+                            write!(f, "{}", value.to_string(self.ctx, true))?
+                        }
+                        ValueKind::InstResult { inst: _, ty: _ } => {
+                            if let TyData::Array { elem, .. } = ty.try_deref(self.ctx).unwrap() {
+                                write!(f, "{} ", elem.display(self.ctx))?
+                            }
+                            // write!(f, "{} ", ty.display(self.ctx))?;
+                            write!(f, "{}", elem.display(self.ctx, false))?
+                        }
+                        ValueKind::Param {
+                            func: _,
+                            ty: _,
+                            index: _,
+                        } => {
+                            write!(f, "{} ", ty.display(self.ctx))?;
+                            write!(f, "{}", elem.display(self.ctx, false))?
+                        }
+                        ValueKind::Array { ty: _, elems: _ } => {
+                            write!(f, "{}", elem.display(self.ctx, true))?
+                        }
+                    }
+                }
+                write!(f, "]")
             }
         }
     }
 }
 
 impl Value {
-    fn new(ctx: &mut Context, kind: ValueKind) -> Self {
+    pub fn new(ctx: &mut Context, kind: ValueKind) -> Self {
         ctx.alloc_with(|self_ptr| ValueData {
             _self_ptr: self_ptr,
             kind,
@@ -162,7 +246,12 @@ impl Value {
             ValueKind::InstResult { ty, .. } => ty,
             ValueKind::Param { ty, .. } => ty,
             ValueKind::Constant { ref value } => value.ty(),
+            ValueKind::Array { ty, .. } => ty,
         }
+    }
+
+    pub fn kind<'a>(&'a self, ctx: &'a Context) -> &'a ValueKind {
+        &self.try_deref(ctx).unwrap().kind
     }
 
     pub(super) fn new_param(ctx: &mut Context, func: Func, ty: Ty, index: u32) -> Self {
@@ -171,6 +260,13 @@ impl Value {
 
     pub(super) fn new_inst_result(ctx: &mut Context, inst: Inst, ty: Ty) -> Self {
         Self::new(ctx, ValueKind::InstResult { inst, ty })
+    }
+
+    pub fn inst(&self, ctx: &Context) -> Option<Inst> {
+        match self.try_deref(ctx).unwrap().kind {
+            ValueKind::InstResult { inst, .. } => Some(inst),
+            _ => None,
+        }
     }
 
     pub fn display(self, ctx: &Context, with_type: bool) -> DisplayValue {
@@ -200,14 +296,50 @@ impl Value {
         Self::new(ctx, ValueKind::Constant { value })
     }
 
+    pub fn f32(ctx: &mut Context, value: f32) -> Self {
+        //iakkefloattest origin:f32
+        let value = ConstantValue::f32(ctx, value);
+        Self::new(ctx, ValueKind::Constant { value })
+    }
+
+    pub fn undef(ctx: &mut Context, ty: Ty) -> Self {
+        let value = ConstantValue::Undef { ty };
+        Self::new(ctx, ValueKind::Constant { value })
+    }
+
+    pub fn array(ctx: &mut Context, ty: Ty, elems: Vec<Self>) -> Self {
+        let mut vals = Vec::new();
+        for elem in elems {
+            vals.push(elem);
+        }
+        let array = Ty::array(ctx, ty, vals.len());
+        Self::new(
+            ctx,
+            ValueKind::Array {
+                ty: array,
+                elems: vals,
+            },
+        )
+    }
+
+    pub fn const_array(ctx: &mut Context, ty: Ty, elems: Vec<ConstantValue>) -> Self {
+        let value = ConstantValue::array(ctx, ty, elems);
+        Self::new(ctx, ValueKind::Constant { value })
+    }
+
     pub fn global_ref(ctx: &mut Context, name: String, value_ty: Ty) -> Self {
         let value = ConstantValue::global_ref(ctx, name, value_ty);
         Self::new(ctx, ValueKind::Constant { value })
     }
 
-    pub fn undef(ctx: &mut Context, ty: Ty) -> Self {
-        let value = ConstantValue::undef(ctx, ty);
-        Self::new(ctx, ValueKind::Constant { value })
+    pub fn zero(ctx: &mut Context, ty: Ty) -> Self {
+        match ty.try_deref(ctx).unwrap() {
+            TyData::Int1 => Self::i1(ctx, false),
+            TyData::Int8 => Self::i8(ctx, 0),
+            TyData::Int32 => Self::i32(ctx, 0),
+            TyData::Float32 => Self::f32(ctx, 0.0),
+            _ => unimplemented!(),
+        }
     }
 }
 
@@ -224,9 +356,13 @@ impl Arena<Value> for Context {
         Value(self.values.alloc_with(|ptr| f(Value(ptr))))
     }
 
-    fn try_dealloc(&mut self, ptr: Value) -> Option<ValueData> { self.values.try_dealloc(ptr.0) }
+    fn try_dealloc(&mut self, ptr: Value) -> Option<ValueData> {
+        self.values.try_dealloc(ptr.0)
+    }
 
-    fn try_deref(&self, ptr: Value) -> Option<&ValueData> { self.values.try_deref(ptr.0) }
+    fn try_deref(&self, ptr: Value) -> Option<&ValueData> {
+        self.values.try_deref(ptr.0)
+    }
 
     fn try_deref_mut(&mut self, ptr: Value) -> Option<&mut ValueData> {
         self.values.try_deref_mut(ptr.0)

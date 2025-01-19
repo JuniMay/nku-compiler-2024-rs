@@ -2,5 +2,7 @@
 /output
 /.vscode
 /.idea
+
+/tests/testcase/a/
 .venv/
 .DS_Store

@@ -1,3 +1,4 @@
+use core::panic;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -6,8 +7,9 @@ use super::context::Context;
 use super::def_use::{Operand, Usable};
 use super::ty::Ty;
 use super::value::Value;
+use super::TyData;
 use crate::infra::linked_list::LinkedListNode;
-use crate::infra::storage::{Arena, ArenaPtr, GenericPtr};
+use crate::infra::storage::{Arena, ArenaPtr, GenericPtr, Idx};
 
 #[derive(Debug, Clone, Copy)]
 pub enum IntCmpCond {
@@ -67,11 +69,68 @@ impl fmt::Display for IntBinaryOp {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
+pub enum FloatBinaryOp {
+    Fadd,
+    Fsub,
+    Fmul,
+    Fdiv,
+    FCmp { cond: FloatCmpCond },
+}
+
+impl fmt::Display for FloatBinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            FloatBinaryOp::Fadd => write!(f, "fadd"),
+            FloatBinaryOp::Fsub => write!(f, "fsub"),
+            FloatBinaryOp::Fmul => write!(f, "fmul"),
+            FloatBinaryOp::Fdiv => write!(f, "fdiv"),
+            FloatBinaryOp::FCmp { cond } => write!(f, "fcmp {}", cond),
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum FloatCmpCond {
+    Oeq,
+    Olt,
+    Ole,
+    One,
+    Ord,
+    Ueq,
+    Ult,
+    Ule,
+    Une,
+    Uno,
+}
+
+impl fmt::Display for FloatCmpCond {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            FloatCmpCond::Oeq => write!(f, "oeq"),
+            FloatCmpCond::Olt => write!(f, "olt"),
+            FloatCmpCond::Ole => write!(f, "ole"),
+            FloatCmpCond::One => write!(f, "one"),
+            FloatCmpCond::Ord => write!(f, "ord"),
+            FloatCmpCond::Ueq => write!(f, "ueq"),
+            FloatCmpCond::Ult => write!(f, "ult"),
+            FloatCmpCond::Ule => write!(f, "ule"),
+            FloatCmpCond::Une => write!(f, "une"),
+            FloatCmpCond::Uno => write!(f, "uno"),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum CastOp {
     Zext,
     Sext,
     Trunc,
+    Bitcast,
+    Fptoui,
+    Fptosi,
+    Uitofp,
+    Sitofp,
 }
 
 impl fmt::Display for CastOp {
@@ -80,6 +139,11 @@ impl fmt::Display for CastOp {
             CastOp::Zext => write!(f, "zext"),
             CastOp::Sext => write!(f, "sext"),
             CastOp::Trunc => write!(f, "trunc"),
+            CastOp::Bitcast => write!(f, "bitcast"),
+            CastOp::Fptoui => write!(f, "fptoui"),
+            CastOp::Fptosi => write!(f, "fptosi"),
+            CastOp::Uitofp => write!(f, "uitofp"),
+            CastOp::Sitofp => write!(f, "sitofp"),
         }
     }
 }
@@ -103,6 +167,9 @@ pub enum InstKind {
     IntBinary {
         op: IntBinaryOp,
     },
+    FloatBinary {
+        op: FloatBinaryOp,
+    },
     Cast {
         op: CastOp,
     },
@@ -120,7 +187,9 @@ enum OperandEntry<T: Usable> {
 }
 
 impl<T: Usable> Default for OperandEntry<T> {
-    fn default() -> Self { Self::Vacant { next_vacant: None } }
+    fn default() -> Self {
+        Self::Vacant { next_vacant: None }
+    }
 }
 
 /// A list of operands.
@@ -134,7 +203,7 @@ impl<T: Usable> Default for OperandEntry<T> {
 ///
 /// As a matter of fact, removing operands is a minor operation. Normally, we
 /// can just replace the inner value of the operand with a new value.
-struct OperandList<T: Usable> {
+pub struct OperandList<T: Usable> {
     operands: Vec<OperandEntry<T>>,
     /// The index of the first vacant slot.
     first_vacant: Option<usize>,
@@ -298,18 +367,31 @@ impl Inst {
             inst.try_deref_mut(ctx)
                 .unwrap_or_else(|| unreachable!())
                 .result = Some(result);
+        } else {
+            let void_ty = Ty::void(ctx);
+            let result = Value::new_inst_result(ctx, inst, void_ty);
+            inst.try_deref_mut(ctx)
+                .unwrap_or_else(|| unreachable!())
+                .result = Some(result);
         }
+
         inst
+    }
+
+    pub fn index(&self) -> usize {
+        self.0.index()
     }
 
     /// Create a new `alloca` instruction.
     pub fn alloca(ctx: &mut Context, alloca_ty: Ty) -> Self {
-        let ptr = Ty::ptr(ctx);
+        let ptr = Ty::ptr(ctx, None);
         Self::new(ctx, InstKind::Alloca { ty: alloca_ty }, ptr)
     }
 
     /// Create a new `phi` instruction.
-    pub fn phi(ctx: &mut Context, ty: Ty) -> Self { Self::new(ctx, InstKind::Phi, ty) }
+    pub fn phi(ctx: &mut Context, ty: Ty) -> Self {
+        Self::new(ctx, InstKind::Phi, ty)
+    }
 
     /// Create a new `load` instruction.
     pub fn load(ctx: &mut Context, ptr: Value, ty: Ty) -> Self {
@@ -329,7 +411,23 @@ impl Inst {
 
     /// Create a new `getelementptr` instruction.
     pub fn getelementptr(ctx: &mut Context, bound_ty: Ty, ptr: Value, indices: Vec<Value>) -> Self {
-        let ptr_ty = Ty::ptr(ctx);
+        let ptr_ty = Ty::ptr(ctx, None);
+        let inst = Self::new(ctx, InstKind::GetElementPtr { bound_ty }, ptr_ty);
+        inst.add_operand(ctx, ptr);
+        for idx in indices {
+            inst.add_operand(ctx, idx);
+        }
+        inst
+    }
+
+    /// Create a new `getelementptr` instruction on ptr type.
+    pub fn getelementptr_on_ptr(
+        ctx: &mut Context,
+        bound_ty: Ty,
+        ptr: Value,
+        indices: Vec<Value>,
+    ) -> Self {
+        let ptr_ty = Ty::ptr(ctx, Some(bound_ty));
         let inst = Self::new(ctx, InstKind::GetElementPtr { bound_ty }, ptr_ty);
         inst.add_operand(ctx, ptr);
         for idx in indices {
@@ -340,10 +438,29 @@ impl Inst {
 
     /// Create a new `add` instruction.
     pub fn add(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = match ty.try_deref(ctx).unwrap() {
+            TyData::Float32 => Self::fadd(ctx, lhs, rhs, ty),
+            _ => {
+                let inst = Self::new(
+                    ctx,
+                    InstKind::IntBinary {
+                        op: IntBinaryOp::Add,
+                    },
+                    ty,
+                );
+                inst.add_operand(ctx, lhs);
+                inst.add_operand(ctx, rhs);
+                inst
+            }
+        };
+        inst
+    }
+
+    pub fn fadd(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
         let inst = Self::new(
             ctx,
-            InstKind::IntBinary {
-                op: IntBinaryOp::Add,
+            InstKind::FloatBinary {
+                op: FloatBinaryOp::Fadd,
             },
             ty,
         );
@@ -380,7 +497,453 @@ impl Inst {
         inst
     }
 
-    // TODO: Implement constructors for other instructions.
+    // HACK: Implement constructors for other instructions.
+    pub fn sub(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = match ty.try_deref(ctx).unwrap() {
+            TyData::Float32 => Self::fsub(ctx, lhs, rhs, ty),
+            _ => {
+                let inst = Self::new(
+                    ctx,
+                    InstKind::IntBinary {
+                        op: IntBinaryOp::Sub,
+                    },
+                    ty,
+                );
+                inst.add_operand(ctx, lhs);
+                inst.add_operand(ctx, rhs);
+                inst
+            }
+        };
+        inst
+    }
+
+    pub fn fsub(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::FloatBinary {
+                op: FloatBinaryOp::Fsub,
+            },
+            ty,
+        );
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    pub fn mul(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = match ty.try_deref(ctx).unwrap() {
+            TyData::Float32 => Self::fmul(ctx, lhs, rhs, ty),
+            _ => {
+                let inst = Self::new(
+                    ctx,
+                    InstKind::IntBinary {
+                        op: IntBinaryOp::Mul,
+                    },
+                    ty,
+                );
+                inst.add_operand(ctx, lhs);
+                inst.add_operand(ctx, rhs);
+                inst
+            }
+        };
+        inst
+    }
+
+    pub fn fmul(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::FloatBinary {
+                op: FloatBinaryOp::Fmul,
+            },
+            ty,
+        );
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    pub fn sdiv(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = match ty.try_deref(ctx).unwrap() {
+            TyData::Float32 => Self::fdiv(ctx, lhs, rhs, ty),
+            _ => {
+                let inst = Self::new(
+                    ctx,
+                    InstKind::IntBinary {
+                        op: IntBinaryOp::SDiv,
+                    },
+                    ty,
+                );
+                inst.add_operand(ctx, lhs);
+                inst.add_operand(ctx, rhs);
+                inst
+            }
+        };
+        inst
+    }
+
+    pub fn udiv(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::IntBinary {
+                op: IntBinaryOp::UDiv,
+            },
+            ty,
+        );
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    pub fn fdiv(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::FloatBinary {
+                op: FloatBinaryOp::Fdiv,
+            },
+            ty,
+        );
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    pub fn srem(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::IntBinary {
+                op: IntBinaryOp::SRem,
+            },
+            ty,
+        );
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    pub fn urem(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::IntBinary {
+                op: IntBinaryOp::URem,
+            },
+            ty,
+        );
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    pub fn and(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::IntBinary {
+                op: IntBinaryOp::And,
+            },
+            ty,
+        );
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    pub fn or(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::IntBinary {
+                op: IntBinaryOp::Or,
+            },
+            ty,
+        );
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    pub fn xor(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::IntBinary {
+                op: IntBinaryOp::Xor,
+            },
+            ty,
+        );
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    pub fn lt(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = match ty.try_deref(ctx).unwrap() {
+            TyData::Float32 => Self::new(
+                ctx,
+                InstKind::FloatBinary {
+                    op: FloatBinaryOp::FCmp {
+                        cond: FloatCmpCond::Olt,
+                    },
+                },
+                ty,
+            ),
+            _ => Self::new(
+                ctx,
+                InstKind::IntBinary {
+                    op: IntBinaryOp::ICmp {
+                        cond: IntCmpCond::Slt,
+                    },
+                },
+                ty,
+            ),
+        };
+        let ret_ty = Ty::i1(ctx);
+        let result = Value::new_inst_result(ctx, inst, ret_ty);
+        inst.try_deref_mut(ctx)
+            .unwrap_or_else(|| unreachable!())
+            .result = Some(result);
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    pub fn le(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = match ty.try_deref(ctx).unwrap() {
+            TyData::Float32 => Self::new(
+                ctx,
+                InstKind::FloatBinary {
+                    op: FloatBinaryOp::FCmp {
+                        cond: FloatCmpCond::Ole,
+                    },
+                },
+                ty,
+            ),
+            _ => Self::new(
+                ctx,
+                InstKind::IntBinary {
+                    op: IntBinaryOp::ICmp {
+                        cond: IntCmpCond::Sle,
+                    },
+                },
+                ty,
+            ),
+        };
+        let ret_ty = Ty::i1(ctx);
+        let result = Value::new_inst_result(ctx, inst, ret_ty);
+        inst.try_deref_mut(ctx)
+            .unwrap_or_else(|| unreachable!())
+            .result = Some(result);
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    pub fn gt(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = match ty.try_deref(ctx).unwrap() {
+            TyData::Float32 => Self::new(
+                ctx,
+                InstKind::FloatBinary {
+                    op: FloatBinaryOp::FCmp {
+                        cond: FloatCmpCond::Olt,
+                    },
+                },
+                ty,
+            ),
+            _ => Self::new(
+                ctx,
+                InstKind::IntBinary {
+                    op: IntBinaryOp::ICmp {
+                        cond: IntCmpCond::Slt,
+                    },
+                },
+                ty,
+            ),
+        };
+        let ret_ty = Ty::i1(ctx);
+        let result = Value::new_inst_result(ctx, inst, ret_ty);
+        inst.try_deref_mut(ctx)
+            .unwrap_or_else(|| unreachable!())
+            .result = Some(result);
+        inst.add_operand(ctx, rhs);
+        inst.add_operand(ctx, lhs);
+        inst
+    }
+
+    pub fn ge(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = match ty.try_deref(ctx).unwrap() {
+            TyData::Float32 => Self::new(
+                ctx,
+                InstKind::FloatBinary {
+                    op: FloatBinaryOp::FCmp {
+                        cond: FloatCmpCond::Ole,
+                    },
+                },
+                ty,
+            ),
+            _ => Self::new(
+                ctx,
+                InstKind::IntBinary {
+                    op: IntBinaryOp::ICmp {
+                        cond: IntCmpCond::Sle,
+                    },
+                },
+                ty,
+            ),
+        };
+        let ret_ty = Ty::i1(ctx);
+        let result = Value::new_inst_result(ctx, inst, ret_ty);
+        inst.try_deref_mut(ctx)
+            .unwrap_or_else(|| unreachable!())
+            .result = Some(result);
+        inst.add_operand(ctx, rhs);
+        inst.add_operand(ctx, lhs);
+        inst
+    }
+
+    pub fn eq(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = match ty.try_deref(ctx).unwrap() {
+            TyData::Float32 => Self::new(
+                ctx,
+                InstKind::FloatBinary {
+                    op: FloatBinaryOp::FCmp {
+                        cond: FloatCmpCond::Oeq,
+                    },
+                },
+                ty,
+            ),
+            _ => Self::new(
+                ctx,
+                InstKind::IntBinary {
+                    op: IntBinaryOp::ICmp {
+                        cond: IntCmpCond::Eq,
+                    },
+                },
+                ty,
+            ),
+        };
+        let ret_ty = Ty::i1(ctx);
+        let result = Value::new_inst_result(ctx, inst, ret_ty);
+        inst.try_deref_mut(ctx)
+            .unwrap_or_else(|| unreachable!())
+            .result = Some(result);
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    pub fn ne(ctx: &mut Context, lhs: Value, rhs: Value, ty: Ty) -> Self {
+        let inst = match ty.try_deref(ctx).unwrap() {
+            TyData::Float32 => Self::new(
+                ctx,
+                InstKind::FloatBinary {
+                    op: FloatBinaryOp::FCmp {
+                        cond: FloatCmpCond::One,
+                    },
+                },
+                ty,
+            ),
+            _ => Self::new(
+                ctx,
+                InstKind::IntBinary {
+                    op: IntBinaryOp::ICmp {
+                        cond: IntCmpCond::Ne,
+                    },
+                },
+                ty,
+            ),
+        };
+        let ret_ty = Ty::i1(ctx);
+        let result = Value::new_inst_result(ctx, inst, ret_ty);
+        inst.try_deref_mut(ctx)
+            .unwrap_or_else(|| unreachable!())
+            .result = Some(result);
+        inst.add_operand(ctx, lhs);
+        inst.add_operand(ctx, rhs);
+        inst
+    }
+
+    pub fn neg(ctx: &mut Context, val: Value, ty: Ty) -> Self {
+        match ty.try_deref(&ctx).unwrap() {
+            TyData::Int1 => Self::not(ctx, val, ty),
+            TyData::Int8 => {
+                let zero = Value::i8(ctx, 0);
+                Self::sub(ctx, zero, val, ty)
+            }
+            TyData::Int32 => {
+                let zero = Value::i32(ctx, 0);
+                Self::sub(ctx, zero, val, ty)
+            }
+            _ => unreachable!("unsupported type for neg operation"),
+        }
+    }
+
+    pub fn not(ctx: &mut Context, val: Value, ty: Ty) -> Self {
+        if let TyData::Int1 = ty.try_deref(&ctx).unwrap() {
+            let true_val = Value::i1(ctx, true);
+            Self::xor(ctx, val, true_val, ty)
+        } else {
+            panic!("not operation is only supported for i1 type")
+        }
+    }
+
+    pub fn trunc(ctx: &mut Context, val: Value, to_ty: Ty) -> Self {
+        let inst = Self::new(ctx, InstKind::Cast { op: CastOp::Trunc }, to_ty);
+        inst.add_operand(ctx, val);
+        inst
+    }
+
+    pub fn zext(ctx: &mut Context, val: Value, to_ty: Ty) -> Self {
+        let inst = Self::new(ctx, InstKind::Cast { op: CastOp::Zext }, to_ty);
+        inst.add_operand(ctx, val);
+        inst
+    }
+
+    pub fn sext(ctx: &mut Context, val: Value, to_ty: Ty) -> Self {
+        let inst = Self::new(ctx, InstKind::Cast { op: CastOp::Sext }, to_ty);
+        inst.add_operand(ctx, val);
+        inst
+    }
+
+    pub fn bitcast(ctx: &mut Context, val: Value, to_ty: Ty) -> Self {
+        let inst = Self::new(
+            ctx,
+            InstKind::Cast {
+                op: CastOp::Bitcast,
+            },
+            to_ty,
+        );
+        inst.add_operand(ctx, val);
+        inst
+    }
+
+    pub fn fptoui(ctx: &mut Context, val: Value, to_ty: Ty) -> Self {
+        let inst = Self::new(ctx, InstKind::Cast { op: CastOp::Fptoui }, to_ty);
+        inst.add_operand(ctx, val);
+        inst
+    }
+
+    pub fn fptosi(ctx: &mut Context, val: Value, to_ty: Ty) -> Self {
+        let inst = Self::new(ctx, InstKind::Cast { op: CastOp::Fptosi }, to_ty);
+        inst.add_operand(ctx, val);
+        inst
+    }
+
+    pub fn uitofp(ctx: &mut Context, val: Value, to_ty: Ty) -> Self {
+        let inst = Self::new(ctx, InstKind::Cast { op: CastOp::Uitofp }, to_ty);
+        inst.add_operand(ctx, val);
+        inst
+    }
+
+    pub fn sitofp(ctx: &mut Context, val: Value, to_ty: Ty) -> Self {
+        let inst = Self::new(ctx, InstKind::Cast { op: CastOp::Sitofp }, to_ty);
+        inst.add_operand(ctx, val);
+        inst
+    }
+
+    pub fn call(ctx: &mut Context, callee: Value, args: Vec<Value>, ret_ty: Ty) -> Self {
+        let inst = Self::new(ctx, InstKind::Call, ret_ty);
+        inst.add_operand(ctx, callee);
+        for arg in args {
+            inst.add_operand(ctx, arg);
+        }
+        inst
+    }
 
     /// Create an operand and add it to the operand list.
     fn add_operand(self, ctx: &mut Context, operand: Value) {
@@ -503,18 +1066,93 @@ impl Inst {
     pub fn successor_iter(self, ctx: &Context) -> impl Iterator<Item = Block> + '_ {
         self.deref(ctx).successors.iter().map(|op| op.used())
     }
-
+    
     /// Get a displayable instance of the instruction.
-    pub fn display(self, ctx: &Context) -> DisplayInst { DisplayInst { ctx, inst: self } }
+    pub fn display(self, ctx: &Context) -> DisplayInst {
+        DisplayInst { ctx, inst: self }
+    }
 
     /// Get the result of the instruction.
-    pub fn result(self, ctx: &Context) -> Option<Value> { self.deref(ctx).result }
+    pub fn result(self, ctx: &Context) -> Option<Value> {
+        self.deref(ctx).result
+    }
 
     /// Get the kind of the instruction.
-    pub fn kind(self, ctx: &Context) -> &InstKind { &self.deref(ctx).kind }
+    pub fn kind(self, ctx: &Context) -> &InstKind {
+        &self.deref(ctx).kind
+    }
 
     /// Check if this is a phi node.
-    pub fn is_phi(self, ctx: &Context) -> bool { matches!(self.deref(ctx).kind, InstKind::Phi) }
+    pub fn is_phi(self, ctx: &Context) -> bool {
+        matches!(self.deref(ctx).kind, InstKind::Phi)
+    }
+
+    /// Remove this node.
+    pub fn remove(self, ctx: &mut Context) {
+        self.remove_all_use(ctx);
+        let container = self.container(ctx).unwrap();
+        container.remove_inst(ctx, self);
+    }
+
+    pub fn remove_without_dealloc(self, ctx: &mut Context) {
+        self.remove_all_use(ctx);
+        let container = self.container(ctx).unwrap();
+        container.remove_inst_without_dealloc(ctx, self);
+    }
+
+    pub fn remove_all_use(self, ctx: &mut Context) {
+        // println!("self.display(ctx): {}", self.display(ctx));
+        let operands = &mut self.deref_mut(ctx).operands;
+        let mut to_drop = Vec::new();
+        // println!("operands count: {}", operands.iter().count());
+        for i in 0..operands.iter().count() {
+            let op = operands.remove(i);
+            to_drop.push(op);
+        }
+        for op in to_drop {
+            op.drop(ctx);
+        }
+        // let successors = &mut self.deref_mut(ctx).successors;
+        // let mut to_drop = Vec::new();
+        // println!("successors count: {}", successors.iter().count());
+        // for i in 0..successors.iter().count() {
+        //     let op = successors.remove(i);
+        //     to_drop.push(op);
+        // }
+        // for op in to_drop {
+        //     op.drop(ctx);
+        // }
+    }
+
+    pub fn replace(self, ctx: &mut Context, new_inst: Inst) {
+        let container = self.container(ctx).unwrap();
+        container.replace_inst(ctx, self, new_inst);
+    }
+
+    pub fn set_operand(self, ctx: &mut Context, value: Value, idx: usize) {
+        let _ = self
+            .try_deref_mut(ctx)
+            .unwrap_or_else(|| unreachable!())
+            .operands
+            .remove(idx);
+        let operand = Operand::new(ctx, value, self, idx);
+        self.try_deref_mut(ctx)
+            .unwrap_or_else(|| unreachable!())
+            .operands
+            .insert(operand);
+    }
+    /// 判断指令是否具有副作用
+    pub fn has_side_effects(&self, ir: &Context) -> bool {
+        matches!(
+            self.kind(ir),
+            InstKind::Store | InstKind::Call | InstKind::Ret
+        )
+    }
+
+    /// 判断指令是否是终止指令
+    pub fn is_terminal(&self, ir: &Context) -> bool {
+        matches!(self.kind(ir), InstKind::Ret | InstKind::Br | InstKind::CondBr)
+    }
 }
 
 pub struct DisplayInst<'ctx> {
@@ -525,8 +1163,10 @@ pub struct DisplayInst<'ctx> {
 impl fmt::Display for DisplayInst<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if let Some(result) = self.inst.result(self.ctx) {
-            write!(f, "{}", result.display(self.ctx, false))?;
-            write!(f, " = ")?;
+            if !result.ty(self.ctx).is_void(self.ctx) {
+                write!(f, "{}", result.display(self.ctx, false))?;
+                write!(f, " = ")?;
+            }
         }
 
         // match kind to decide the instruction format
@@ -564,10 +1204,21 @@ impl fmt::Display for DisplayInst<'_> {
             InstKind::Store => {
                 write!(
                     f,
-                    "store {}, {}",
+                    "store {}, ptr {}",
                     self.inst.operand(self.ctx, 0).display(self.ctx, true),
-                    self.inst.operand(self.ctx, 1).display(self.ctx, true)
+                    self.inst.operand(self.ctx, 1).display(self.ctx, false)
                 )?;
+            }
+            InstKind::GetElementPtr { bound_ty } => {
+                write!(
+                    f,
+                    "getelementptr inbounds {}, {}",
+                    bound_ty.display(self.ctx),
+                    self.inst.operand(self.ctx, 0).display(self.ctx, true)
+                )?;
+                for idx in self.inst.operand_iter(self.ctx).skip(1) {
+                    write!(f, ", {}", idx.display(self.ctx, true))?;
+                }
             }
             InstKind::IntBinary { op } => {
                 write!(
@@ -592,9 +1243,56 @@ impl fmt::Display for DisplayInst<'_> {
                     self.inst.successor(self.ctx, 0).name(self.ctx)
                 )?;
             }
-            _ => {
-                dbg!(self.inst.kind(self.ctx));
-                todo!("implement the display for other instructions");
+            InstKind::CondBr => {
+                write!(
+                    f,
+                    "br i1 {}, label {}, label {}",
+                    self.inst.operand(self.ctx, 0).display(self.ctx, false),
+                    self.inst.successor(self.ctx, 0).name(self.ctx),
+                    self.inst.successor(self.ctx, 1).name(self.ctx)
+                )?;
+            }
+            InstKind::Cast { op } => {
+                write!(
+                    f,
+                    "{} {} to {}",
+                    op,
+                    self.inst.operand(self.ctx, 0).display(self.ctx, true),
+                    self.inst
+                        .result(self.ctx)
+                        .unwrap()
+                        .ty(self.ctx)
+                        .display(self.ctx)
+                )?;
+            }
+            InstKind::Call => {
+                let callee = self.inst.operand(self.ctx, 0);
+                let ret_ty = self.inst.result(self.ctx).unwrap().ty(self.ctx);
+                write!(
+                    f,
+                    "call {} {} ",
+                    ret_ty.display(self.ctx),
+                    callee.display(self.ctx, false)
+                )?;
+                write!(f, "(")?;
+                let mut first = true;
+                for arg in self.inst.operand_iter(self.ctx).skip(1) {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    first = false;
+                    write!(f, "{}", arg.display(self.ctx, true))?;
+                }
+                write!(f, ")")?;
+            }
+            InstKind::FloatBinary { op } => {
+                write!(
+                    f,
+                    "{} {}, {}",
+                    op,
+                    self.inst.operand(self.ctx, 0).display(self.ctx, true),
+                    self.inst.operand(self.ctx, 1).display(self.ctx, false)
+                )?;
             }
         }
 
@@ -615,9 +1313,13 @@ impl Arena<Inst> for Context {
         Inst(self.insts.alloc_with(|ptr| f(Inst(ptr))))
     }
 
-    fn try_dealloc(&mut self, ptr: Inst) -> Option<InstData> { self.insts.try_dealloc(ptr.0) }
+    fn try_dealloc(&mut self, ptr: Inst) -> Option<InstData> {
+        self.insts.try_dealloc(ptr.0)
+    }
 
-    fn try_deref(&self, ptr: Inst) -> Option<&InstData> { self.insts.try_deref(ptr.0) }
+    fn try_deref(&self, ptr: Inst) -> Option<&InstData> {
+        self.insts.try_deref(ptr.0)
+    }
 
     fn try_deref_mut(&mut self, ptr: Inst) -> Option<&mut InstData> {
         self.insts.try_deref_mut(ptr.0)
@@ -628,17 +1330,43 @@ impl LinkedListNode for Inst {
     type Container = Block;
     type Ctx = Context;
 
-    fn next(self, ctx: &Self::Ctx) -> Option<Self> { self.deref(ctx).next }
+    fn next(self, ctx: &Self::Ctx) -> Option<Self> {
+        self.deref(ctx).next
+    }
 
-    fn prev(self, ctx: &Self::Ctx) -> Option<Self> { self.deref(ctx).prev }
+    fn prev(self, ctx: &Self::Ctx) -> Option<Self> {
+        self.deref(ctx).prev
+    }
 
-    fn container(self, ctx: &Self::Ctx) -> Option<Self::Container> { self.deref(ctx).container }
+    fn container(self, ctx: &Self::Ctx) -> Option<Self::Container> {
+        self.deref(ctx).container
+    }
 
-    fn set_next(self, ctx: &mut Self::Ctx, next: Option<Self>) { self.deref_mut(ctx).next = next; }
+    fn set_next(self, ctx: &mut Self::Ctx, next: Option<Self>) {
+        self.deref_mut(ctx).next = next;
+    }
 
-    fn set_prev(self, ctx: &mut Self::Ctx, prev: Option<Self>) { self.deref_mut(ctx).prev = prev; }
+    fn set_prev(self, ctx: &mut Self::Ctx, prev: Option<Self>) {
+        self.deref_mut(ctx).prev = prev;
+    }
 
     fn set_container(self, ctx: &mut Self::Ctx, container: Option<Self::Container>) {
         self.deref_mut(ctx).container = container;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::ir::{Block, Context};
+
+    use super::Inst;
+
+    #[test]
+    fn test_equal() {
+        let mut ctx = Context::new(8);
+        let block = Block::new(&mut ctx);
+        let br1 = Inst::br(&mut ctx, block);
+        let br2 = Inst::br(&mut ctx, block);
+        println!("{}", br1 == br2);
     }
 }

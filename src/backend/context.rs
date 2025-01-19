@@ -42,7 +42,9 @@ pub struct MContext {
 
 impl MContext {
     /// Create a new machine code context.
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Create a new virtual register.
     pub fn new_vreg(&mut self, kind: RegKind) -> VReg {
@@ -57,13 +59,19 @@ impl MContext {
     }
 
     /// Set the architecture string to `arch`.
-    pub fn set_arch(&mut self, arch: impl Into<String>) { self.arch = arch.into(); }
+    pub fn set_arch(&mut self, arch: impl Into<String>) {
+        self.arch = arch.into();
+    }
 
     /// Get the architecture string.
-    pub fn arch(&self) -> &str { &self.arch }
+    pub fn arch(&self) -> &str {
+        &self.arch
+    }
 
     /// Display the machine code context.
-    pub fn display(&self) -> DisplayMContext { DisplayMContext { mctx: self } }
+    pub fn display(&self) -> DisplayMContext {
+        DisplayMContext { mctx: self }
+    }
 }
 
 pub struct DisplayMContext<'a> {
@@ -72,20 +80,22 @@ pub struct DisplayMContext<'a> {
 
 impl fmt::Display for DisplayMContext<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // The text section, generating the code.
+        writeln!(f, "\t.text")?;
+
         // The architecture attribute.
         writeln!(f, "\t.attribute arch, \"{}\"", self.mctx.arch())?;
 
-        // The text section, generating the code.
-        writeln!(f, "\t.text")?;
         for func_data in self.mctx.funcs.iter() {
             let func = func_data.self_ptr();
+
+            writeln!(f, "\t.globl {}", func.label(self.mctx))?;
 
             // Skip the external functions.
             if func.is_external(self.mctx) {
                 continue;
             }
 
-            writeln!(f, "\t.global {}", func.label(self.mctx))?;
             writeln!(f, "\t.align 1")?;
             writeln!(f, "\t.type {}, @function", func.label(self.mctx))?;
             writeln!(f, "{}:", func.label(self.mctx))?;

@@ -302,7 +302,7 @@ impl<Data> Arena<GenericPtr<Data>> for GenericArena<Data> {
     where
         F: FnOnce(GenericPtr<Data>) -> Data,
     {
-        match self.free_head.take() {
+        let ptr = match self.free_head.take() {
             Some(index) => {
                 let entry = &mut self.entries[index];
                 self.free_head = match entry {
@@ -322,7 +322,13 @@ impl<Data> Arena<GenericPtr<Data>> for GenericArena<Data> {
                 self.entries.push(GenericEntry::Occupied(f(ptr)));
                 ptr
             }
+        };
+
+        if ptr.index == 33 {
+            // panic!("v33 allocated!!!!!!!!!!");
         }
+
+        ptr
     }
 
     fn try_dealloc(&mut self, ptr: GenericPtr<Data>) -> Option<Data> {
