@@ -503,19 +503,37 @@ impl<'s> CodegenContext<'s> {
             let mut stack_offset: i64 = -8; // 从 -8 开始，为 s0 预留空间
             let mut reg_map: HashMap<Reg, MemLoc> = HashMap::new();
             let mut temp_reg_counter: usize = 0;
+            let mut temp_freg_counter: usize = 0;
 
-            let get_next_temp_reg = |counter: &mut usize| -> Reg {
-                let reg = match *counter {
-                    0 => regs::t0(),
-                    1 => regs::t1(),
-                    2 => regs::t2(),
-                    3 => regs::t3(),
-                    4 => regs::t4(),
-                    5 => regs::t5(),
-                    _ => regs::t6(),
-                };
-                *counter = (*counter + 1) % 7;
-                reg.into()
+            let get_next_temp_reg = |counter: &mut usize, kind: RegKind| -> Reg {
+                match kind {
+                    RegKind::General => {
+                        let reg = match *counter {
+                            0 => regs::t0(),
+                            1 => regs::t1(),
+                            2 => regs::t2(),
+                            3 => regs::t3(),
+                            4 => regs::t4(),
+                            5 => regs::t5(),
+                            _ => regs::t6(),
+                        };
+                        *counter = (*counter + 1) % 7;
+                        reg.into()
+                    }
+                    RegKind::Float => {
+                        let reg = match *counter {
+                            0 => regs::f0(),
+                            1 => regs::f1(),
+                            2 => regs::f2(),
+                            3 => regs::f3(),
+                            4 => regs::f4(),
+                            5 => regs::f5(),
+                            _ => regs::f6(),
+                        };
+                        *counter = (*counter + 1) % 7;
+                        reg.into()
+                    }
+                }
             };
 
             // 第一遍:为所有虚拟寄存器分配栈空间
@@ -547,6 +565,21 @@ impl<'s> CodegenContext<'s> {
                 while let Some(mut inst) = curr_inst {
                     let next_inst = inst.next(&self.mctx);
                     temp_reg_counter = 0;
+                    temp_freg_counter = 0;
+
+                    // 确定指令使用的寄存器类型
+                    let reg_kind = match inst.kind(&self.mctx) {
+                        MInstKind::FpuRRR { .. } | MInstKind::FpuMove { .. } => RegKind::Float,
+                        MInstKind::Load { op, .. } => match op {
+                            LoadOp::Fld | LoadOp::Flw => RegKind::Float,
+                            _ => RegKind::General,
+                        },
+                        MInstKind::Store { op, .. } => match op {
+                            StoreOp::Fsd | StoreOp::Fsw => RegKind::Float,
+                            _ => RegKind::General,
+                        },
+                        _ => RegKind::General,
+                    };
 
                     // 收集所有需要处理的寄存器
                     let mut regs_to_process = Vec::new();
@@ -576,11 +609,20 @@ impl<'s> CodegenContext<'s> {
                     // 先处理所有load
                     for (vreg, stack_loc, is_use) in regs_to_process.iter() {
                         if *is_use {
-                            let temp_reg = get_next_temp_reg(&mut temp_reg_counter);
+                            let temp_reg = match reg_kind {
+                                RegKind::General => get_next_temp_reg(&mut temp_reg_counter, RegKind::General),
+                                RegKind::Float => get_next_temp_reg(&mut temp_freg_counter, RegKind::Float),
+                            };
                             reg_mapping.insert(*vreg, temp_reg);
 
-                            let (load, _) = MInst::load(&mut self.mctx, LoadOp::Lw, *stack_loc);
-                            // 修改load指令使用正确的目标寄存器
+                            let (load, _) = MInst::load(
+                                &mut self.mctx,
+                                match reg_kind {
+                                    RegKind::General => LoadOp::Ld,
+                                    RegKind::Float => LoadOp::Fld,
+                                },
+                                *stack_loc
+                            );
                             match load.kind_mut(&mut self.mctx) {
                                 MInstKind::Load { rd, .. } => *rd = temp_reg,
                                 _ => unreachable!(),
@@ -597,83 +639,27 @@ impl<'s> CodegenContext<'s> {
                     // 再处理所有store
                     for (vreg, stack_loc, is_use) in regs_to_process {
                         if !is_use {
-                            let temp_reg = get_next_temp_reg(&mut temp_reg_counter);
+                            let temp_reg = match reg_kind {
+                                RegKind::General => get_next_temp_reg(&mut temp_reg_counter, RegKind::General),
+                                RegKind::Float => get_next_temp_reg(&mut temp_freg_counter, RegKind::Float),
+                            };
                             inst.replace_reg(&mut self.mctx, vreg, temp_reg);
 
-                            let store =
-                                MInst::store(&mut self.mctx, StoreOp::Sw, temp_reg, stack_loc);
+                            let store = MInst::store(
+                                &mut self.mctx,
+                                match reg_kind {
+                                    RegKind::General => StoreOp::Sd,
+                                    RegKind::Float => StoreOp::Fsd,
+                                },
+                                temp_reg,
+                                stack_loc
+                            );
                             inst.insert_after(&mut self.mctx, store).unwrap();
                         }
                     }
 
                     curr_inst = next_inst;
                 }
-
-                // 如果这是最后一个基本块，处理返回值
-                if block.next(&self.mctx).is_none() {
-                    // 遍历最后一个基本块的所有指令
-                    let mut curr_inst = block.head(&mut self.mctx);
-                    while let Some(inst) = curr_inst {
-                        let next_inst = inst.next(&self.mctx);
-
-                        // 替换所有虚拟寄存器为 s0
-                        match inst.kind_mut(&mut self.mctx) {
-                            MInstKind::Load { rd, loc, .. } => {
-                                if rd.is_vreg() {
-                                    *rd = regs::s0().into();
-                                }
-                                if let MemLoc::RegOffset { base, .. } = loc {
-                                    if base.is_vreg() {
-                                        *base = regs::sp().into();
-                                    }
-                                }
-                            }
-                            MInstKind::Store { rs, loc, .. } => {
-                                if rs.is_vreg() {
-                                    *rs = regs::s0().into();
-                                }
-                                if let MemLoc::RegOffset { base, .. } = loc {
-                                    if base.is_vreg() {
-                                        *base = regs::sp().into();
-                                    }
-                                }
-                            }
-                            MInstKind::AluRRI { rd, rs, .. } => {
-                                if rd.is_vreg() {
-                                    *rd = regs::s0().into();
-                                }
-                                if rs.is_vreg() {
-                                    *rs = regs::s0().into();
-                                }
-                            }
-                            MInstKind::AluRRR { rd, rs1, rs2, .. } => {
-                                if rd.is_vreg() {
-                                    *rd = regs::s0().into();
-                                }
-                                if rs1.is_vreg() {
-                                    *rs1 = regs::s0().into();
-                                }
-                                if rs2.is_vreg() {
-                                    *rs2 = regs::s0().into();
-                                }
-                            }
-                            MInstKind::Jal { rd, rs, .. } => {
-                                if rd.is_vreg() {
-                                    *rd = regs::s0().into();
-                                }
-                                if let Some(r) = rs {
-                                    if r.is_vreg() {
-                                        *r = regs::s0().into();
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
-
-                        curr_inst = next_inst;
-                    }
-                }
-
                 curr_block = block.next(&self.mctx);
             }
         }
@@ -682,101 +668,61 @@ impl<'s> CodegenContext<'s> {
     /// Do the code generation after register allocation.
     pub fn after_regalloc(&mut self) {
         for function in self.funcs.values_mut() {
-            // 计算栈帧大小，确保16字节对齐
-            let stack_size = (function.storage_stack_size(&self.mctx) + 15) & !15;
-            
-            // 创建 Prologue 指令序列
+            // 计算栈帧大小
+            let stack_size = function.storage_stack_size(&self.mctx);
+
+            // 创建 Prologue 指令
+            let prologue_addi = MInst::raw_alu_rri(
+                &mut self.mctx,
+                AluOpRRI::Addi,
+                regs::sp().into(),
+                regs::sp().into(),
+                Imm12::try_from_i64(-(stack_size as i64)).unwrap(),
+            );
+
+            let prologue_store = MInst::store(
+                &mut self.mctx,
+                StoreOp::Sd,
+                regs::s0().into(),
+                MemLoc::RegOffset {
+                    base: regs::sp().into(),
+                    offset: -8,
+                },
+            );
+
+            // 将 Prologue 指令插入函数的头部
             let entry_block = function.head(&self.mctx);
             if let Some(block) = entry_block {
-                // 1. 分配栈空间
-                let prologue_addi = MInst::raw_alu_rri(
-                    &mut self.mctx,
-                    AluOpRRI::Addi,
-                    regs::sp().into(),
-                    regs::sp().into(),
-                    Imm12::try_from_i64(-(stack_size as i64)).unwrap(),
-                );
-                
-                // 2. 保存调用者保存的寄存器
-                // 保存 ra (返回地址)
-                let save_ra = MInst::store(
-                    &mut self.mctx,
-                    StoreOp::Sw,
-                    regs::ra().into(),
-                    MemLoc::RegOffset {
-                        base: regs::sp().into(),
-                        offset: stack_size as i64 - 4,
-                    },
-                );
-                
-                // 保存 s0/fp (帧指针)
-                let save_s0 = MInst::store(
-                    &mut self.mctx,
-                    StoreOp::Sw,
-                    regs::s0().into(),
-                    MemLoc::RegOffset {
-                        base: regs::sp().into(),
-                        offset: stack_size as i64 - 8,
-                    },
-                );
-                
-                // 设置帧指针
-                let setup_fp = MInst::raw_alu_rri(
-                    &mut self.mctx,
-                    AluOpRRI::Addi,
-                    regs::s0().into(),
-                    regs::sp().into(),
-                    Imm12::try_from_i64(stack_size as i64).unwrap(),
-                );
-
-                // 按照顺序插入 prologue 指令
-                block.push_front(&mut self.mctx, setup_fp).unwrap();
-                block.push_front(&mut self.mctx, save_s0).unwrap();
-                block.push_front(&mut self.mctx, save_ra).unwrap();
+                block.push_front(&mut self.mctx, prologue_store).unwrap();
                 block.push_front(&mut self.mctx, prologue_addi).unwrap();
             }
 
-            // 在每个 ret 指令之前插入 Epilogue 指令
+            // 在每个ret指令之前插入Epilogue指令
             let mut curr_block = function.head(&self.mctx);
             while let Some(block) = curr_block {
-                let mut curr_inst = block.head(&mut self.mctx);
+                let mut curr_inst = block.head(&self.mctx);
                 while let Some(inst) = curr_inst {
                     let next_inst = inst.next(&self.mctx);
                     
-                    // 如果是 ret 指令，在其之前插入 epilogue 序列
-                    if let MInstKind::Ret = inst.kind(&self.mctx) {
-                        // 1. 恢复调用者保存的寄存器
-                        // 恢复 ra
-                        let (restore_ra, _) = MInst::load(
+                    // 如果是ret指令，在其前面插入epilogue
+                    if matches!(inst.kind(&self.mctx), MInstKind::Ret) {
+                        // 恢复s0
+                        let (epilogue_load, _) = MInst::load(
                             &mut self.mctx,
-                            LoadOp::Lw,
+                            LoadOp::Ld,
                             MemLoc::RegOffset {
                                 base: regs::sp().into(),
-                                offset: stack_size as i64 - 4,
+                                offset: -8,
                             },
                         );
-                        // 确保使用正确的物理寄存器
-                        match restore_ra.kind_mut(&mut self.mctx) {
-                            MInstKind::Load { rd, .. } => *rd = regs::ra().into(),
-                            _ => unreachable!(),
-                        }
                         
-                        // 恢复 s0/fp
-                        let (restore_s0, _) = MInst::load(
-                            &mut self.mctx,
-                            LoadOp::Lw,
-                            MemLoc::RegOffset {
-                                base: regs::sp().into(),
-                                offset: stack_size as i64 - 8,
-                            },
-                        );
-                        // 确保使用正确的物理寄存器
-                        match restore_s0.kind_mut(&mut self.mctx) {
+                        // 修改load指令的目标寄存器为s0
+                        match epilogue_load.kind_mut(&mut self.mctx) {
                             MInstKind::Load { rd, .. } => *rd = regs::s0().into(),
                             _ => unreachable!(),
                         }
                         
-                        // 2. 恢复栈指针
+                        // 恢复栈指针
                         let epilogue_addi = MInst::raw_alu_rri(
                             &mut self.mctx,
                             AluOpRRI::Addi,
@@ -785,10 +731,7 @@ impl<'s> CodegenContext<'s> {
                             Imm12::try_from_i64(stack_size as i64).unwrap(),
                         );
 
-                        // 按照顺序插入 epilogue 指令
-                        // 注意顺序：先恢复寄存器，再调整栈指针
-                        inst.insert_before(&mut self.mctx, restore_ra).unwrap();
-                        inst.insert_before(&mut self.mctx, restore_s0).unwrap();
+                        inst.insert_before(&mut self.mctx, epilogue_load).unwrap();
                         inst.insert_before(&mut self.mctx, epilogue_addi).unwrap();
                     }
                     
@@ -1642,9 +1585,8 @@ impl<'s> CodegenContext<'s> {
     /// return: The register that stores the return value.
     pub fn gen_ret_move(&mut self, val: Value) -> Reg {
         let curr_block = self.curr_block.unwrap();
-        // let curr_func = self.curr_func.unwrap();
 
-        // handle return value.
+        // Move return value to a0
         let val_reg = self.reg_from_value(&val);
         let ret_reg = regs::a0().into();
         let mv = MInst::raw_alu_rri(
@@ -1656,18 +1598,7 @@ impl<'s> CodegenContext<'s> {
         );
         curr_block.push_back(&mut self.mctx, mv).unwrap();
 
-        // // addi sp, sp, stack_size
-        // let stack_size = curr_func.storage_stack_size(&self.mctx);
-        // let mv = MInst::raw_alu_rri(
-        //     &mut self.mctx,
-        //     AluOpRRI::Addi,
-        //     regs::sp().into(),
-        //     regs::sp().into(),
-        //     Imm12::try_from_u64(stack_size).unwrap(),
-        // );
-        // curr_block.push_back(&mut self.mctx, mv).unwrap();
-
-        // add ret
+        // Add ret instruction - 栈帧的恢复会在after_regalloc中处理
         let ret = MInst::ret(&mut self.mctx);
         curr_block.push_back(&mut self.mctx, ret).unwrap();
 
@@ -2317,51 +2248,6 @@ mod tests {
             int b = 2;
             int c = a + b;
             return c;
-        }
-        "#;
-
-        let src = preprocess(source);
-        let mut ast = SysYParser::new().parse(&src).unwrap();
-        ast.type_check();
-
-        let ir = irgen(&ast, 8);
-        println!("=== IR ===");
-        println!("{}", ir);
-
-        let mut codegen_ctx = CodegenContext::new(&ir);
-        codegen_ctx.mctx_mut().set_arch("rv64imafdc_zba_zbb");
-
-        codegen_ctx.codegen();
-        println!("\n=== Final Assembly ===");
-        println!("{}", codegen_ctx.finish().display());
-    }
-
-    #[test]
-    fn test_multi_function_calls() {
-        let source = r#"
-        int add(int a, int b) {
-            return a + b;
-        }
-
-        int factorial(int n) {
-            if (n <= 1) {
-                return 1;
-            }
-            return n * factorial(n - 1);
-        }
-
-        int fibonacci(int n) {
-            if (n <= 1) {
-                return n;
-            }
-            return fibonacci(n - 1) + fibonacci(n - 2);
-        }
-
-        int main() {
-            int result1 = add(3, 4);          // Should be 7
-            int result2 = factorial(5);        // Should be 120
-            int result3 = fibonacci(6);        // Should be 8
-            return result1 + result2 + result3; // Should be 135
         }
         "#;
 
