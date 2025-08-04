@@ -1,0 +1,537 @@
+<!doctype html>
+<html class="no-js" lang="zh-CN" data-content_root="./">
+  <head><meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="索引" href="genindex.html" /><link rel="search" title="搜索" href="search.html" /><link rel="next" title="代码优化" href="optimization.html" /><link rel="prev" title="中间代码生成" href="irgen.html" />
+
+    <!-- Generated with Sphinx 8.2.3 and Furo 2025.07.19 -->
+        <title>完成编译器构造 - 编译系统原理 文档</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=acfd86a5" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=25af2a20" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo-extensions.css?v=8dab3a3b" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f2f2f2;
+  --color-code-foreground: #1e1e1e;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #2b2b2b;
+  --color-code-foreground: #f8f8f2;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #2b2b2b;
+  --color-code-foreground: #f8f8f2;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc">
+<label class="overlay sidebar-overlay" for="__navigation">
+  <div class="visually-hidden">Hide navigation sidebar</div>
+</label>
+<label class="overlay toc-overlay" for="__toc">
+  <div class="visually-hidden">Hide table of contents sidebar</div>
+</label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <div class="visually-hidden">Toggle site navigation sidebar</div>
+        <i class="icon"><svg><use href="#svg-menu"></use></svg></i>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="index.html"><div class="brand">编译系统原理  文档</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle">
+          <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <div class="visually-hidden">Toggle table of contents sidebar</div>
+        <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="index.html">
+  
+  <span class="sidebar-brand-text">编译系统原理  文档</span>
+  
+</a><form class="sidebar-search-container" method="get" action="search.html" role="search">
+  <input class="sidebar-search" placeholder="搜索" name="q" aria-label="搜索">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <ul class="current">
+<li class="toctree-l1 has-children"><a class="reference internal" href="intro.html">课程项目简介</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of 课程项目简介</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="env-setup.html">环境配置</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of 环境配置</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="rust-basics.html">Rust 编程基础</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><div class="visually-hidden">Toggle navigation of Rust 编程基础</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="llvm-basics.html">了解编译器及 LLVM IR 编程</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><div class="visually-hidden">Toggle navigation of 了解编译器及 LLVM IR 编程</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="asm-basics.html">汇编编程</a><input class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><div class="visually-hidden">Toggle navigation of 汇编编程</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="parser.html">词法、语法分析器与抽象语法树</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><div class="visually-hidden">Toggle navigation of 词法、语法分析器与抽象语法树</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="irgen.html">中间代码生成</a><input class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><div class="visually-hidden">Toggle navigation of 中间代码生成</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 current has-children current-page"><a class="current reference internal" href="#">完成编译器构造</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><div class="visually-hidden">Toggle navigation of 完成编译器构造</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="optimization.html">代码优化</a><input class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><div class="visually-hidden">Toggle navigation of 代码优化</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="_sources/codegen.rst.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle">
+              <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <div class="visually-hidden">Toggle table of contents sidebar</div>
+            <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="id1">
+<h1>完成编译器构造<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h1>
+<div class="toctree-wrapper compound">
+</div>
+<section id="id2">
+<h2>实验描述<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<p>经过一个学期的学习，编译器的构造来到了最终阶段。本试验中你需要完成中间代码到目标代码到构造，
+并且运行你生成的编译器，检测其正确性。</p>
+</section>
+<section id="id3">
+<h2>实验流程<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
+<div class="admonition important">
+<p class="admonition-title">重要</p>
+<p>在开始这个实验之前，我们建议你先复习 RISC-V 的 ISA 和 ABI 等相关知识。</p>
+</div>
+<p>后端代码的生成主要分为三个部分：基于虚拟寄存器的代码生成、寄存器分配以及寄存器分配之后函数栈帧调整代码的插入。
+虚拟寄存器的代码生成做的工作是将 IR 中的指令转换成目标 ISA 的指令，而不管寄存器的分配情况。
+在这个阶段，我们和 IR 中一样，假定这个 CPU 有无限多的寄存器。
+因此，在这个阶段我们可以直接将 IR 中的 Value 映射到后端的虚拟寄存器上。</p>
+<div class="admonition important">
+<p class="admonition-title">重要</p>
+<p>需要注意的是，在代码框架的实现中，IR 中的 Value 并非全部映射到寄存器，而是映射到 <code class="docutils literal notranslate"><span class="pre">MOperand</span></code> 这个类型上，其中包括了寄存器、立即数、内存位置等。</p>
+<p>其中尤其重要的是内存位置等问题。在寄存器分配前，由于栈帧没有确定，所以我们只能够先存下中间信息，在寄存器分配之后再修改代码，确定内存中的偏移量。具体的代码参考后面的代码框架讲解。</p>
+</div>
+<p>在完成基于虚拟寄存器的代码生成之后，我们需要将虚拟寄存器映射到物理寄存器上。这个过程就是寄存器分配。
+我们的实验并不要求你实现特别复杂的寄存器分配算法。这里给出几种你可以使用的寄存器分配方法：</p>
+<ul class="simple">
+<li><p>Top of Stack Allocation，即栈顶分配。这种方法是最简单的寄存器分配方法，将所有的运算结果保存到栈上，每次需要的时候再从栈上取出。</p></li>
+<li><p>Linear Scan，即线性扫描。这种方法是一种比较简单的寄存器分配方法，它会扫描整个函数的 IR，将活跃的变量映射到寄存器上。</p></li>
+<li><p>Graph Coloring，即图着色。这种方法是一种比较复杂的寄存器分配方法，它会将活跃变量的图着色，使得相邻的变量不会映射到同一个寄存器上。</p></li>
+<li><p>各种优化（例如带上启发式的线性扫描等）。</p></li>
+</ul>
+<p>这些寄存器分配的算法都能够比较轻松的找到参考资料（除了第一种你需要自己思考怎么实现）。如果你在实现的时候发现问题或者找不到相关资料，请咨询助教。</p>
+<p>所有的寄存器分配有一个共同的特点，当寄存器不够用时（或者不想用时）使用栈来辅助存储。所以除了局部变量和传参所需要的栈帧空间外，
+我们还需要为栈上存储的 Value 开辟一块空间，而这个空间的大小只能在寄存器分配之后才能确定。所以我们需要在寄存器分配之后才能够确定栈帧调整的代码。
+另外，由于调用约定的关系，我们在函数的开头（prologue）和结尾（epilogue）需要插入一些代码来保存和恢复使用过的寄存器的值，而使用哪些寄存器也是在寄存器分配之后才能确定的。</p>
+<div class="admonition important">
+<p class="admonition-title">重要</p>
+<p>不是所有分配的寄存器都需要保存。你需要阅读 RISC-V 的调用约定，了解哪些寄存器是需要保存的。</p>
+</div>
+</section>
+<section id="id4">
+<h2>代码框架<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>src
+├── backend
+│   ├── block.rs    ...... 基本块的定义（与 IR 结构类似）
+│   ├── codegen.rs  ...... 代码生成的规则
+│   ├── context.rs  ...... 代码生成的上下文（与 IR 结构类似）
+│   ├── func.rs     ...... 函数的定义（与 IR 结构类似）
+│   ├── imm.rs      ...... RISC-V 立即数的定义
+│   ├── inst.rs     ...... RISC-V 指令的定义
+│   ├── operand.rs  ...... 后端操作数的定义
+│   └── regs.rs     ...... RISC-V 寄存器的定义
+├── backend.rs
+├── frontend
+├── frontend.rs
+├── infra
+├── infra.rs
+├── ir
+├── ir.rs
+├── lib.rs
+└── main.rs
+</pre></div>
+</div>
+<p>本次代码框架需要修改的内容集中在 <code class="docutils literal notranslate"><span class="pre">backend</span></code> 中。大部分结构，如函数、代码块、上下文的结构与
+IR 中的组织方式类似，但是在内部存储的信息上会有细微差别。</p>
+<p>在 <code class="docutils literal notranslate"><span class="pre">inst.rs</span></code> 中定义了 RISC-V 的指令，我们根据指令的格式（寄存器和立即数等）定义了一个枚举类型 <code class="docutils literal notranslate"><span class="pre">MInstKind</span></code>，
+并且在 <code class="docutils literal notranslate"><span class="pre">MInst</span></code> 中定义了一系列构造函数，用于生成不同类型的指令。</p>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span class="sd">/// Kinds of machine instructions.</span>
+<span class="sd">///</span>
+<span class="sd">/// The instructions are classified with its format. This classification is</span>
+<span class="sd">/// derived from cranelift.</span>
+<span class="k">pub</span><span class="w"> </span><span class="k">enum</span> <span class="nc">MInstKind</span><span class="w"> </span><span class="p">{</span>
+<span class="w">   </span><span class="sd">/// ALU instructions with two registers (rd and rs) and an immediate.</span>
+<span class="w">   </span><span class="n">AluRRI</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="n">op</span>: <span class="nc">AluOpRRI</span><span class="p">,</span>
+<span class="w">      </span><span class="n">rd</span>: <span class="nc">Reg</span><span class="p">,</span>
+<span class="w">      </span><span class="n">rs</span>: <span class="nc">Reg</span><span class="p">,</span>
+<span class="w">      </span><span class="n">imm</span>: <span class="nc">Imm12</span><span class="p">,</span>
+<span class="w">   </span><span class="p">},</span>
+<span class="w">   </span><span class="sd">/// ALU instructions with three registers (rd, and two rs-s).</span>
+<span class="w">   </span><span class="n">AluRRR</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="n">op</span>: <span class="nc">AluOpRRR</span><span class="p">,</span>
+<span class="w">      </span><span class="n">rd</span>: <span class="nc">Reg</span><span class="p">,</span>
+<span class="w">      </span><span class="n">rs1</span>: <span class="nc">Reg</span><span class="p">,</span>
+<span class="w">      </span><span class="n">rs2</span>: <span class="nc">Reg</span><span class="p">,</span>
+<span class="w">   </span><span class="p">},</span>
+<span class="w">   </span><span class="sd">/// Load instructions.</span>
+<span class="w">   </span><span class="n">Load</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">op</span>: <span class="nc">LoadOp</span><span class="p">,</span><span class="w"> </span><span class="n">rd</span>: <span class="nc">Reg</span><span class="p">,</span><span class="w"> </span><span class="n">loc</span>: <span class="nc">MemLoc</span><span class="w"> </span><span class="p">},</span>
+<span class="w">   </span><span class="sd">/// Store instructions.</span>
+<span class="w">   </span><span class="n">Store</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">op</span>: <span class="nc">StoreOp</span><span class="p">,</span><span class="w"> </span><span class="n">rs</span>: <span class="nc">Reg</span><span class="p">,</span><span class="w"> </span><span class="n">loc</span>: <span class="nc">MemLoc</span><span class="w"> </span><span class="p">},</span>
+<span class="w">   </span><span class="sd">/// Load immediate pseudo instruction.</span>
+<span class="w">   </span><span class="n">Li</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">rd</span>: <span class="nc">Reg</span><span class="p">,</span><span class="w"> </span><span class="n">imm</span>: <span class="kt">u64</span> <span class="p">},</span>
+<span class="w">   </span><span class="sd">/// Jump instructions.</span>
+<span class="w">   </span><span class="n">J</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">target</span>: <span class="nc">MBlock</span><span class="w"> </span><span class="p">},</span>
+<span class="w">   </span><span class="c1">// TODO: add more instructions as you need.</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>在 <code class="docutils literal notranslate"><span class="pre">regs.rs</span></code> 中我们定义了一个 <code class="docutils literal notranslate"><span class="pre">Reg</span></code> 的枚举。其中的 <code class="docutils literal notranslate"><span class="pre">P</span></code> 和 <code class="docutils literal notranslate"><span class="pre">V</span></code> 分别代表了物理寄存器和虚拟寄存器。</p>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span class="sd">/// The register.</span>
+<span class="sd">///</span>
+<span class="sd">/// It can be either a physical register or a virtual register.</span>
+<span class="cp">#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]</span>
+<span class="k">pub</span><span class="w"> </span><span class="k">enum</span> <span class="nc">Reg</span><span class="w"> </span><span class="p">{</span>
+<span class="w">   </span><span class="n">P</span><span class="p">(</span><span class="n">PReg</span><span class="p">),</span>
+<span class="w">   </span><span class="n">V</span><span class="p">(</span><span class="n">VReg</span><span class="p">),</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>为了将 IR 中的 Value 映射到后端代码中的实体，我们定义了 <code class="docutils literal notranslate"><span class="pre">MOperand</span></code> 这个类型，用来表示后端代码中的操作数。其代码位于 <code class="docutils literal notranslate"><span class="pre">operand.rs</span></code> 中。
+其中最重要的是 <code class="docutils literal notranslate"><span class="pre">MemLoc</span></code> 这个类型，其中定义了一系列不同的内存位置。我们主要将内存位置分为三类：</p>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span class="k">pub</span><span class="w"> </span><span class="k">enum</span> <span class="nc">MemLoc</span><span class="w"> </span><span class="p">{</span>
+<span class="w">   </span><span class="n">RegOffset</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">base</span>: <span class="nc">Reg</span><span class="p">,</span><span class="w"> </span><span class="n">offset</span>: <span class="kt">i64</span> <span class="p">},</span>
+<span class="w">   </span><span class="n">Slot</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">offset</span>: <span class="kt">i64</span> <span class="p">},</span>
+<span class="w">   </span><span class="n">Incoming</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">offset</span>: <span class="kt">i64</span> <span class="p">},</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>其中 <code class="docutils literal notranslate"><span class="pre">RegOffset</span></code> 是最一般的情况，同时也是我们寄存器分配完成之后需要修改得到的内存位置表示，只有这个表示才能够输出到最终的结果（其他的两种类型也能够输出，但是只是用于 Debug 目的）。
+<code class="docutils literal notranslate"><span class="pre">Slot</span></code> 表示函数内部局部变量的存储位置，我们只记录了一个 <code class="docutils literal notranslate"><span class="pre">offset</span></code>，因为所有的局部变量都可以用同一个基址寄存器来表示（我们注释中使用了 fp），寄存器分配之后只需要将 <code class="docutils literal notranslate"><span class="pre">offset</span></code> 进行修改，加上对应的寄存器即可改为 <code class="docutils literal notranslate"><span class="pre">RegOffset</span></code>。
+最后一种 <code class="docutils literal notranslate"><span class="pre">Incoming</span></code> 对应的则是函数传入的参数，这些参数由调用者（Caller）负责传入，并且地址比 fp 的值更大（栈上位置更低）。</p>
+<div class="admonition important">
+<p class="admonition-title">重要</p>
+<p>代码的注释中给出了一个函数栈帧的示意图：</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>            <span class="n">param</span> <span class="n">by</span> <span class="n">stack</span> <span class="c1">#n</span>
+                   <span class="o">...</span>          <span class="o">-----&gt;</span> <span class="n">maybe</span> <span class="n">depends</span> <span class="n">on</span> <span class="n">the</span> <span class="n">calling</span> <span class="n">convention</span>
+            <span class="n">param</span> <span class="n">by</span> <span class="n">stack</span> <span class="c1">#0</span>
+     <span class="n">high</span> <span class="o">+-------------------+</span> <span class="o">&lt;--</span> <span class="n">frame</span> <span class="n">pointer</span>
+          <span class="o">|</span>  <span class="n">Saved</span> <span class="n">Registers</span>  <span class="o">|</span>
+      <span class="o">|</span>   <span class="o">+-</span> <span class="o">-</span> <span class="o">-</span> <span class="o">-</span> <span class="o">-</span> <span class="o">-</span> <span class="o">-</span> <span class="o">-</span> <span class="o">-</span> <span class="o">-+</span>
+      <span class="o">|</span>   <span class="o">|</span> <span class="p">(</span><span class="n">maybe</span> <span class="n">alignment</span><span class="p">)</span> <span class="o">|</span>
+      <span class="o">|</span>   <span class="o">+-</span> <span class="o">-</span> <span class="o">-</span> <span class="o">-</span> <span class="o">-</span> <span class="o">-</span> <span class="o">-</span> <span class="o">-</span> <span class="o">-</span> <span class="o">-+</span> <span class="o">&lt;--</span> <span class="n">start</span> <span class="n">of</span> <span class="n">local</span> <span class="n">slots</span>
+      <span class="o">|</span>   <span class="o">|</span>                   <span class="o">|</span>
+<span class="n">grow</span>  <span class="o">|</span>   <span class="o">|</span>  <span class="n">Local</span> <span class="n">Variables</span>  <span class="o">|</span>
+      <span class="o">|</span>   <span class="o">|</span>                   <span class="o">|</span>
+      <span class="n">V</span>   <span class="o">+-</span> <span class="o">-</span> <span class="o">-</span> <span class="o">-</span> <span class="o">-</span> <span class="o">-</span> <span class="o">-</span> <span class="o">-</span> <span class="o">-</span> <span class="o">-+</span>
+          <span class="o">|</span>  <span class="k">for</span> <span class="n">arg</span> <span class="n">passing</span>  <span class="o">|</span>
+     <span class="n">low</span>  <span class="o">+-------------------+</span> <span class="o">&lt;--</span> <span class="n">stack</span> <span class="n">pointer</span>
+</pre></div>
+</div>
+<p>我们建议你在实现的过程中充分理解这个示意图以及其注释中对应的说明。</p>
+<p>另外需要注意的是 RISC-V 的调用约定还要求栈对齐，在插入栈帧调整代码的时候需要注意这一点。</p>
+</div>
+<p>最后，你需要在 <code class="docutils literal notranslate"><span class="pre">codegen.rs</span></code> 中添加代码翻译的逻辑，包括寄存器分配和寄存器分配之后修改内存位置的逻辑。</p>
+<p>另外，此处给出一个实现了后端之后 <code class="docutils literal notranslate"><span class="pre">main.rs</span></code> 中编译过程的逻辑</p>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span class="kd">let</span><span class="w"> </span><span class="n">source</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="fm">include_str!</span><span class="p">(</span><span class="s">&quot;../tests/sysy/basic.sy&quot;</span><span class="p">);</span>
+
+<span class="c1">// Frontend</span>
+<span class="kd">let</span><span class="w"> </span><span class="n">src</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">preprocess</span><span class="p">(</span><span class="n">source</span><span class="p">);</span>
+<span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">ast</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SysYParser</span>::<span class="n">new</span><span class="p">().</span><span class="n">parse</span><span class="p">(</span><span class="o">&amp;</span><span class="n">src</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span>
+<span class="n">ast</span><span class="p">.</span><span class="n">type_check</span><span class="p">();</span>
+
+<span class="c1">// IRGen</span>
+<span class="kd">let</span><span class="w"> </span><span class="n">ir</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">irgen</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ast</span><span class="p">,</span><span class="w"> </span><span class="mi">8</span><span class="p">);</span>
+<span class="fm">println!</span><span class="p">(</span><span class="s">&quot;{}&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">ir</span><span class="p">);</span>
+
+<span class="c1">// Initialize the codegen context.</span>
+<span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">codegen_ctx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CodegenContext</span>::<span class="n">new</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ir</span><span class="p">);</span>
+
+<span class="c1">// Set architecture string.</span>
+<span class="n">codegen_ctx</span><span class="p">.</span><span class="n">mctx_mut</span><span class="p">().</span><span class="n">set_arch</span><span class="p">(</span><span class="s">&quot;rv64imafdc_zba_zbb&quot;</span><span class="p">);</span>
+
+<span class="c1">// Do the codegen and emit virtual register assembly.</span>
+<span class="n">codegen_ctx</span><span class="p">.</span><span class="n">codegen</span><span class="p">();</span>
+<span class="fm">println!</span><span class="p">(</span><span class="s">&quot;{}&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">codegen_ctx</span><span class="p">.</span><span class="n">mctx</span><span class="p">().</span><span class="n">display</span><span class="p">());</span>
+
+<span class="c1">// Do the register allocation.</span>
+<span class="n">codegen_ctx</span><span class="p">.</span><span class="n">regalloc</span><span class="p">();</span>
+<span class="fm">println!</span><span class="p">(</span><span class="s">&quot;{}&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">codegen_ctx</span><span class="p">.</span><span class="n">mctx</span><span class="p">().</span><span class="n">display</span><span class="p">());</span>
+
+<span class="c1">// Additional work after register allocation.</span>
+<span class="n">codegen_ctx</span><span class="p">.</span><span class="n">after_regalloc</span><span class="p">();</span>
+
+<span class="c1">// Emit the final assembly.</span>
+<span class="kd">let</span><span class="w"> </span><span class="n">mctx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">codegen_ctx</span><span class="p">.</span><span class="n">finish</span><span class="p">();</span>
+<span class="fm">println!</span><span class="p">(</span><span class="s">&quot;{}&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">mctx</span><span class="p">.</span><span class="n">display</span><span class="p">());</span>
+</pre></div>
+</div>
+<p>大部分需要修改或添加代码的部分我们都用 <code class="docutils literal notranslate"><span class="pre">TODO</span></code> 进行了注释，如果你发现有遗漏的地方，请及时联系助教。</p>
+</section>
+<section id="id5">
+<h2>线下提问示例<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<ol class="arabic simple">
+<li><p>请说明你是如何实现寄存器分配的。</p></li>
+<li><p>请说明你是如何实现栈帧调整的。</p></li>
+<li><p>请说明你对于 Phi 指令的处理（如果实现了并且需要 Phi 的话）。</p></li>
+<li><p>请说明你对于函数调用的处理。</p></li>
+</ol>
+</section>
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="optimization.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">代码优化</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="irgen.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">中间代码生成</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2024, Junyi Mei, Dawei Guo
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">完成编译器构造</a><ul>
+<li><a class="reference internal" href="#id2">实验描述</a></li>
+<li><a class="reference internal" href="#id3">实验流程</a></li>
+<li><a class="reference internal" href="#id4">代码框架</a></li>
+<li><a class="reference internal" href="#id5">线下提问示例</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="_static/documentation_options.js?v=7d86a446"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/scripts/furo.js?v=46bd48cc"></script>
+    <script src="_static/translations.js?v=beaddf03"></script>
+    </body>
+</html>

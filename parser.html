@@ -1,0 +1,546 @@
+<!doctype html>
+<html class="no-js" lang="zh-CN" data-content_root="./">
+  <head><meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="索引" href="genindex.html" /><link rel="search" title="搜索" href="search.html" /><link rel="next" title="中间代码生成" href="irgen.html" /><link rel="prev" title="汇编编程" href="asm-basics.html" />
+
+    <!-- Generated with Sphinx 8.2.3 and Furo 2025.07.19 -->
+        <title>词法、语法分析器与抽象语法树 - 编译系统原理 文档</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=acfd86a5" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=25af2a20" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo-extensions.css?v=8dab3a3b" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f2f2f2;
+  --color-code-foreground: #1e1e1e;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #2b2b2b;
+  --color-code-foreground: #f8f8f2;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #2b2b2b;
+  --color-code-foreground: #f8f8f2;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc">
+<label class="overlay sidebar-overlay" for="__navigation">
+  <div class="visually-hidden">Hide navigation sidebar</div>
+</label>
+<label class="overlay toc-overlay" for="__toc">
+  <div class="visually-hidden">Hide table of contents sidebar</div>
+</label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <div class="visually-hidden">Toggle site navigation sidebar</div>
+        <i class="icon"><svg><use href="#svg-menu"></use></svg></i>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="index.html"><div class="brand">编译系统原理  文档</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle">
+          <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <div class="visually-hidden">Toggle table of contents sidebar</div>
+        <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="index.html">
+  
+  <span class="sidebar-brand-text">编译系统原理  文档</span>
+  
+</a><form class="sidebar-search-container" method="get" action="search.html" role="search">
+  <input class="sidebar-search" placeholder="搜索" name="q" aria-label="搜索">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <ul class="current">
+<li class="toctree-l1 has-children"><a class="reference internal" href="intro.html">课程项目简介</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of 课程项目简介</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="env-setup.html">环境配置</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of 环境配置</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="rust-basics.html">Rust 编程基础</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><div class="visually-hidden">Toggle navigation of Rust 编程基础</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="llvm-basics.html">了解编译器及 LLVM IR 编程</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><div class="visually-hidden">Toggle navigation of 了解编译器及 LLVM IR 编程</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="asm-basics.html">汇编编程</a><input class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><div class="visually-hidden">Toggle navigation of 汇编编程</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 current has-children current-page"><a class="current reference internal" href="#">词法、语法分析器与抽象语法树</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><div class="visually-hidden">Toggle navigation of 词法、语法分析器与抽象语法树</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="irgen.html">中间代码生成</a><input class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><div class="visually-hidden">Toggle navigation of 中间代码生成</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="codegen.html">完成编译器构造</a><input class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><div class="visually-hidden">Toggle navigation of 完成编译器构造</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="optimization.html">代码优化</a><input class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><div class="visually-hidden">Toggle navigation of 代码优化</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="_sources/parser.rst.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle">
+              <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <div class="visually-hidden">Toggle table of contents sidebar</div>
+            <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="id1">
+<h1>词法、语法分析器与抽象语法树<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h1>
+<div class="toctree-wrapper compound">
+</div>
+<section id="id2">
+<h2>实验描述<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<p>相信你已经在 C++ 文档中或者同学处听说了 Flex 和 Bison 这两个工具，它们是用于生成词法分析器和语法分析器的工具。在这一部分，
+我们将使用 Rust 语言中的一系列库来实现 SysY 语言的 Parser，并且将 SysY 源代码转换到抽象语法树（AST）。</p>
+<p>根据实验要求，Rust 版本实验仍然拆分为词法分析和语法分析两个部分。我们所给出的框架中语法分析和词法分析是耦合的，所以你需要在阅读实验指导之后自己实现词法分析器这个实验中的内容。</p>
+<section id="lexer">
+<h3>实现词法分析器（Lexer）要求<a class="headerlink" href="#lexer" title="Link to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p>能够识别简单的 SysY 源程序；</p></li>
+<li><p>输出解析得到的 Token 序列；</p></li>
+</ol>
+<p>此外，从解析结果来看，你需要至少支持以下几种功能</p>
+<ol class="arabic simple">
+<li><p>在解析过程中识别注释并且跳过；</p></li>
+<li><p>解析标识符，即变量名、函数名等；</p></li>
+<li><p>解析整数字面量，例如： <code class="docutils literal notranslate"><span class="pre">123</span></code> , <code class="docutils literal notranslate"><span class="pre">0x123</span></code> 等；</p></li>
+</ol>
+</section>
+<section id="parser">
+<h3>实现语法分析器（Parser）要求<a class="headerlink" href="#parser" title="Link to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p>理解 AST 结构的实现</p></li>
+<li><p>能够识别 SysY 语言的语法；</p></li>
+<li><p>输出解析得到的抽象语法树（AST）；</p></li>
+</ol>
+</section>
+</section>
+<section id="lexer-parser">
+<h2>实现 Lexer 和 Parser<a class="headerlink" href="#lexer-parser" title="Link to this heading">¶</a></h2>
+<p>有许多方法可以实现 Parser，例如手写递归下降 Parser、使用工具生成 Parser 等。
+且由于 Rust 包管理的便利，有许多工具都可以帮助我们实现 Parser。此处我们并不限制 Parser 的实现方式，
+你可以选择手写递归下降、Parser Combinator 库或者使用工具生成 Parser 等方式构建你的 Parser。</p>
+<div class="admonition note">
+<p class="admonition-title">备注</p>
+<p>Rust 中并没有一个与 Flex + Bison 完全对应的工具组合，所以此处直接对前端实现可能需要对工具进行统一介绍。</p>
+<p>理论上，下面介绍的三种工具/方法都可以实现词法分析实验，但是我们的框架使用的是 LALRPOP，所以我们推荐你使用 LALRPOP 来实现编译器前端（包括词法分析和语法分析两个实验）</p>
+</div>
+<section id="id3">
+<h3>手写递归下降<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<blockquote>
+<div><p>人类的赞歌就是勇气的赞歌。</p>
+</div></blockquote>
+<p>我们并不推荐你在 Rust 中手搓递归下降的 Parser。尽管 Rust 提供了各种安全性的保障，但是手写递归下降 Parser 仍然是一件非常繁琐的事情，
+尤其是当你想完全手动实现 SysY 语言的语法时。如果你确定想要挑战自己，我们建议你先重温一下课件中所述的有关内容，然后参考以下这几个资料：</p>
+<ul class="simple">
+<li><p>GeeksforGeeks 上的 <a class="reference external" href="https://www.geeksforgeeks.org/recursive-descent-parser/">Recursive Descent Parser</a></p></li>
+<li><p><a class="reference external" href="https://www.booleanworld.com/building-recursive-descent-parsers-definitive-guide/">Building Recursive Descent Parsers: The Definitive Guide</a></p></li>
+<li><p><a class="reference external" href="https://depth-first.com/articles/2021/12/16/a-beginners-guide-to-parsing-in-rust/">A Beginner's Guide to Parsing in Rust</a></p></li>
+</ul>
+<p>当然，如果你只是想手写一个词法分析器，那这个任务就相对简单一点，此处给出一个大致的思路：</p>
+<ol class="arabic simple">
+<li><p>读取源代码，获得一个字符串；</p></li>
+<li><p>从头开始扫描字符串，根据当前字符的类型判断 Token 可能的类型；</p></li>
+<li><p>继续读取字符，直到 Token 的类型确定或者出现错误；</p></li>
+<li><p>将读入的字符串内容转换为 Token，存入 Token 列表中；</p></li>
+<li><p>重复 2-4 步，直到读取完整个源代码。</p></li>
+</ol>
+<p>你可以利用 Rust 的枚举类型来定义 Token。</p>
+<div class="admonition note">
+<p class="admonition-title">备注</p>
+<p>写一个能跑的递归下降 Parser 并不难，但是写一个运行效率高、保证正确性甚至支持错误恢复的递归下降 Parser 是有一定难度的。
+你可以在编写 Parser 的过程中进行单元测试，确保你的 Parser 能够正确地解析 SysY 语言的语法。</p>
+<p>值得注意的是，许多编译器都会手动实现递归下降 Parser 来构建前端，因为递归下降 Parser 通常有着很好的可读性和可维护性。</p>
+</div>
+</section>
+<section id="parser-combinator">
+<h3>使用 Parser Combinator 库<a class="headerlink" href="#parser-combinator" title="Link to this heading">¶</a></h3>
+<p>Parser Combinator 实际上是递归下降 Parser 的一种实现方式，但是它使用了函数式编程的思想，将 Parser 看作是函数，通过组合这些函数来构建 Parser。</p>
+<p>Rust 吸取了很多函数式编程语言的优点，其类型系统允许我们利用函数式编程的思想来构建 Parser。
+如果你想要使用 Parser Combinator 来构建 Parser，建议阅读：</p>
+<ul class="simple">
+<li><p>使用 <code class="docutils literal notranslate"><span class="pre">nom</span></code> 库： <a class="reference external" href="https://github.com/rust-bakery/nom/blob/main/doc/making_a_new_parser_from_scratch.md">Making a new parser from scratch</a></p></li>
+<li><p>使用 <code class="docutils literal notranslate"><span class="pre">chumsky</span></code> 库： <a class="reference external" href="https://github.com/zesterer/chumsky/blob/main/tutorial.md">Chumsky: A Tutorial</a></p></li>
+<li><p><a class="reference external" href="https://kat.bio/blog/parser-combinators">A gentle introduction to parser-combinators</a></p></li>
+</ul>
+</section>
+<section id="id4">
+<h3>使用工具生成 Parser<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
+<p>Flex 和 Bison 都属于 Parser Generator，它们可以帮助我们生成词法分析器和语法分析器。
+但是在 Rust 中，我们无法使用 Flex 和 Bison。作为替代，我们可以使用 LALRPOP 或者 Pest 来生成 Parser。</p>
+<p>可以参考</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://lalrpop.github.io/lalrpop/tutorial/002_paren_numbers.html">LALRPOP 文档</a></p></li>
+<li><p><a class="reference external" href="https://docs.rs/pest/latest/pest/">Pest 文档</a></p></li>
+</ul>
+<p>此外，如果你要使用 LALRPOP 来完成词法分析的实验，可以在其文档中找到 <a class="reference external" href="https://lalrpop.github.io/lalrpop/lexer_tutorial/index.html">这一章</a> ，
+里面的内容详细讲解了如何控制 LALRPOP 中的词法分析器。如果你时间有限，可以只阅读里面的 6.1。如果你发现 LALRPOP 对于词法分析来说并不好用，你可以参考上述文档中的 6.5 节，里面给出了一个更纯粹的用于词法分析的库。</p>
+</section>
+</section>
+<section id="id6">
+<h2>代码框架<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
+<div class="admonition note">
+<p class="admonition-title">备注</p>
+<p>你也可以不使用我们给出的代码框架自己进行编写。如果你认为代码框架存在问题或者有不合理的地方也可以自行修改。</p>
+</div>
+<p>代码框架中包含了以下文件：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>.
+├──<span class="w"> </span>Cargo.lock
+├──<span class="w"> </span>Cargo.toml
+├──<span class="w"> </span>build.rs
+├──<span class="w"> </span>rustfmt.toml
+├──<span class="w"> </span>src
+│<span class="w">   </span>├──<span class="w"> </span>backend
+│<span class="w">   </span>├──<span class="w"> </span>backend.rs<span class="w">    </span><span class="c1"># 后端实现</span>
+│<span class="w">   </span>├──<span class="w"> </span>frontend
+│<span class="w">   </span>├──<span class="w"> </span>frontend.rs<span class="w">   </span><span class="c1"># 前端实现</span>
+│<span class="w">   </span>├──<span class="w"> </span>infra
+│<span class="w">   </span>├──<span class="w"> </span>infra.rs<span class="w">      </span><span class="c1"># 基础设施代码，包括 Arena、链表等</span>
+│<span class="w">   </span>├──<span class="w"> </span>ir
+│<span class="w">   </span>├──<span class="w"> </span>ir.rs<span class="w">         </span><span class="c1"># IR 的定义</span>
+│<span class="w">   </span>├──<span class="w"> </span>lib.rs
+│<span class="w">   </span>└──<span class="w"> </span>main.rs
+└──<span class="w"> </span>tests
+<span class="w">    </span>├──<span class="w"> </span>sysy
+<span class="w">    </span>└──<span class="w"> </span>testcase
+</pre></div>
+</div>
+<p>代码框架使用 LALRPOP 作为 Parser 的生成器，你可以在 <code class="docutils literal notranslate"><span class="pre">src/frontend</span></code> 目录下找到 <code class="docutils literal notranslate"><span class="pre">sysy.lalrpop</span></code> 文件，
+这是我们使用 LALRPOP 生成 Parser 的源文件。此外，LALRPOP 需要使用 <code class="docutils literal notranslate"><span class="pre">build.rs</span></code> 文件生成 Parser，
+你可以在 <code class="docutils literal notranslate"><span class="pre">build.rs</span></code> 文件中找到相关的配置。</p>
+<p>你可以从 <code class="docutils literal notranslate"><span class="pre">main.rs</span></code> 开始阅读代码。 <code class="docutils literal notranslate"><span class="pre">main.rs</span></code> 中的内容目前非常简单，它会加载
+<code class="docutils literal notranslate"><span class="pre">tests/sysy</span></code> 下的 <code class="docutils literal notranslate"><span class="pre">basic.sy</span></code> 这个源代码，使用 <code class="docutils literal notranslate"><span class="pre">preprocess</span></code> 函数进行预处理，
+之后创建一个新的 Parser 解析源代码得到抽象语法树，在抽象语法树上
+进行类型检查，用 Debug 方式输出 AST，并用 <code class="docutils literal notranslate"><span class="pre">irgen</span></code> 这个函数生成 IR 并输出。</p>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span class="k">use</span><span class="w"> </span><span class="n">nkucc</span>::<span class="n">frontend</span>::<span class="p">{</span><span class="n">irgen</span><span class="p">,</span><span class="w"> </span><span class="n">preprocess</span><span class="p">,</span><span class="w"> </span><span class="n">SysYParser</span><span class="p">};</span>
+
+<span class="k">fn</span> <span class="nf">main</span><span class="p">()</span><span class="w"> </span>-&gt; <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span><span class="w"> </span><span class="nb">Box</span><span class="o">&lt;</span><span class="k">dyn</span><span class="w"> </span><span class="n">std</span>::<span class="n">error</span>::<span class="n">Error</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="fm">println!</span><span class="p">(</span><span class="s">&quot;Hello, NKUCC!&quot;</span><span class="p">);</span>
+
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">src</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">std</span>::<span class="n">fs</span>::<span class="n">read_to_string</span><span class="p">(</span><span class="s">&quot;tests/sysy/basic.sy&quot;</span><span class="p">)</span><span class="o">?</span><span class="p">;</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">src</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">preprocess</span><span class="p">(</span><span class="o">&amp;</span><span class="n">src</span><span class="p">);</span>
+
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">ast</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SysYParser</span>::<span class="n">new</span><span class="p">().</span><span class="n">parse</span><span class="p">(</span><span class="o">&amp;</span><span class="n">src</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span>
+
+<span class="w">    </span><span class="n">ast</span><span class="p">.</span><span class="n">type_check</span><span class="p">();</span>
+
+<span class="w">    </span><span class="fm">println!</span><span class="p">(</span><span class="s">&quot;{:#?}&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">ast</span><span class="p">);</span>
+
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">ir</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">irgen</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ast</span><span class="p">,</span><span class="w"> </span><span class="mi">8</span><span class="p">);</span>
+
+<span class="w">    </span><span class="fm">println!</span><span class="p">(</span><span class="s">&quot;{}&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">ir</span><span class="p">);</span>
+
+<span class="w">    </span><span class="nb">Ok</span><span class="p">(())</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>语法分析和词法分析两次实验中你需要完成的工作包括以下几个部分：</p>
+<ol class="arabic">
+<li><p>对于词法分析实验，你需要阅读 <code class="docutils literal notranslate"><span class="pre">frontend</span></code> 中的 <code class="docutils literal notranslate"><span class="pre">parse.rs</span></code>， <code class="docutils literal notranslate"><span class="pre">sysy.lalrpop</span></code> 以及 <code class="docutils literal notranslate"><span class="pre">main.rs</span></code>
+文件，理解代码的结构和作用。为了保持和后续试验的连贯性，同时验证对要求的代码的理解，你需要完善下面这个程序：</p>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span class="k">fn</span> <span class="nf">main</span><span class="p">()</span><span class="w"> </span>-&gt; <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span><span class="w"> </span><span class="nb">Box</span><span class="o">&lt;</span><span class="k">dyn</span><span class="w"> </span><span class="n">std</span>::<span class="n">error</span>::<span class="n">Error</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">int_str</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">String</span>::<span class="n">from</span><span class="p">(</span><span class="s">&quot;/* xxxx */ 114514 // 123&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">hex_str</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">String</span>::<span class="n">from</span><span class="p">(</span><span class="s">&quot;/* xxxx */ 0xfff // 123&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="fm">assert_eq!</span><span class="p">(</span><span class="n">parse_int</span><span class="p">(</span><span class="o">&amp;</span><span class="n">int_str</span><span class="p">),</span><span class="w"> </span><span class="mi">114514</span><span class="p">);</span>
+<span class="w">    </span><span class="fm">assert_eq!</span><span class="p">(</span><span class="n">parse_int</span><span class="p">(</span><span class="o">&amp;</span><span class="n">hex_str</span><span class="p">),</span><span class="w"> </span><span class="mh">0xfff</span><span class="p">);</span>
+<span class="w">    </span><span class="fm">println!</span><span class="p">(</span><span class="s">&quot;lexer test passed&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="nb">Ok</span><span class="p">(())</span>
+<span class="p">}</span>
+
+<span class="k">fn</span> <span class="nf">parse_int</span><span class="p">(</span><span class="kt">str</span>: <span class="kp">&amp;</span><span class="kt">str</span><span class="p">)</span><span class="w"> </span>-&gt; <span class="kt">i32</span> <span class="p">{</span>
+<span class="w">    </span><span class="c1">// TODO: use NumberParser to parse int</span>
+<span class="w">    </span><span class="fm">todo!</span><span class="p">()</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>你可以使用 <code class="docutils literal notranslate"><span class="pre">frontend/parse.rs</span></code> 中与 <code class="docutils literal notranslate"><span class="pre">SysYParser</span></code> 一样的方法找到
+<code class="docutils literal notranslate"><span class="pre">NumberParser</span></code>，并且实现解析。你也可以替换这个程序里面的字符串、修改 <code class="docutils literal notranslate"><span class="pre">sysy.lalrpop</span></code>
+中的规则来进一步理解里面的内容。另外你需要理解 LALRPOP 文件里面， <code class="docutils literal notranslate"><span class="pre">Number</span></code> 和 <code class="docutils literal notranslate"><span class="pre">Ident</span></code> 这两个规则中每一个 <code class="docutils literal notranslate"><span class="pre">=&gt;</span></code>
+左右的部分分别是什么含义，以及对 <code class="docutils literal notranslate"><span class="pre">NumberParser</span></code> 进行定义的 Rust 源代码在哪。</p>
+</li>
+<li><p>对于语法分析实验：</p>
+<ul class="simple">
+<li><p>阅读 <code class="docutils literal notranslate"><span class="pre">frontend</span></code> 中与语法分析有关的代码，包括 <code class="docutils literal notranslate"><span class="pre">ast.rs</span></code>， <code class="docutils literal notranslate"><span class="pre">parse.rs</span></code>，<code class="docutils literal notranslate"><span class="pre">preprocess.rs</span></code>， <code class="docutils literal notranslate"><span class="pre">types.rs</span></code> 以及 <code class="docutils literal notranslate"><span class="pre">sysy.lalrpop</span></code> 等文件，并且理解这些代码的作用。</p></li>
+<li><p>完善 <code class="docutils literal notranslate"><span class="pre">sysy.lalrpop</span></code> 中的语法规则，使其能够正确解析 SysY 语言的语法（主要是已经标注了 <code class="docutils literal notranslate"><span class="pre">TODO</span></code> 的部分），你可以用VSCode 中的 Todo Tree 来快速查看所有的 <code class="docutils literal notranslate"><span class="pre">TODO</span></code>，RustRover 则自带了这个功能。</p></li>
+<li><p>在 <code class="docutils literal notranslate"><span class="pre">main.rs</span></code> 中添加命令行参数，通过命令行指定源文件并输出对应的 AST。</p></li>
+</ul>
+</li>
+</ol>
+<p>你可能需要注意以下几个问题：</p>
+<ul class="simple">
+<li><p>本次实验并不要求实现类型检查或者符号表，只要能够打印解析得到的 AST 即可。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">main.rs</span></code> 中的代码会有一些多余的部分，例如类型检查和 IR 生成，本次实验中你可以直接注释掉这部分代码来运行。</p></li>
+<li><p>你可以使用 <code class="docutils literal notranslate"><span class="pre">clap</span></code> 这个库实现命令行参数的解析。</p></li>
+<li><p>我们建议你在实现 Parser 之后完整阅读前端的代码，包括符号表和 IRGen 的结构，这样有助于你理解整个前端的结构。</p></li>
+<li><p>完成本次实验之后，你的程序应当能够正确解析 <code class="docutils literal notranslate"><span class="pre">tests/testcase</span></code> 中的所有测试用例，并且输出 AST，你可能需要手动检查 AST 的正确性。</p></li>
+</ul>
+</section>
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="irgen.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">中间代码生成</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="asm-basics.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">汇编编程</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2024, Junyi Mei, Dawei Guo
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">词法、语法分析器与抽象语法树</a><ul>
+<li><a class="reference internal" href="#id2">实验描述</a><ul>
+<li><a class="reference internal" href="#lexer">实现词法分析器（Lexer）要求</a></li>
+<li><a class="reference internal" href="#parser">实现语法分析器（Parser）要求</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#lexer-parser">实现 Lexer 和 Parser</a><ul>
+<li><a class="reference internal" href="#id3">手写递归下降</a></li>
+<li><a class="reference internal" href="#parser-combinator">使用 Parser Combinator 库</a></li>
+<li><a class="reference internal" href="#id4">使用工具生成 Parser</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id6">代码框架</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="_static/documentation_options.js?v=7d86a446"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/scripts/furo.js?v=46bd48cc"></script>
+    <script src="_static/translations.js?v=beaddf03"></script>
+    </body>
+</html>

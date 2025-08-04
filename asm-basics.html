@@ -1,0 +1,542 @@
+<!doctype html>
+<html class="no-js" lang="zh-CN" data-content_root="./">
+  <head><meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="索引" href="genindex.html" /><link rel="search" title="搜索" href="search.html" /><link rel="next" title="词法、语法分析器与抽象语法树" href="parser.html" /><link rel="prev" title="了解编译器及 LLVM IR 编程" href="llvm-basics.html" />
+
+    <!-- Generated with Sphinx 8.2.3 and Furo 2025.07.19 -->
+        <title>汇编编程 - 编译系统原理 文档</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=acfd86a5" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=25af2a20" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo-extensions.css?v=8dab3a3b" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f2f2f2;
+  --color-code-foreground: #1e1e1e;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #2b2b2b;
+  --color-code-foreground: #f8f8f2;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #2b2b2b;
+  --color-code-foreground: #f8f8f2;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc">
+<label class="overlay sidebar-overlay" for="__navigation">
+  <div class="visually-hidden">Hide navigation sidebar</div>
+</label>
+<label class="overlay toc-overlay" for="__toc">
+  <div class="visually-hidden">Hide table of contents sidebar</div>
+</label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <div class="visually-hidden">Toggle site navigation sidebar</div>
+        <i class="icon"><svg><use href="#svg-menu"></use></svg></i>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="index.html"><div class="brand">编译系统原理  文档</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle">
+          <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <div class="visually-hidden">Toggle table of contents sidebar</div>
+        <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="index.html">
+  
+  <span class="sidebar-brand-text">编译系统原理  文档</span>
+  
+</a><form class="sidebar-search-container" method="get" action="search.html" role="search">
+  <input class="sidebar-search" placeholder="搜索" name="q" aria-label="搜索">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <ul class="current">
+<li class="toctree-l1 has-children"><a class="reference internal" href="intro.html">课程项目简介</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of 课程项目简介</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="env-setup.html">环境配置</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of 环境配置</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="rust-basics.html">Rust 编程基础</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><div class="visually-hidden">Toggle navigation of Rust 编程基础</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="llvm-basics.html">了解编译器及 LLVM IR 编程</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><div class="visually-hidden">Toggle navigation of 了解编译器及 LLVM IR 编程</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 current has-children current-page"><a class="current reference internal" href="#">汇编编程</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><div class="visually-hidden">Toggle navigation of 汇编编程</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="parser.html">词法、语法分析器与抽象语法树</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><div class="visually-hidden">Toggle navigation of 词法、语法分析器与抽象语法树</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="irgen.html">中间代码生成</a><input class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><div class="visually-hidden">Toggle navigation of 中间代码生成</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="codegen.html">完成编译器构造</a><input class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><div class="visually-hidden">Toggle navigation of 完成编译器构造</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="optimization.html">代码优化</a><input class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><div class="visually-hidden">Toggle navigation of 代码优化</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="_sources/asm-basics.rst.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle">
+              <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <div class="visually-hidden">Toggle table of contents sidebar</div>
+            <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="id1">
+<h1>汇编编程<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h1>
+<div class="toctree-wrapper compound">
+</div>
+<section id="risc-v">
+<h2>系统学习 RISC-V 汇编<a class="headerlink" href="#risc-v" title="Link to this heading">¶</a></h2>
+<p>你可以参考以下教程学习 RISC-V 编程</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://riscv-programming.org/book/riscv-book.html">An Introduction to Assembly Programming with RISC-V</a> ：较为完整的教程</p></li>
+<li><p><a class="reference external" href="https://www.riscfive.com/2022/04/28/risc-v-assembly-tutorial/">RISC-V Assembly Tutorial</a> ：更简短的教程</p></li>
+<li><p><a class="reference external" href="http://staff.ustc.edu.cn/~llxx/cod/reference_books/RISC-V-Reader-Chinese-v2p12017.pdf">RISC-V 手册中文书籍</a> ：RISC-V 手册（中文版书籍）</p></li>
+</ul>
+<p>在完成实验的过程中，你也可以通过以下两个文档快速查阅 RISC-V 指令集以及汇编语言的相关知识：</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://github.com/jameslzhu/riscv-card">RISC-V Card</a></p></li>
+<li><p><a class="reference external" href="https://github.com/riscv-non-isa/riscv-asm-manual/blob/main/src/asm-manual.adoc">RISC-V Assembly Programmer's Manual</a></p></li>
+</ul>
+<p>如果你希望全方位了解 RISC-V 这个 ISA，我们建议你阅读 <a class="reference external" href="https://riscv.org/technical/specifications/">RISC-V Specifications</a> 中提供的文档。</p>
+<p>其中 <a class="reference external" href="https://riscv.org/wp-content/uploads/2019/12/riscv-spec-20191213.pdf">The RISC-V Instruction Set Manual</a> 里面可以找到 RISC-V 的所有指令集信息，在编译器的实现中，你可能需要 <strong>反复查阅</strong> 这个文档来了解某个指令的具体用法。</p>
+<div class="admonition hint">
+<p class="admonition-title">提示</p>
+<p>相比于 x86_64 和 ARM，RISC-V 的 Specification 可以说是非常简单了，如果你此前有阅读 ISA 文档（如 ARM 或 MIPS）的经验，那么你应该可以通过阅读
+RISC-V Assembly Programmer's Manual 以及 Spec 快速上手 RISC-V 汇编编程。</p>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">小技巧</p>
+<p>就编译课程的要求而言，学习汇编编程最快的方法就是搞明白从 C 编译到 LLVM IR 再到汇编代码翻译到过程，然后自己尝试编写简单的汇编代码。</p>
+<p>在上一节我们提到了 <a class="reference external" href="https://godbolt.org">Compiler Explorer</a> 这个工具，你可以利用这个工具来查看 C 代码到汇编代码的转换过程。</p>
+</div>
+</section>
+<section id="id3">
+<h2>RISC-V 汇编简易入门<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
+<div class="admonition note">
+<p class="admonition-title">备注</p>
+<p>以下部分与 C++ 版本的实验文档基本一致，可能未针对 Rust 进行特别修改，如果发现问题请及时联系助教。</p>
+</div>
+<div class="admonition hint">
+<p class="admonition-title">提示</p>
+<p>此处介绍的 RISC-V 汇编的基础知识并不足以让你完成完整的编译器，我们建议你在需要时参考上面提到的教程进行深入学习。</p>
+<p>你可以通过查阅 <a class="reference external" href="https://riscv.org/wp-content/uploads/2019/12/riscv-spec-20191213.pdf">RISC-V 指令手册</a> 来获取完整的 RISC-V 指令集的知识。</p>
+<p>在本学期的所有实验中，我们只需要了解 RISC-V 的基础指令集，以及 M 扩展 (乘除法)，F 和 D 扩展 (浮点数指令集) 即可，所以你只需要阅读手册的一部分即可。</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">备注</p>
+<p>我们本学期实验中，RISC-V 的编译器框架使用的均为 64 位 RISC-V 指令集，而不是 32 位的 (不过 32 位和 64 位差别很小，你可以通过先学习 32 位再转 64 位的方式来学习)。</p>
+</div>
+<p>我们用下面 C 代码为例来介绍 RISC-V 汇编编程</p>
+<div class="highlight-c notranslate"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="cpf">&lt;stdio.h&gt;</span>
+
+<span class="kt">int</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="kt">int</span><span class="w"> </span><span class="n">b</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+
+<span class="kt">int</span><span class="w"> </span><span class="nf">max</span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">a</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">b</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="p">(</span><span class="n">a</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="n">b</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">a</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">b</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+
+<span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">scanf</span><span class="p">(</span><span class="s">&quot;%d %d&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">a</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">b</span><span class="p">);</span>
+<span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;max is: %d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">max</span><span class="p">(</span><span class="n">a</span><span class="p">,</span><span class="w"> </span><span class="n">b</span><span class="p">));</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>使用 <code class="docutils literal notranslate"><span class="pre">gcc</span> <span class="pre">-O3</span></code> 编译后，我们可以得到以下汇编代码：</p>
+<div class="highlight-asm notranslate"><div class="highlight"><pre><span></span><span class="w">    </span><span class="na">.file</span><span class="w">   </span><span class="s">&quot;test.c&quot;</span>
+<span class="w">    </span><span class="na">.option</span><span class="w"> </span><span class="no">nopic</span>
+<span class="w">    </span><span class="na">.attribute</span><span class="w"> </span><span class="no">arch</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;rv64i2p1_m2p0_a2p1_f2p2_d2p2_c2p0_zicsr2p0&quot;</span>
+<span class="w">    </span><span class="na">.attribute</span><span class="w"> </span><span class="no">unaligned_access</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span>
+<span class="w">    </span><span class="na">.attribute</span><span class="w"> </span><span class="no">stack_align</span><span class="p">,</span><span class="w"> </span><span class="mi">16</span>
+<span class="w">    </span><span class="na">.text</span>
+<span class="w">    </span><span class="na">.align</span><span class="w">  </span><span class="mi">1</span>
+<span class="w">    </span><span class="na">.globl</span><span class="w">  </span><span class="no">max</span>
+<span class="w">    </span><span class="na">.type</span><span class="w">   </span><span class="no">max</span><span class="p">,</span><span class="w"> </span><span class="na">@function</span>
+<span class="nl">max:</span>
+<span class="w">    </span><span class="nf">mv</span><span class="w">  </span><span class="no">a5</span><span class="p">,</span><span class="no">a0</span>
+<span class="w">    </span><span class="nf">bge</span><span class="w"> </span><span class="no">a0</span><span class="p">,</span><span class="no">a1</span><span class="p">,.</span><span class="no">L2</span>
+<span class="w">    </span><span class="nf">mv</span><span class="w">  </span><span class="no">a5</span><span class="p">,</span><span class="no">a1</span>
+<span class="nl">.L2:</span>
+<span class="w">    </span><span class="nf">sext.w</span><span class="w">  </span><span class="no">a0</span><span class="p">,</span><span class="no">a5</span>
+<span class="w">    </span><span class="nf">ret</span>
+<span class="w">    </span><span class="na">.size</span><span class="w">   </span><span class="no">max</span><span class="p">,</span><span class="w"> </span><span class="no">.-max</span>
+<span class="w">    </span><span class="na">.section</span><span class="w">    </span><span class="no">.rodata.str1.8</span><span class="p">,</span><span class="s">&quot;aMS&quot;</span><span class="p">,</span><span class="na">@progbits</span><span class="p">,</span><span class="mi">1</span>
+<span class="w">    </span><span class="na">.align</span><span class="w">  </span><span class="mi">3</span>
+<span class="nl">.LC0:</span>
+<span class="w">    </span><span class="na">.string</span><span class="w"> </span><span class="s">&quot;%d %d&quot;</span>
+<span class="w">    </span><span class="na">.align</span><span class="w">  </span><span class="mi">3</span>
+<span class="nl">.LC1:</span>
+<span class="w">    </span><span class="na">.string</span><span class="w"> </span><span class="s">&quot;max is: %d\n&quot;</span>
+<span class="w">    </span><span class="na">.section</span><span class="w">    </span><span class="no">.text.startup</span><span class="p">,</span><span class="s">&quot;ax&quot;</span><span class="p">,</span><span class="na">@progbits</span>
+<span class="w">    </span><span class="na">.align</span><span class="w">  </span><span class="mi">1</span>
+<span class="w">    </span><span class="na">.globl</span><span class="w">  </span><span class="no">main</span>
+<span class="w">    </span><span class="na">.type</span><span class="w">   </span><span class="no">main</span><span class="p">,</span><span class="w"> </span><span class="na">@function</span>
+<span class="nl">main:</span>
+<span class="w">    </span><span class="nf">addi</span><span class="w">    </span><span class="no">sp</span><span class="p">,</span><span class="no">sp</span><span class="p">,-</span><span class="mi">32</span>
+<span class="w">    </span><span class="nf">sd</span><span class="w">  </span><span class="no">s0</span><span class="p">,</span><span class="mi">16</span><span class="p">(</span><span class="no">sp</span><span class="p">)</span>
+<span class="w">    </span><span class="nf">sd</span><span class="w">  </span><span class="no">s1</span><span class="p">,</span><span class="mi">8</span><span class="p">(</span><span class="no">sp</span><span class="p">)</span>
+<span class="w">    </span><span class="nf">lui</span><span class="w"> </span><span class="no">s0</span><span class="p">,</span><span class="nv">%hi</span><span class="p">(</span><span class="no">a</span><span class="p">)</span>
+<span class="w">    </span><span class="nf">lui</span><span class="w"> </span><span class="no">s1</span><span class="p">,</span><span class="nv">%hi</span><span class="p">(</span><span class="no">b</span><span class="p">)</span>
+<span class="w">    </span><span class="nf">lui</span><span class="w"> </span><span class="no">a0</span><span class="p">,</span><span class="nv">%hi</span><span class="p">(.</span><span class="no">LC0</span><span class="p">)</span>
+<span class="w">    </span><span class="nf">addi</span><span class="w">    </span><span class="no">a2</span><span class="p">,</span><span class="no">s1</span><span class="p">,</span><span class="nv">%lo</span><span class="p">(</span><span class="no">b</span><span class="p">)</span>
+<span class="w">    </span><span class="nf">addi</span><span class="w">    </span><span class="no">a1</span><span class="p">,</span><span class="no">s0</span><span class="p">,</span><span class="nv">%lo</span><span class="p">(</span><span class="no">a</span><span class="p">)</span>
+<span class="w">    </span><span class="nf">addi</span><span class="w">    </span><span class="no">a0</span><span class="p">,</span><span class="no">a0</span><span class="p">,</span><span class="nv">%lo</span><span class="p">(.</span><span class="no">LC0</span><span class="p">)</span>
+<span class="w">    </span><span class="nf">sd</span><span class="w">  </span><span class="no">ra</span><span class="p">,</span><span class="mi">24</span><span class="p">(</span><span class="no">sp</span><span class="p">)</span>
+<span class="w">    </span><span class="nf">call</span><span class="w">    </span><span class="no">__isoc99_scanf</span>
+<span class="w">    </span><span class="nf">lw</span><span class="w">  </span><span class="no">a1</span><span class="p">,</span><span class="nv">%lo</span><span class="p">(</span><span class="no">b</span><span class="p">)(</span><span class="no">s1</span><span class="p">)</span>
+<span class="w">    </span><span class="nf">lw</span><span class="w">  </span><span class="no">a0</span><span class="p">,</span><span class="nv">%lo</span><span class="p">(</span><span class="no">a</span><span class="p">)(</span><span class="no">s0</span><span class="p">)</span>
+<span class="w">    </span><span class="nf">call</span><span class="w">    </span><span class="no">max</span>
+<span class="w">    </span><span class="nf">mv</span><span class="w">  </span><span class="no">a1</span><span class="p">,</span><span class="no">a0</span>
+<span class="w">    </span><span class="nf">lui</span><span class="w"> </span><span class="no">a0</span><span class="p">,</span><span class="nv">%hi</span><span class="p">(.</span><span class="no">LC1</span><span class="p">)</span>
+<span class="w">    </span><span class="nf">addi</span><span class="w">    </span><span class="no">a0</span><span class="p">,</span><span class="no">a0</span><span class="p">,</span><span class="nv">%lo</span><span class="p">(.</span><span class="no">LC1</span><span class="p">)</span>
+<span class="w">    </span><span class="nf">call</span><span class="w">    </span><span class="no">printf</span>
+<span class="w">    </span><span class="nf">ld</span><span class="w">  </span><span class="no">ra</span><span class="p">,</span><span class="mi">24</span><span class="p">(</span><span class="no">sp</span><span class="p">)</span>
+<span class="w">    </span><span class="nf">ld</span><span class="w">  </span><span class="no">s0</span><span class="p">,</span><span class="mi">16</span><span class="p">(</span><span class="no">sp</span><span class="p">)</span>
+<span class="w">    </span><span class="nf">ld</span><span class="w">  </span><span class="no">s1</span><span class="p">,</span><span class="mi">8</span><span class="p">(</span><span class="no">sp</span><span class="p">)</span>
+<span class="w">    </span><span class="nf">li</span><span class="w">  </span><span class="no">a0</span><span class="p">,</span><span class="mi">0</span>
+<span class="w">    </span><span class="nf">addi</span><span class="w">    </span><span class="no">sp</span><span class="p">,</span><span class="no">sp</span><span class="p">,</span><span class="mi">32</span>
+<span class="w">    </span><span class="nf">jr</span><span class="w">  </span><span class="no">ra</span>
+<span class="w">    </span><span class="na">.size</span><span class="w">   </span><span class="no">main</span><span class="p">,</span><span class="w"> </span><span class="no">.-main</span>
+<span class="w">    </span><span class="na">.globl</span><span class="w">  </span><span class="no">b</span>
+<span class="w">    </span><span class="na">.globl</span><span class="w">  </span><span class="no">a</span>
+<span class="w">    </span><span class="na">.section</span><span class="w">    </span><span class="no">.sbss</span><span class="p">,</span><span class="s">&quot;aw&quot;</span><span class="p">,</span><span class="na">@nobits</span>
+<span class="w">    </span><span class="na">.align</span><span class="w">  </span><span class="mi">2</span>
+<span class="w">    </span><span class="na">.type</span><span class="w">   </span><span class="no">b</span><span class="p">,</span><span class="w"> </span><span class="na">@object</span>
+<span class="w">    </span><span class="na">.size</span><span class="w">   </span><span class="no">b</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span>
+<span class="nl">b:</span>
+<span class="w">    </span><span class="na">.zero</span><span class="w">   </span><span class="mi">4</span>
+<span class="w">    </span><span class="na">.type</span><span class="w">   </span><span class="no">a</span><span class="p">,</span><span class="w"> </span><span class="na">@object</span>
+<span class="w">    </span><span class="na">.size</span><span class="w">   </span><span class="no">a</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span>
+<span class="nl">a:</span>
+<span class="w">    </span><span class="na">.zero</span><span class="w">   </span><span class="mi">4</span>
+<span class="w">    </span><span class="na">.ident</span><span class="w">  </span><span class="s">&quot;GCC: () 12.2.0&quot;</span>
+<span class="w">    </span><span class="na">.section</span><span class="w">    </span><span class="no">.note.GNU-stack</span><span class="p">,</span><span class="s">&quot;&quot;</span><span class="p">,</span><span class="na">@progbits</span>
+</pre></div>
+</div>
+<p>下面对一些关键代码进行解释：</p>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">.option</span> <span class="pre">nopic</span></code> 表示不使用位置无关的代码。此时，汇编器生成的代码将假定它会被加载到固定的内存地址，对于生成静态链接的二进制文件比较重要，有时可以提高代码的执行效率。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">.attribute</span> <span class="pre">arch,</span> <span class="pre">&quot;rv64i2p1_m2p0&quot;</span></code> 是用于指定汇编代码所遵循的架构特性和扩展的指令。</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">rv64i2p1</span></code> 表示代码遵循 RISC-V 64 位基础指令集，版本为 2.1。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">m2p0</span></code> 表示支持乘法和除法指令，版本为 2.0。其余的指令大家可以通过搜索查找相关意义，此处不再赘述。</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">.attribute</span> <span class="pre">stack_align,</span> <span class="pre">16</span></code> 表示栈空间需要 16 字节对齐，在我们 RISC-V 版本的编译实验作业中，同样需要遵循这一规定。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">.text</span></code> 表示接下来是代码区。</p></li>
+<li><p>接下来我们介绍 max 函数中出现的汇编指令：</p>
+<ul class="simple">
+<li><p>首先我们需要了解一点，RISC-V 函数调用约定中参数的传递首先使用 <code class="docutils literal notranslate"><span class="pre">a0-a7</span></code> 寄存器，如果寄存器不够用，则使用栈进行传递。所以在函数入口处，<code class="docutils literal notranslate"><span class="pre">a0</span></code> 存放着变量 <code class="docutils literal notranslate"><span class="pre">a</span></code> 的值，<code class="docutils literal notranslate"><span class="pre">a1</span></code> 存放着变量 <code class="docutils literal notranslate"><span class="pre">b</span></code> 的值。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mv</span> <span class="pre">a5</span> <span class="pre">a0</span></code> 的含义为 <code class="docutils literal notranslate"><span class="pre">a5</span> <span class="pre">=</span> <span class="pre">a0</span></code>，现在 <code class="docutils literal notranslate"><span class="pre">a5</span></code> 中也存放着变量 <code class="docutils literal notranslate"><span class="pre">a</span></code> 的值。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bge</span> <span class="pre">a0,a1,.L2</span></code> 的含义为如果 <code class="docutils literal notranslate"><span class="pre">a0</span> <span class="pre">≥</span> <span class="pre">a1</span></code>，则跳转至 <code class="docutils literal notranslate"><span class="pre">.L2</span></code>，对应源代码的 <code class="docutils literal notranslate"><span class="pre">if(a&gt;=b)</span></code>。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mv</span> <span class="pre">a5</span> <span class="pre">a1</span></code> 的含义为 <code class="docutils literal notranslate"><span class="pre">a5</span> <span class="pre">=</span> <span class="pre">a1</span></code>，这一条语句在 <code class="docutils literal notranslate"><span class="pre">a</span> <span class="pre">&gt;=</span> <span class="pre">b</span></code> 为假的分支执行，表示将最大值 <code class="docutils literal notranslate"><span class="pre">a1``（存放着变量</span> <span class="pre">``b</span></code> 的值，此时有 <code class="docutils literal notranslate"><span class="pre">b</span> <span class="pre">&gt;</span> <span class="pre">a</span></code>）赋值给 <code class="docutils literal notranslate"><span class="pre">a5</span></code>。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sext.w</span> <span class="pre">a0,a5</span></code> 表示将 32 位的 <code class="docutils literal notranslate"><span class="pre">a5</span></code> 符号扩展到 64 位，值存放到 <code class="docutils literal notranslate"><span class="pre">a0</span></code> 中。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ret</span></code> 表示函数返回，即源代码中的 <code class="docutils literal notranslate"><span class="pre">return</span></code>。根据 RISC-V 函数调用约定，使用 <code class="docutils literal notranslate"><span class="pre">a0</span></code> 寄存器存放函数的返回值。</p></li>
+<li><p>max 函数最后的 <code class="docutils literal notranslate"><span class="pre">.size</span></code> 和 <code class="docutils literal notranslate"><span class="pre">.section</span></code> 在我们的编译实验作业中并不需要生成，大家如果感兴趣可以自行查阅资料了解含义。<code class="docutils literal notranslate"><span class="pre">.align</span> <span class="pre">3</span></code> 表示之前有一段未对齐的代码或数据，汇编器会在这段内容前插入适当数量的填充字节，以确保接下来的数据或代码从一个 8 字节对齐的地址开始。这样做可以提高内存访问效率和程序的运行性能。</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">.LC0</span></code> 和 <code class="docutils literal notranslate"><span class="pre">.LC1</span></code> 这些标签定义了字符串常量。</p></li>
+<li><p>接下来介绍 main 函数中出现的汇编指令：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">addi</span> <span class="pre">sp,sp,-32</span></code> 首先我们需要知道 <code class="docutils literal notranslate"><span class="pre">sp</span></code> 寄存器指向栈顶，该条指令的含义为开辟 32 字节的栈空间。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sd</span> <span class="pre">s0,16(sp)</span></code> 和 <code class="docutils literal notranslate"><span class="pre">sd</span> <span class="pre">s1,8(sp)</span></code> 首先我们需要知道 RISC-V 的函数调用约定中，被调用者需要保存 <code class="docutils literal notranslate"><span class="pre">sp</span></code>，<code class="docutils literal notranslate"><span class="pre">s0-s11</span></code> 寄存器，该函数中使用到了 <code class="docutils literal notranslate"><span class="pre">s0</span></code> 和 <code class="docutils literal notranslate"><span class="pre">s1</span></code> 寄存器，所以我们在函数开头需要进行保存。<code class="docutils literal notranslate"><span class="pre">sd</span> <span class="pre">s0,16(sp)</span></code> 表示将 <code class="docutils literal notranslate"><span class="pre">s0</span></code> 寄存器存储到地址为 <code class="docutils literal notranslate"><span class="pre">16+sp</span></code> 的内存中。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lui</span> <span class="pre">s0,%hi(a)</span></code> 表示将 <code class="docutils literal notranslate"><span class="pre">a</span></code> 的标签（即全局变量 <code class="docutils literal notranslate"><span class="pre">a</span></code> 的地址）的高 20 位放到 <code class="docutils literal notranslate"><span class="pre">s0</span></code> 寄存器中，后两条指令同理。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">addu</span> <span class="pre">a2,s1,%lo(b)</span></code> 表示 <code class="docutils literal notranslate"><span class="pre">a2</span> <span class="pre">=</span> <span class="pre">s1</span> <span class="pre">+</span> <span class="pre">b</span></code> 的标签（即全局变量 <code class="docutils literal notranslate"><span class="pre">b</span></code> 的地址）的低 12 位，后两条指令同理，现在 <code class="docutils literal notranslate"><span class="pre">a2</span></code> 寄存器中存放着全局变量 <code class="docutils literal notranslate"><span class="pre">b</span></code> 的地址，同理，<code class="docutils literal notranslate"><span class="pre">a1</span></code> 寄存器中存放着全局变量 <code class="docutils literal notranslate"><span class="pre">a</span></code> 的地址，<code class="docutils literal notranslate"><span class="pre">a0</span></code> 寄存器中存放着字符串常量的地址。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sd</span> <span class="pre">ra,24(sp)</span></code> 表示保存 <code class="docutils literal notranslate"><span class="pre">ra</span></code> 寄存器的值，原因是 RISC-V 函数调用约定需要调用者保存 <code class="docutils literal notranslate"><span class="pre">ra</span></code> 寄存器的值。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">call</span> <span class="pre">__isoc99_scanf</span></code> 表示 <code class="docutils literal notranslate"><span class="pre">scanf</span></code> 函数的调用，此时我们回忆一下刚才 <code class="docutils literal notranslate"><span class="pre">a0</span></code>，<code class="docutils literal notranslate"><span class="pre">a1</span></code>，<code class="docutils literal notranslate"><span class="pre">a2</span></code> 寄存器中变量的含义以及 RISC-V 函数调用约定，你大概就明白了此时 <code class="docutils literal notranslate"><span class="pre">call</span></code> 的含义。（<code class="docutils literal notranslate"><span class="pre">call</span></code> 指令实际上是一条伪指令，具体做了什么就交给同学们自己探索了）。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lw</span> <span class="pre">a1,%lo(b)(s1)</span></code> 含义为读取内存地址为 <code class="docutils literal notranslate"><span class="pre">s1</span> <span class="pre">+</span> <span class="pre">%lo(b)</span></code> 的值（实际上，即为全局变量 <code class="docutils literal notranslate"><span class="pre">b</span></code> 的地址），并放到 <code class="docutils literal notranslate"><span class="pre">a1</span></code> 寄存器中，现在 <code class="docutils literal notranslate"><span class="pre">a1</span></code> 寄存器中为全局变量 <code class="docutils literal notranslate"><span class="pre">b</span></code> 的值。下一条指令同理，<code class="docutils literal notranslate"><span class="pre">a0</span></code> 寄存器中为全局变量 <code class="docutils literal notranslate"><span class="pre">a</span></code> 的值。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">call</span> <span class="pre">max</span></code> 表示调用 <code class="docutils literal notranslate"><span class="pre">max</span></code> 函数，此时推荐再回忆一下 <code class="docutils literal notranslate"><span class="pre">a0</span></code>，<code class="docutils literal notranslate"><span class="pre">a1</span></code> 寄存器分别表示什么。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mv</span> <span class="pre">a1,a0</span></code> 在函数调用完毕后，<code class="docutils literal notranslate"><span class="pre">a0</span></code> 存放着函数返回值，此时我们将 <code class="docutils literal notranslate"><span class="pre">a0</span></code> 赋值给 <code class="docutils literal notranslate"><span class="pre">a1</span></code>，即 <code class="docutils literal notranslate"><span class="pre">a1</span></code> 保存着 <code class="docutils literal notranslate"><span class="pre">max(a,b)</span></code> 的结果，也许你会问为什么这里要多此一举将 <code class="docutils literal notranslate"><span class="pre">a0</span></code> 赋值给 <code class="docutils literal notranslate"><span class="pre">a1</span></code>，当你在下面看到 <code class="docutils literal notranslate"><span class="pre">printf</span></code> 函数的调用时你会明白一切（这也是 GCC <code class="docutils literal notranslate"><span class="pre">O3</span></code> 优化效果的体现）。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lui</span> <span class="pre">a0，%hi(.LC1)</span></code> 和 <code class="docutils literal notranslate"><span class="pre">addi</span> <span class="pre">a0,a0,%lo(.LC1)</span></code> 的含义为将 <code class="docutils literal notranslate"><span class="pre">.LC1</span></code> 中字符串常量的地址赋值给 <code class="docutils literal notranslate"><span class="pre">a0</span></code>。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">call</span> <span class="pre">printf</span></code> 表示调用 <code class="docutils literal notranslate"><span class="pre">printf</span></code> 函数，不妨再回忆一下此时 <code class="docutils literal notranslate"><span class="pre">a0</span></code>，<code class="docutils literal notranslate"><span class="pre">a1</span></code> 寄存器的含义。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ld</span> <span class="pre">ra</span> <span class="pre">24(sp)</span></code> 表示恢复之前保存的 <code class="docutils literal notranslate"><span class="pre">ra</span></code> 寄存器。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ld</span> <span class="pre">s0,16(sp)</span></code> 和 <code class="docutils literal notranslate"><span class="pre">ld</span> <span class="pre">s1,8(sp)</span></code> 表示将 <code class="docutils literal notranslate"><span class="pre">s0</span></code> 和 <code class="docutils literal notranslate"><span class="pre">s1</span></code> 寄存器恢复至调用前的状态。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">li</span> <span class="pre">a0，0</span></code> 表示将 <code class="docutils literal notranslate"><span class="pre">a0</span></code> 赋值为 0，表示 <code class="docutils literal notranslate"><span class="pre">main</span></code> 函数的返回值。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">addi</span> <span class="pre">sp,sp,32</span></code> 表示恢复栈空间。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">jr</span> <span class="pre">ra</span></code> 表示函数返回，指令含义为跳转到 <code class="docutils literal notranslate"><span class="pre">ra</span></code> 寄存器中的地址（<code class="docutils literal notranslate"><span class="pre">ra</span></code> 寄存器会保存函数的返回地址，此时即使你不知道 <code class="docutils literal notranslate"><span class="pre">call</span></code> 这一条伪指令的含义，应该也能猜到 <code class="docutils literal notranslate"><span class="pre">call</span></code> 做了什么了）。</p></li>
+</ul>
+</li>
+<li><p>最后还有一些全局变量的定义，从文本上很容易理解其含义，这里就不赘述了。</p></li>
+<li><p>上述的 RISC-V 汇编由 GCC <code class="docutils literal notranslate"><span class="pre">O3</span></code> 优化选项编译而成。如果你想了解编译器不做任何优化生成的汇编是什么样的，可以自己使用在环境配置环节安装的 RISC-V 交叉编译 GCC，并使用编译选项 <code class="docutils literal notranslate"><span class="pre">O0</span></code> 进行编译。（添加编译选项 <code class="docutils literal notranslate"><span class="pre">-S</span></code> 表示生成汇编代码）。</p></li>
+</ol>
+</section>
+<section id="id5">
+<h2>对编写的 RISC-V 汇编进行测试<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<p>假设你编写了一个 RISC-V 汇编文件，命名为 <code class="docutils literal notranslate"><span class="pre">test.s</span></code>，使用下面的命令即可进行测试。</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>riscv64-unknown-linux-gnu-gcc<span class="w"> </span>test.s<span class="w"> </span>-o<span class="w"> </span><span class="nb">test</span><span class="w"> </span>-static
+<span class="c1"># 如果你好奇为什么要加 -static，可以取消 -static 后使用 qemu 运行试试，</span>
+<span class="c1"># 看看会报什么错误</span>
+<span class="c1"># 你可以再根据错误信息去搜索引擎上搜索或者询问 ChatGPT 来了解原因。</span>
+qemu-riscv64<span class="w"> </span><span class="nb">test</span>
+</pre></div>
+</div>
+</section>
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="parser.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">词法、语法分析器与抽象语法树</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="llvm-basics.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">了解编译器及 LLVM IR 编程</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2024, Junyi Mei, Dawei Guo
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">汇编编程</a><ul>
+<li><a class="reference internal" href="#risc-v">系统学习 RISC-V 汇编</a></li>
+<li><a class="reference internal" href="#id3">RISC-V 汇编简易入门</a></li>
+<li><a class="reference internal" href="#id5">对编写的 RISC-V 汇编进行测试</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="_static/documentation_options.js?v=7d86a446"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/scripts/furo.js?v=46bd48cc"></script>
+    <script src="_static/translations.js?v=beaddf03"></script>
+    </body>
+</html>

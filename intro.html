@@ -1,0 +1,535 @@
+<!doctype html>
+<html class="no-js" lang="zh-CN" data-content_root="./">
+  <head><meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="索引" href="genindex.html" /><link rel="search" title="搜索" href="search.html" /><link rel="next" title="环境配置" href="env-setup.html" /><link rel="prev" title="编译系统原理课程项目文档" href="index.html" />
+
+    <!-- Generated with Sphinx 8.2.3 and Furo 2025.07.19 -->
+        <title>课程项目简介 - 编译系统原理 文档</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=acfd86a5" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=25af2a20" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo-extensions.css?v=8dab3a3b" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f2f2f2;
+  --color-code-foreground: #1e1e1e;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #2b2b2b;
+  --color-code-foreground: #f8f8f2;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #2b2b2b;
+  --color-code-foreground: #f8f8f2;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc">
+<label class="overlay sidebar-overlay" for="__navigation">
+  <div class="visually-hidden">Hide navigation sidebar</div>
+</label>
+<label class="overlay toc-overlay" for="__toc">
+  <div class="visually-hidden">Hide table of contents sidebar</div>
+</label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <div class="visually-hidden">Toggle site navigation sidebar</div>
+        <i class="icon"><svg><use href="#svg-menu"></use></svg></i>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="index.html"><div class="brand">编译系统原理  文档</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle">
+          <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <div class="visually-hidden">Toggle table of contents sidebar</div>
+        <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="index.html">
+  
+  <span class="sidebar-brand-text">编译系统原理  文档</span>
+  
+</a><form class="sidebar-search-container" method="get" action="search.html" role="search">
+  <input class="sidebar-search" placeholder="搜索" name="q" aria-label="搜索">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <ul class="current">
+<li class="toctree-l1 current has-children current-page"><a class="current reference internal" href="#">课程项目简介</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of 课程项目简介</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="env-setup.html">环境配置</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of 环境配置</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="rust-basics.html">Rust 编程基础</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><div class="visually-hidden">Toggle navigation of Rust 编程基础</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="llvm-basics.html">了解编译器及 LLVM IR 编程</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><div class="visually-hidden">Toggle navigation of 了解编译器及 LLVM IR 编程</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="asm-basics.html">汇编编程</a><input class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><div class="visually-hidden">Toggle navigation of 汇编编程</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="parser.html">词法、语法分析器与抽象语法树</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><div class="visually-hidden">Toggle navigation of 词法、语法分析器与抽象语法树</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="irgen.html">中间代码生成</a><input class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><div class="visually-hidden">Toggle navigation of 中间代码生成</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="codegen.html">完成编译器构造</a><input class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><div class="visually-hidden">Toggle navigation of 完成编译器构造</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="optimization.html">代码优化</a><input class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><div class="visually-hidden">Toggle navigation of 代码优化</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="_sources/intro.rst.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle">
+              <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <div class="visually-hidden">Toggle table of contents sidebar</div>
+            <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="id1">
+<h1>课程项目简介<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h1>
+<div class="toctree-wrapper compound">
+</div>
+<div class="admonition attention">
+<p class="admonition-title">注意</p>
+<p>本实验要求对 Rust 语言有一定的了解，并且有很大一部分实验需要在没有完整参考代码的情况下完成项目，会有一定难度。</p>
+<p>请注意 Rust 版本实验仍然要求完成完整的编译器构建，所以在确定最终课程项目所使用的语言前请评估自身的能力，如果你对 Rust 语言不熟悉，并且没有足够的时间、精力学习 Rust，建议使用 C++ 完成课程项目。</p>
+<p><strong>如果你在选择 Rust 之后发现自己无法完成实验，打算回到 C++ 版本，则你需要重新完成 C++ 版本中与 Rust 实验存在差别的部分
+（包括词法分析、语法分析、类型检查和中间代码生成、代码优化和目标代码生成等）并且重新和助教联系进行检查。</strong></p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">备注</p>
+<p>Rust 版本为 2024 年课程新加入的实验，如果在实验过程中遇到问题，请及时与助教联系。</p>
+<p><strong>出于实验难度的考虑，我们只提供了 RISC-V 后端实现的指导，如果你希望实现 ARM 后端，请先与助教和老师进行沟通。</strong></p>
+</div>
+<div class="admonition important">
+<p class="admonition-title">重要</p>
+<p>在选择实验所使用的语言并开始实验前，请先仔细阅读本页面中的内容，<strong>尤其是关于如何解决问题的部分</strong>，这将有助于你更好地与助教沟通并解决实验中遇到的问题。</p>
+<p><strong>本文档包括什么</strong></p>
+<ul class="simple">
+<li><p>对 Rust 语言以及实现一个编译器可能需要用到的设计模式和数据结构的介绍。</p></li>
+<li><p>对 LLVM IR 的基本介绍。</p></li>
+<li><p>对 Rust 中构建语法分析器、生成抽象语法树的介绍。</p></li>
+<li><p>对 AST 翻译到中间表示的一般方法的介绍。</p></li>
+<li><p>对中间表示翻译到目标代码的一般方法的介绍。</p></li>
+<li><p>对一些编译优化方法的概述。</p></li>
+</ul>
+<p><strong>本文档不包括什么</strong></p>
+<ul class="simple">
+<li><p>完整的 Rust 语言教程。本文档并非 Rust 教程，但是会给出学习 Rust 所需的有关文档，如果你对 Rust 不熟悉可以参考这些文档。如果你没有足够的时间学习 Rust，建议使用 C++ 完成课程项目。</p></li>
+<li><p>完整的编译器实现代码。本文档以及配套的代码框架并不包含完整的编译器实现，你可以参考下面给出的编译器项目，以及我们给出的基本框架代码，根据本文档的指导完成编译器的实现。</p></li>
+<li><p>详细的编译优化算法或实现。本文档只会对一些基本的编译优化方法进行概述，如果你对编译优化感兴趣，或者想实现课程实验的进阶要求，可以自行查阅相关资料。</p></li>
+</ul>
+</div>
+<p>本文档为南开大学编译系统原理课程 Rust 版本实验指导书。</p>
+<p>实验的主要目标是实现一个简单的编译器，将 SysY 语言（C 的一个子集）编译为 Arm 或 RISC-V 汇编代码。</p>
+<p>最终我们将使用 Rust 实现编译器，接受 SysY 语言的源代码作为输入，如：</p>
+<div class="highlight-c notranslate"><div class="highlight"><pre><span></span><span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">n</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">getint</span><span class="p">();</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">sum</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="w">    </span><span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="n">i</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="n">n</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">sum</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">sum</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">i</span><span class="p">;</span>
+<span class="w">        </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="n">putint</span><span class="p">(</span><span class="n">sum</span><span class="p">);</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>经过词法分析、语法分析、构建抽象语法树、中间代码生成、优化等步骤，最终输出对应的 Arm 或 RISC-V 汇编代码，如：</p>
+<div class="highlight-asm notranslate"><div class="highlight"><pre><span></span><span class="w">    </span><span class="na">.text</span>
+<span class="w">    </span><span class="na">.global</span><span class="w"> </span><span class="no">main</span>
+<span class="w">    </span><span class="na">.align</span><span class="w"> </span><span class="mi">1</span>
+<span class="w">    </span><span class="na">.type</span><span class="w"> </span><span class="no">main</span><span class="p">,</span><span class="w"> </span><span class="na">@function</span>
+<span class="nl">main:</span>
+<span class="nl">.bb0:</span>
+<span class="w">    </span><span class="nf">addi</span><span class="w"> </span><span class="no">sp</span><span class="p">,</span><span class="w"> </span><span class="no">sp</span><span class="p">,</span><span class="w"> </span><span class="mi">-16</span>
+<span class="w">    </span><span class="nf">sd</span><span class="w"> </span><span class="no">ra</span><span class="p">,</span><span class="w"> </span><span class="mi">8</span><span class="p">(</span><span class="no">sp</span><span class="p">)</span>
+<span class="w">    </span><span class="nf">call</span><span class="w"> </span><span class="no">getint</span>
+<span class="w">    </span><span class="nf">li</span><span class="w"> </span><span class="no">t1</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span>
+<span class="w">    </span><span class="nf">addi</span><span class="w"> </span><span class="no">t2</span><span class="p">,</span><span class="w"> </span><span class="no">zero</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span>
+<span class="nl">.while.entry_0:</span>
+<span class="w">    </span><span class="nf">blt</span><span class="w"> </span><span class="no">a0</span><span class="p">,</span><span class="w"> </span><span class="no">t1</span><span class="p">,</span><span class="w"> </span><span class="no">.while.exit_0</span>
+<span class="w">    </span><span class="nf">addw</span><span class="w"> </span><span class="no">t2</span><span class="p">,</span><span class="w"> </span><span class="no">t2</span><span class="p">,</span><span class="w"> </span><span class="no">t1</span>
+<span class="w">    </span><span class="nf">addiw</span><span class="w"> </span><span class="no">t1</span><span class="p">,</span><span class="w"> </span><span class="no">t1</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span>
+<span class="w">    </span><span class="nf">j</span><span class="w"> </span><span class="no">.while.entry_0</span>
+<span class="nl">.while.exit_0:</span>
+<span class="w">    </span><span class="nf">addi</span><span class="w"> </span><span class="no">a0</span><span class="p">,</span><span class="w"> </span><span class="no">t2</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span>
+<span class="w">    </span><span class="nf">call</span><span class="w"> </span><span class="no">putint</span>
+<span class="w">    </span><span class="nf">addi</span><span class="w"> </span><span class="no">a0</span><span class="p">,</span><span class="w"> </span><span class="no">zero</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span>
+<span class="w">    </span><span class="nf">ld</span><span class="w"> </span><span class="no">ra</span><span class="p">,</span><span class="w"> </span><span class="mi">8</span><span class="p">(</span><span class="no">sp</span><span class="p">)</span>
+<span class="w">    </span><span class="nf">addi</span><span class="w"> </span><span class="no">sp</span><span class="p">,</span><span class="w"> </span><span class="no">sp</span><span class="p">,</span><span class="w"> </span><span class="mi">16</span>
+<span class="w">    </span><span class="nf">ret</span>
+</pre></div>
+</div>
+<p>之后通过汇编器将汇编代码转换为机器码，最终在模拟器（或者实际的硬件平台）上运行，以检测正确性。</p>
+<p>由于 Rust 版本实验为新添加实验，许多内容可能并不成熟，此处给出几个可以参考的 Rust 编译器实现：</p>
+<ol class="arabic">
+<li><p><a class="reference external" href="https://github.com/JuniMay/orzcc">orzcc</a> ：一个 SysY 到 RISC-V 后端编译器的实现，2024 毕昇杯编译系统设计赛 RISC-V 赛道获奖作品，实验代码框架主要基于这个项目作为参考。</p>
+<div class="admonition note">
+<p class="admonition-title">备注</p>
+<p>orzcc 没有使用 LLVM IR，但是根据课程实验要求，你需要使用 LLVM IR 作为中间代码。</p>
+<p>orzcc 设计时支持多后端，但是只实现了 RISC-V 后端，如果你想实现 ARM 后端，可能需要自行探索。</p>
+</div>
+<div class="admonition danger">
+<p class="admonition-title">危险</p>
+<p>请注意，orzcc 代码是面向竞赛设计的产物，可能存在大量 Bug，功能冗余和不符合实验要求的部分，如果你要参考 orzcc 代码，请注意鉴别。</p>
+</div>
+</li>
+<li><p><a class="reference external" href="https://github.com/pku-minic/kira-rs">kira-rs</a>：PKU 编译课程的 Rust 版本实现，可以作为参考。</p></li>
+<li><p><a class="reference external" href="https://github.com/maekawatoshiki/vicis">vicis</a> ：在 Rust 中构建 LLVM IR 的实现，可以作为参考。</p></li>
+<li><p><a class="reference external" href="https://github.com/bytecodealliance/wasmtime/tree/main/cranelift/codegen">cranelift</a> ：一个较为成熟的 Rust 编译器框架，可以参考其中的数据结构和实现。</p></li>
+</ol>
+<section id="rust">
+<h2>为什么使用 Rust ？<a class="headerlink" href="#rust" title="Link to this heading">¶</a></h2>
+<blockquote>
+<div><p>Rust 写图着色比 C++ 简单一个数量级。—— gdw</p>
+</div></blockquote>
+<p>你可能会问，既然 C++ 已经是一门非常成熟的系统编程语言，为什么还要尝试使用 Rust 来实现编译器呢？答案是多方面的：</p>
+<ol class="arabic simple">
+<li><p>Rust 相比于 C++ 拥有更好的基础设施，通过 Cargo 可以方便地管理依赖、测试和构建项目，而不需要手动编写 Makefile 或者 CMakeLists.txt。</p></li>
+<li><p>Rust 的类型检查更为严格，有许多问题可以在编译期就被检测出来。</p></li>
+<li><p>在正确使用的情况下，Rust 能够更方便地写出内存安全的代码，避免了许多 C++ 中常见的内存错误。</p></li>
+<li><p>Rust 提供了很多较为成熟的 Parser 工具，配合枚举类型可以更方便地实现语法分析器和 AST。</p></li>
+</ol>
+<p>当然，还是如本文档开头所述，Rust 语言的学习曲线可能会比较陡峭，对于你来说，课程项目的得分可能仍然是非常重要的，所以请根据自己的实际情况选择合适的语言。</p>
+<p>如果你确定要使用 Rust 完成课程项目，那么你需要注意以下几点：</p>
+<ol class="arabic simple">
+<li><p>不要想当然地认为可以用 Rust 以同样的思路和方法实现 C++ 版本中的功能，Rust 语言的特性和 C++ 有很大的不同，你需要重新思考如何使用 Rust 的特性来实现编译器，往往这种思考过程会让你对编译器的原理有更深入的理解，并且写出更加优雅的代码。</p></li>
+<li><p>Rust 编译器是你的朋友，而不是敌人，Rust 编译器会帮助你检测出许多潜在的错误，所以请不要忽略编译器的警告信息，尽量保持代码的可读性和可维护性。</p></li>
+<li><p>当你遇到 Rust 编译器报错时，不要惊慌，尝试仔细阅读错误信息，理解错误的原因，重新思考你的代码逻辑或者阅读有关的资料，很多时候错误信息会帮助你找到代码中的问题。</p></li>
+</ol>
+</section>
+<section id="id2">
+<h2>如何解决问题？<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<p>请仔细阅读 <a class="reference external" href="https://github.com/ryanhanwu/How-To-Ask-Questions-The-Smart-Way/blob/main/README-zh_CN.md">提问的智慧</a> 和
+<a class="reference external" href="https://github.com/tangx/Stop-Ask-Questions-The-Stupid-Ways/blob/master/README.md">别像弱智一样提问</a> 这两篇文章。如果你没有时间阅读，下面是一些比较一般的解决问题的方法。</p>
+<ol class="arabic">
+<li><p>先尝试自己解决。仔细想想，问题出在哪里？是不是自己操作有误？是不是代码有问题？是不是对某个概念理解不正确？</p></li>
+<li><p><strong>RTFM (Read The Friendly Manual) 先查文档！</strong> 本文档以及本文档给出的参考资料中提及了许多常见问题以及解决方法，请仔细阅读。大部分问题都可以通过这些资料解决。</p></li>
+<li><p><strong>STFW (Search The Fantastic Web) 善用搜索引擎！</strong> 请至少尝试使用 Bing 或者 Google 搜索一下你的问题，再决定是否向助教求助。</p>
+<div class="admonition hint">
+<p class="admonition-title">提示</p>
+<p>在大部分情况下，Baidu/CSDN 远不如 Google/Bing/StackOverflow 等搜索引擎和平台给出的英文解决方案全面。</p>
+</div>
+</li>
+<li><p><strong>Ask ChatGPT!</strong> 现在是大模型时代！ChatGPT 知识面比任何人都广，作为一个工科生，你应该至少有一个 ChatGPT 或者类似的工具，如果没有，请尽快找到一个。ChatGPT 将会在你的编程生涯中成为你一大利器，一定要善用 ChatGPT。</p>
+<div class="admonition danger">
+<p class="admonition-title">危险</p>
+<p>尽管大模型是个好工具，但是他们在专业知识上很有可能出错，请不要完全相信大模型的回答，特别是涉及到环境配置的指令，请自行验证后再执行。</p>
+</div>
+</li>
+<li><p>向他人求助。如果以上方法都无法解决你的问题，那么请向同学或者助教求助。</p>
+<div class="admonition important">
+<p class="admonition-title">重要</p>
+<p>请注意，助教也有自己的作息时间，不要期望他们能够立刻回复你的问题，尽量提前预留足够的时间来解决问题。</p>
+</div>
+</li>
+</ol>
+</section>
+<section id="faq">
+<h2>FAQ<a class="headerlink" href="#faq" title="Link to this heading">¶</a></h2>
+<p><strong>问：我没有接触过 Rust 语言，可以使用 Rust 完成课程项目吗？</strong></p>
+<p>答：可以，但是请注意 Rust 语言的学习曲线可能会比较陡峭，你需要在有限的时间内学习 Rust 语言的基本知识，
+并且完成课程项目。如果你对 Rust 不熟悉，并且没有足够的时间学习 Rust，建议使用 C++ 完成课程项目。</p>
+<hr class="docutils" />
+<p><strong>问：我在实现编译器的过程中遇到了 Rust 语言的问题，应该怎么办？</strong></p>
+<p>答：大部分情况下请参考上面的“如何解决问题”部分。但是，如果你发现自己学习 Rust 所花的时间已经远远超过了学习编译原理理论所需要的时间，
+那么你可能需要重新确定一下课程实验所使用的编程语言了。使用 Rust 编写编译器只是实验的一个选项，其目的仍然是让你更好地去学习编译原理，
+而非 Rust 这个编程语言。如果你确实对 Rust 很感兴趣但是时间不够，可以考虑在课程实验结束后继续学习 Rust。</p>
+<hr class="docutils" />
+<p><strong>问：我在实现编译器的过程中遇到了其他问题，应该怎么办？</strong></p>
+<p>答：请参考上面的“如何解决问题”部分。</p>
+</section>
+<section id="id5">
+<h2>注意 &amp; 禁止事项<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>你可以参考本文档中给出的参考资料和代码，如果你需要使用他人代码，请在自己代码中注明来源。</p></li>
+<li><p>你可以修改样例来验证自己编译器的正确性，但是最终需要通过给定的一系列测试样例。</p></li>
+<li><p>请不要通过特判文件名、函数名或变量名等方式生成特定的输出，这样的代码将会被认为是作弊。</p></li>
+<li><p>请不要通过特判样例的输入、输出等方式通过测试，这样的代码将会被认为是作弊。</p></li>
+<li><p>在进阶部分，请不要使用非正常的匹配方式（如毫无理由地只判断一个函数指令数量）生成优化后的代码，这样的优化方式将会被认为是作弊。</p></li>
+</ul>
+<div class="admonition hint">
+<p class="admonition-title">提示</p>
+<p>你仍然可以匹配数组循环赋值，替换为 memset，或者将多条指令合并从而利用 ISA 的特性，这样的优化是合理的。</p>
+</div>
+</section>
+<section id="id6">
+<h2>参考资料<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><a class="reference external" href="https://kaisery.github.io/trpl-zh-cn/">Rust 程序设计语言</a></p></li>
+<li><p><a class="reference external" href="https://course.rs/about-book.html">Rust 语言圣经</a></p></li>
+<li><p><a class="reference external" href="https://doc.rust-lang.org/rust-by-example/index.html">Rust By Example</a></p></li>
+<li><p><a class="reference external" href="https://www.lurklurk.org/effective-rust/title-page.html">Effective Rust</a></p></li>
+<li><p>Engineering a Compiler by Cooper, Keith D., Torczon, Linda</p></li>
+<li><p>虎书（Modern Compiler Implementation in C）</p></li>
+<li><p>龙书（Compilers: Principles, Techniques, and Tools）</p></li>
+<li><p><a class="reference external" href="https://lalrpop.github.io/lalrpop/">The LALRPOP book</a></p></li>
+<li><p><a class="reference external" href="https://pest.rs/book/">A thoughtful introduction to the pest parser</a></p></li>
+<li><p><a class="reference external" href="https://llvm.org/docs/ProgrammersManual.html">LLVM Programmer's Manual</a></p></li>
+<li><p><a class="reference external" href="https://riscv.org/technical/specifications/">RISC-V ISA Specifications</a></p></li>
+<li><p><a class="reference external" href="https://azeria-labs.com/writing-arm-assembly-part-1/">ARM Assembly Basics</a></p></li>
+</ul>
+</section>
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="env-setup.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">环境配置</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="index.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">Home</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2024, Junyi Mei, Dawei Guo
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">课程项目简介</a><ul>
+<li><a class="reference internal" href="#rust">为什么使用 Rust ？</a></li>
+<li><a class="reference internal" href="#id2">如何解决问题？</a></li>
+<li><a class="reference internal" href="#faq">FAQ</a></li>
+<li><a class="reference internal" href="#id5">注意 &amp; 禁止事项</a></li>
+<li><a class="reference internal" href="#id6">参考资料</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="_static/documentation_options.js?v=7d86a446"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/scripts/furo.js?v=46bd48cc"></script>
+    <script src="_static/translations.js?v=beaddf03"></script>
+    </body>
+</html>

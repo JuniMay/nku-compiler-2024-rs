@@ -1,0 +1,600 @@
+<!doctype html>
+<html class="no-js" lang="zh-CN" data-content_root="./">
+  <head><meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="索引" href="genindex.html" /><link rel="search" title="搜索" href="search.html" /><link rel="next" title="完成编译器构造" href="codegen.html" /><link rel="prev" title="词法、语法分析器与抽象语法树" href="parser.html" />
+
+    <!-- Generated with Sphinx 8.2.3 and Furo 2025.07.19 -->
+        <title>中间代码生成 - 编译系统原理 文档</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=acfd86a5" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=25af2a20" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo-extensions.css?v=8dab3a3b" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f2f2f2;
+  --color-code-foreground: #1e1e1e;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #2b2b2b;
+  --color-code-foreground: #f8f8f2;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #2b2b2b;
+  --color-code-foreground: #f8f8f2;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc">
+<label class="overlay sidebar-overlay" for="__navigation">
+  <div class="visually-hidden">Hide navigation sidebar</div>
+</label>
+<label class="overlay toc-overlay" for="__toc">
+  <div class="visually-hidden">Hide table of contents sidebar</div>
+</label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <div class="visually-hidden">Toggle site navigation sidebar</div>
+        <i class="icon"><svg><use href="#svg-menu"></use></svg></i>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="index.html"><div class="brand">编译系统原理  文档</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle">
+          <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <div class="visually-hidden">Toggle table of contents sidebar</div>
+        <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="index.html">
+  
+  <span class="sidebar-brand-text">编译系统原理  文档</span>
+  
+</a><form class="sidebar-search-container" method="get" action="search.html" role="search">
+  <input class="sidebar-search" placeholder="搜索" name="q" aria-label="搜索">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <ul class="current">
+<li class="toctree-l1 has-children"><a class="reference internal" href="intro.html">课程项目简介</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of 课程项目简介</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="env-setup.html">环境配置</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of 环境配置</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="rust-basics.html">Rust 编程基础</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><div class="visually-hidden">Toggle navigation of Rust 编程基础</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="llvm-basics.html">了解编译器及 LLVM IR 编程</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><div class="visually-hidden">Toggle navigation of 了解编译器及 LLVM IR 编程</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="asm-basics.html">汇编编程</a><input class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><div class="visually-hidden">Toggle navigation of 汇编编程</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="parser.html">词法、语法分析器与抽象语法树</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><div class="visually-hidden">Toggle navigation of 词法、语法分析器与抽象语法树</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 current has-children current-page"><a class="current reference internal" href="#">中间代码生成</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><div class="visually-hidden">Toggle navigation of 中间代码生成</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="codegen.html">完成编译器构造</a><input class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><div class="visually-hidden">Toggle navigation of 完成编译器构造</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="optimization.html">代码优化</a><input class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><div class="visually-hidden">Toggle navigation of 代码优化</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="_sources/irgen.rst.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle">
+              <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <div class="visually-hidden">Toggle table of contents sidebar</div>
+            <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="id1">
+<h1>中间代码生成<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h1>
+<div class="toctree-wrapper compound">
+</div>
+<section id="id2">
+<h2>实验描述<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<p>在前面的实验中，你已经完成了语法分析器和 AST 的构建，接下来是整个编译器编写过程中最重要、工作量最大同时也是难度较大的一部分，
+你需要在这一部分中完成对 SysY 语言的类型检查和中间代码生成。你需要从此前解析得到的 AST 生成 LLVM IR，
+这一工作也将会成为之后目标代码生成和中间代码优化的基础。</p>
+<div class="admonition important">
+<p class="admonition-title">重要</p>
+<p>数组、浮点等内容属于进阶要求，但是本次实验的分数有一部分来自于进阶要求的实现。如果你希望获得更高的分数，我们建议你尽量实现这些内容。</p>
+<p>具体的分数要求可以参考学期初给出的《上机大作业总体要求》。</p>
+</div>
+</section>
+<section id="id3">
+<h2>实验要求<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
+<ol class="arabic simple">
+<li><p>在语法分析实验的基础上，遍历 AST，进行类型检查；</p></li>
+<li><p>生成 LLVM IR；</p></li>
+<li><p>无需撰写完整实验报告，但需要在雨课堂提交本次实验的链接；</p></li>
+</ol>
+</section>
+<section id="id4">
+<h2>类型检查<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
+<p>类型检查是编译过程的重要一步，以确保操作对象与操作符相匹配。每一个表达式都有相关联的类型，
+如关系运算表达式的类型为布尔型，而计算表达式的类型一般为整型或浮点型等。
+类型检查的目的在于找出源代码中不符合类型表达式规定的代码，在最终的代码生成之前报错，
+使得程序员根据错误信息对源代码进行修正。</p>
+<p>SysY 的类型系统较为简单，你主要需要注意的内容包括以下几点：</p>
+<ol class="arabic simple">
+<li><p>检查 <code class="docutils literal notranslate"><span class="pre">main</span></code> 函数是否存在；</p></li>
+<li><p>检查作用域内变量未定义或者重复定义问题；</p></li>
+<li><p>隐式类型转换问题（包括 <code class="docutils literal notranslate"><span class="pre">int</span></code> <code class="docutils literal notranslate"><span class="pre">bool</span></code> 和 <code class="docutils literal notranslate"><span class="pre">float</span></code> 之间的转换）；</p></li>
+<li><p>返回值类型问题；</p></li>
+<li><p>数组维度的问题；</p></li>
+</ol>
+<p>类型检查最简单的实现方式是在建立语法树的过程中进行相应的识别和处理，
+也可以在建树完成后，自底向上遍历语法树进行类型检查。类型检查过程中，
+父结点需要检查孩子结点的类型，并根据孩子结点类型确定自身类型。
+有一些表达式可以在语法制导翻译时就确定类型，比如整数就是整型，
+这些表达式通常是语法树的叶结点。而有些表达式则依赖其子表达式确定类型，
+这些表达式则是语法树中的内部结点。</p>
+<p>下面是一个伪代码，在实现类型检查的时候可以参考：</p>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span class="kd">let</span><span class="w"> </span><span class="n">lhs_ty</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">lhs</span><span class="p">.</span><span class="n">type_check</span><span class="p">();</span>
+<span class="kd">let</span><span class="w"> </span><span class="n">rhs_ty</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">rhs</span><span class="p">.</span><span class="n">type_check</span><span class="p">();</span>
+
+<span class="k">if</span><span class="w"> </span><span class="n">lhs_ty</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">rhs_ty</span><span class="w"> </span><span class="p">{</span>
+<span class="w">   </span><span class="c1">// error, or coerce, depending on the situation</span>
+<span class="p">}</span>
+
+<span class="c1">// set symbol type</span>
+</pre></div>
+</div>
+<p>首先获取两个子表达式的结点类型，判断两个类型是否相同，如果不同则报错或者进行隐式类型转换。</p>
+</section>
+<section id="id5">
+<h2>中间代码生成<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<p>中间代码生成是本次实验的重头戏，旨在前继词法分析、语法分析实验的基础上，
+将 SysY 源代码翻译为中间代码。中间代码生成主要包含对数据流和控制流两种类型语句的翻译，
+数据流包括表达式运算、变量声明与赋值等，控制流包括 <code class="docutils literal notranslate"><span class="pre">if</span></code> <code class="docutils literal notranslate"><span class="pre">while</span></code> <code class="docutils literal notranslate"><span class="pre">break</span></code> <code class="docutils literal notranslate"><span class="pre">continue</span></code> 等语句。</p>
+<section id="id6">
+<h3>表达式的翻译<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<p>表达式翻译的代码位于 <code class="docutils literal notranslate"><span class="pre">irgen.rs</span></code> 中 <code class="docutils literal notranslate"><span class="pre">IrGenContext::gen_local_expr</span></code> 的部分</p>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span class="c1">// Generate a new local expression in ir given an expression in AST.</span>
+<span class="k">fn</span> <span class="nf">gen_local_expr</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span><span class="w"> </span><span class="bp">self</span><span class="p">,</span><span class="w"> </span><span class="n">expr</span>: <span class="kp">&amp;</span><span class="nc">Expr</span><span class="p">)</span><span class="w"> </span>-&gt; <span class="nb">Option</span><span class="o">&lt;</span><span class="n">Value</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">use</span><span class="w"> </span><span class="n">BinaryOp</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="n">Bo</span><span class="p">;</span>
+
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">curr_block</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">curr_block</span><span class="p">.</span><span class="n">unwrap</span><span class="p">();</span>
+
+<span class="w">    </span><span class="k">match</span><span class="w"> </span><span class="o">&amp;</span><span class="n">expr</span><span class="p">.</span><span class="n">kind</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// Constants -&gt; generate a local constant value</span>
+<span class="w">        </span><span class="n">ExprKind</span>::<span class="n">Const</span><span class="p">(</span><span class="n">v</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="nb">Some</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">gen_local_comptime</span><span class="p">(</span><span class="n">v</span><span class="p">)),</span>
+<span class="w">        </span><span class="c1">// Binary operations -&gt; generate the operation</span>
+<span class="w">        </span><span class="n">ExprKind</span>::<span class="n">Binary</span><span class="p">(</span><span class="n">op</span><span class="p">,</span><span class="w"> </span><span class="n">lhs</span><span class="p">,</span><span class="w"> </span><span class="n">rhs</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="k">match</span><span class="w"> </span><span class="n">op</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">Bo</span>::<span class="n">Add</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">Bo</span>::<span class="n">Sub</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">Bo</span>::<span class="n">Mul</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">Bo</span>::<span class="n">Div</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="kd">let</span><span class="w"> </span><span class="n">lhs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">gen_local_expr</span><span class="p">(</span><span class="n">lhs</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span><span class="w"> </span><span class="c1">// Generate lhs</span>
+<span class="w">                </span><span class="kd">let</span><span class="w"> </span><span class="n">rhs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">gen_local_expr</span><span class="p">(</span><span class="n">rhs</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span><span class="w"> </span><span class="c1">// Generate rhs</span>
+
+<span class="w">                </span><span class="kd">let</span><span class="w"> </span><span class="n">lhs_ty</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">lhs</span><span class="p">.</span><span class="n">ty</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">.</span><span class="n">ctx</span><span class="p">);</span>
+
+<span class="w">                </span><span class="kd">let</span><span class="w"> </span><span class="n">inst</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">match</span><span class="w"> </span><span class="n">op</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="c1">// Generate add instruction</span>
+<span class="w">                    </span><span class="n">Bo</span>::<span class="n">Add</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">Inst</span>::<span class="n">add</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">ctx</span><span class="p">,</span><span class="w"> </span><span class="n">lhs</span><span class="p">,</span><span class="w"> </span><span class="n">rhs</span><span class="p">,</span><span class="w"> </span><span class="n">lhs_ty</span><span class="p">),</span>
+<span class="w">                    </span><span class="c1">// TODO: Implement other binary operations</span>
+<span class="w">                    </span><span class="n">Bo</span>::<span class="n">Sub</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                        </span><span class="fm">todo!</span><span class="p">(</span><span class="s">&quot;implement sub&quot;</span><span class="p">);</span>
+<span class="w">                    </span><span class="p">}</span>
+<span class="w">                    </span><span class="n">Bo</span>::<span class="n">Mul</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                        </span><span class="fm">todo!</span><span class="p">(</span><span class="s">&quot;implement mul&quot;</span><span class="p">);</span>
+<span class="w">                    </span><span class="p">}</span>
+<span class="w">                    </span><span class="n">Bo</span>::<span class="n">Div</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                        </span><span class="fm">todo!</span><span class="p">(</span><span class="s">&quot;implement div&quot;</span><span class="p">);</span>
+<span class="w">                    </span><span class="p">}</span>
+<span class="w">                </span><span class="p">};</span>
+
+<span class="w">                </span><span class="c1">// Push the instruction to the current block</span>
+<span class="w">                </span><span class="n">curr_block</span><span class="p">.</span><span class="n">push_back</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">ctx</span><span class="p">,</span><span class="w"> </span><span class="n">inst</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span>
+<span class="w">                </span><span class="nb">Some</span><span class="p">(</span><span class="n">inst</span><span class="p">.</span><span class="n">result</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">.</span><span class="n">ctx</span><span class="p">).</span><span class="n">unwrap</span><span class="p">())</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">},</span>
+
+<span class="w">        </span><span class="c1">// ...</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>这里首先匹配表达式的种类，然后对其子节点生成中间代码，得到 IR 层级的 Value，然后再生成当前层级的指令，
+并插入到当前基本块的尾部。</p>
+</section>
+<section id="id7">
+<h3>控制流的翻译<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
+<p>控制流的翻译代码位于 <code class="docutils literal notranslate"><span class="pre">irgen.rs</span></code> 中 <code class="docutils literal notranslate"><span class="pre">impl</span> <span class="pre">IrGen</span> <span class="pre">for</span> <span class="pre">Stmt</span></code> 的部分。主要需要关注的是条件表达式中的短路求值的问题。
+由于 SysY 的逻辑短路的语义只会出现在条件判断中（不会出现 <code class="docutils literal notranslate"><span class="pre">int</span> <span class="pre">b</span> <span class="pre">=</span> <span class="pre">a</span> <span class="pre">||</span> <span class="pre">c;</span></code> 这样的语句），所以可以根据表达式的与、或关系直接创建条件为真和假时进一步处理的 block，
+以及两个 block 最终合并得到结果的 block。创建完 block 之后再设置当前块以正确插入指令。</p>
+<p>具体的翻译方式可以参考 <a class="reference external" href="https://godbolt.org/z/j8xYGP97G">这个代码</a> 。</p>
+<div class="admonition tip">
+<p class="admonition-title">小技巧</p>
+<p>你可以使用 godbolt 来查看一些简单的 C 语言代码的翻译结果，以帮助你理解中间代码生成的过程。
+如果你选择 clang 编译器，你还可以查看中间代码的控制流图。</p>
+</div>
+</section>
+</section>
+<section id="id9">
+<h2>符号表<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
+<p>为了处理 SysY 中的作用域关系，我们需要一个带有层级关系的符号表。符号表的定义位于 <code class="docutils literal notranslate"><span class="pre">ast.rs</span></code> 中，其定义如下</p>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span class="cp">#[derive(Default)]</span>
+<span class="k">pub</span><span class="w"> </span><span class="k">struct</span> <span class="nc">SymbolTable</span><span class="w"> </span><span class="p">{</span>
+<span class="w">   </span><span class="sd">/// Stack of scopes.</span>
+<span class="w">   </span><span class="sd">/// Each scope has its own hashmap of symbols.</span>
+<span class="w">   </span><span class="n">stack</span>: <span class="nb">Vec</span><span class="o">&lt;</span><span class="n">HashMap</span><span class="o">&lt;</span><span class="nb">String</span><span class="p">,</span><span class="w"> </span><span class="n">SymbolEntry</span><span class="o">&gt;&gt;</span><span class="p">,</span>
+
+<span class="w">   </span><span class="sd">/// The current return type of the function.</span>
+<span class="w">   </span><span class="k">pub</span><span class="w"> </span><span class="n">curr_ret_ty</span>: <span class="nb">Option</span><span class="o">&lt;</span><span class="n">Type</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>其中最主要的内容是用于处理作用域的 <code class="docutils literal notranslate"><span class="pre">stack</span></code> 字段，每一级作用域都有一个 <code class="docutils literal notranslate"><span class="pre">HashMap</span></code> 用于存储符号到其属性的映射。 <code class="docutils literal notranslate"><span class="pre">SymbolEntry</span></code> 包括了三个内容，
+分别是符号在 SysY 中的类型，编译期的值（如果有的话），以及 IR 生成的结果（如果已经生成的话）。</p>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span class="cp">#[derive(Debug)]</span>
+<span class="k">pub</span><span class="w"> </span><span class="k">struct</span> <span class="nc">SymbolEntry</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="sd">/// Type of the symbol.</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">ty</span>: <span class="nc">Type</span><span class="p">,</span>
+<span class="w">    </span><span class="sd">/// The possible compile time value of the symbol.</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">comptime</span>: <span class="nb">Option</span><span class="o">&lt;</span><span class="n">ComptimeVal</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="sd">/// The IR value of the symbol.</span>
+<span class="w">    </span><span class="sd">/// Its generated during IR generation.</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">ir_value</span>: <span class="nb">Option</span><span class="o">&lt;</span><span class="n">IrGenResult</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>代码框架的实现在类型检查和中间代码生成的时候实际上共创建了两个符号表。类型检查的时候我们只关心符号的类型和编译期常量，
+而在中间代码生成的时候需要关心符号的 IR 生成结果。再进入一个新的作用域的时候，我们会在符号表的栈中压入一个新的 HashMap，
+并在退出作用域的时候弹出这个 HashMap。</p>
+<div class="admonition note">
+<p class="admonition-title">备注</p>
+<p>代码框架中实现的符号表实际上是一次性的，遍历完一遍语法树之后之前的内容都会被弹出。如果你有时间也可以尝试用更好的方式实现符号表。</p>
+</div>
+</section>
+<section id="id10">
+<h2>代码框架<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h2>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>.
+├── backend
+├── backend.rs
+├── frontend
+│   ├── ast.rs
+│   ├── irgen.rs
+│   ├── parse.rs
+│   ├── preprocess.rs
+│   ├── sysy.lalrpop
+│   └── types.rs
+├── frontend.rs
+├── infra
+│   ├── linked_list.rs
+│   └── storage.rs
+├── infra.rs
+├── ir
+│   ├── block.rs
+│   ├── context.rs
+│   ├── def_use.rs
+│   ├── func.rs
+│   ├── global.rs
+│   ├── inst.rs
+│   ├── ty.rs
+│   └── value.rs
+├── ir.rs
+├── lib.rs
+└── main.rs
+</pre></div>
+</div>
+<p>本次实验需要阅读的代码更多，你需要阅读 <code class="docutils literal notranslate"><span class="pre">ir</span></code> 文件夹下的所有代码， <code class="docutils literal notranslate"><span class="pre">frontend/irgen.rs</span></code> 以及
+<code class="docutils literal notranslate"><span class="pre">frontend/ast.rs</span></code> 中与类型检查有关的代码。另外，我们建议你阅读 <code class="docutils literal notranslate"><span class="pre">infra</span></code> 模块下的代码，
+以更好地理解一些框架实现。你可以从 <code class="docutils literal notranslate"><span class="pre">context.rs</span></code> 开始阅读，从 IR 的组织方式出发进行理解。</p>
+<p>在预备工作中你应该已经发现，LLVM 是通过全局定义、函数定义、基本块、以及指令来组织 IR 的。此外，
+你还需要知道的是，在进行中间代码优化的时候，我们往往需要对基本块、指令做插入、删除、遍历的操作，
+对指令中的操作数（Operand）进行修改等。因此，我们使用链表来组织函数中的基本块和基本块中的指令，
+链表的实现可以阅读 <code class="docutils literal notranslate"><span class="pre">infra</span></code> 中的有关代码，本实验中你并不需要自己实现。</p>
+<p><code class="docutils literal notranslate"><span class="pre">context.rs</span></code> 中对 <code class="docutils literal notranslate"><span class="pre">Context</span></code> 类型的定义如下</p>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span class="k">pub</span><span class="w"> </span><span class="k">struct</span> <span class="nc">Context</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="sd">/// Singleton storage for types.</span>
+<span class="w">    </span><span class="k">pub</span><span class="p">(</span><span class="k">super</span><span class="p">)</span><span class="w"> </span><span class="n">tys</span>: <span class="nc">UniqueArena</span><span class="o">&lt;</span><span class="n">TyData</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="sd">/// Storage for blocks.</span>
+<span class="w">    </span><span class="k">pub</span><span class="p">(</span><span class="k">super</span><span class="p">)</span><span class="w"> </span><span class="n">blocks</span>: <span class="nc">GenericArena</span><span class="o">&lt;</span><span class="n">BlockData</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="sd">/// Storage for instructions.</span>
+<span class="w">    </span><span class="k">pub</span><span class="p">(</span><span class="k">super</span><span class="p">)</span><span class="w"> </span><span class="n">insts</span>: <span class="nc">GenericArena</span><span class="o">&lt;</span><span class="n">InstData</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="sd">/// Storage for functions.</span>
+<span class="w">    </span><span class="k">pub</span><span class="p">(</span><span class="k">super</span><span class="p">)</span><span class="w"> </span><span class="n">funcs</span>: <span class="nc">GenericArena</span><span class="o">&lt;</span><span class="n">FuncData</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="sd">/// Storage for values.</span>
+<span class="w">    </span><span class="k">pub</span><span class="p">(</span><span class="k">super</span><span class="p">)</span><span class="w"> </span><span class="n">values</span>: <span class="nc">GenericArena</span><span class="o">&lt;</span><span class="n">ValueData</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="sd">/// Storage for global variables.</span>
+<span class="w">    </span><span class="k">pub</span><span class="p">(</span><span class="k">super</span><span class="p">)</span><span class="w"> </span><span class="n">globals</span>: <span class="nc">GenericArena</span><span class="o">&lt;</span><span class="n">GlobalData</span><span class="o">&gt;</span><span class="p">,</span>
+
+<span class="w">    </span><span class="sd">/// Target information.</span>
+<span class="w">    </span><span class="k">pub</span><span class="p">(</span><span class="k">super</span><span class="p">)</span><span class="w"> </span><span class="n">target</span>: <span class="nc">TargetInfo</span><span class="p">,</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>其中大部分的数据都是用 Arena 的方式存储，在使用的时候只存储一个轻量的 <code class="docutils literal notranslate"><span class="pre">ArenaPtr</span></code> ，而不是直接存储数据。
+其中类型的存储使用了 <code class="docutils literal notranslate"><span class="pre">UniqueArena</span></code> ，以保证同样的两个类型，产生的 <code class="docutils literal notranslate"><span class="pre">ArenaPtr</span></code> 是相等的。</p>
+<p>在 <code class="docutils literal notranslate"><span class="pre">BlockData</span></code> 和 <code class="docutils literal notranslate"><span class="pre">InstData</span></code> 中，存储了 <code class="docutils literal notranslate"><span class="pre">next</span></code> 和 <code class="docutils literal notranslate"><span class="pre">prev</span></code> 这两个字段，用于构成链表。
+在 <code class="docutils literal notranslate"><span class="pre">FuncData</span></code> 和 <code class="docutils literal notranslate"><span class="pre">BlockData</span></code> 中，存储了 <code class="docutils literal notranslate"><span class="pre">head</span></code> 和 <code class="docutils literal notranslate"><span class="pre">tail</span></code> 这两个字段，分别表示基本块和指令的头尾。</p>
+<p>另外，在 <code class="docutils literal notranslate"><span class="pre">def_use.rs</span></code> 中，我们设计了两个 Trait 用来描述 Def-Use 维护的接口，其中的内容已经实现，
+但是我们建议你仔细阅读其中的内容以确保你能够理解其他的代码。另外，基于这一 Def-Use 链的设计， <code class="docutils literal notranslate"><span class="pre">inst.rs</span></code>
+中实现了一个 <code class="docutils literal notranslate"><span class="pre">OperandList</span></code> 类型用以存储指令中的操作数列表。在删除其中任何一个 Operand 的时候，
+其余操作数对应的 Index 都不会改变，从而保证一个 <code class="docutils literal notranslate"><span class="pre">Operand</span></code> 类型的有效性。这个设计可能比较难理解，
+你需要仔细阅读有关的代码以理解这一设计。如果你认为对于这一问题有更好的解决方案，可以自行修改并且记录在最终的实验报告中。实际上，
+对于 Def-Use 维护这个问题是有很多种写法的，你可以自行探索（如果有时间的话）。</p>
+<div class="admonition note">
+<p class="admonition-title">备注</p>
+<p>中间代码生成阶段你并不会接触到操作数的替换、删除等操作，但是这些操作在优化的时候会非常频繁。
+如果你这次时间充裕，可以提前熟悉其中的内容。</p>
+</div>
+<p>最后，在阅读代码的过程中，要特别注意其中的一些注释内容，尤其是大段的文档注释，我们将一些注意的事项和设计思路记录在了里面。</p>
+</section>
+<section id="id11">
+<h2>线下提问示例<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h2>
+<ol class="arabic simple">
+<li><p>请以 <code class="docutils literal notranslate"><span class="pre">int</span> <span class="pre">a[5][4][3]</span> <span class="pre">=</span>&#160; <span class="pre">{{{2,3},6,7},7,8,11};</span></code> 说明对数组初始化语法的处理方式。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">int</span> <span class="pre">a[5][4][3]</span> <span class="pre">=</span> <span class="pre">{{{2,3},6,7,5,4,3,2,11,2,4,5},7,8,11};</span></code> 该初始化是否合法，请说明理由。</p></li>
+<li><p>请说明你是如何处理 <code class="docutils literal notranslate"><span class="pre">int</span></code> <code class="docutils literal notranslate"><span class="pre">float</span></code> <code class="docutils literal notranslate"><span class="pre">bool</span></code> 类型的隐式转换的，简单说明 <code class="docutils literal notranslate"><span class="pre">int</span> <span class="pre">a</span> <span class="pre">=</span> <span class="pre">5;</span> <span class="pre">int</span> <span class="pre">b</span> <span class="pre">=</span> <span class="pre">a</span> <span class="pre">+</span> <span class="pre">3.5</span> <span class="pre">+</span> <span class="pre">!a</span></code> 的语法树结构，并说明各节点上的类型。</p></li>
+<li><p>请说明对于局部变量 <code class="docutils literal notranslate"><span class="pre">int</span> <span class="pre">a[5][4][3]</span> <span class="pre">=</span> <span class="pre">{{{2,3},1}};</span></code> 应当如何生成 LLVM IR。</p></li>
+<li><p>请说明符号表的设计方式，以及如何处理作用域的问题。</p></li>
+<li><p>请说明你是如何在语义分析步骤中检查 SysY 库函数调用是否合法的。</p></li>
+<li><p>请说明你是如何实现短路求值的控制流翻译的。</p></li>
+</ol>
+</section>
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="codegen.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">完成编译器构造</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="parser.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">词法、语法分析器与抽象语法树</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2024, Junyi Mei, Dawei Guo
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">中间代码生成</a><ul>
+<li><a class="reference internal" href="#id2">实验描述</a></li>
+<li><a class="reference internal" href="#id3">实验要求</a></li>
+<li><a class="reference internal" href="#id4">类型检查</a></li>
+<li><a class="reference internal" href="#id5">中间代码生成</a><ul>
+<li><a class="reference internal" href="#id6">表达式的翻译</a></li>
+<li><a class="reference internal" href="#id7">控制流的翻译</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id9">符号表</a></li>
+<li><a class="reference internal" href="#id10">代码框架</a></li>
+<li><a class="reference internal" href="#id11">线下提问示例</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="_static/documentation_options.js?v=7d86a446"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/scripts/furo.js?v=46bd48cc"></script>
+    <script src="_static/translations.js?v=beaddf03"></script>
+    </body>
+</html>

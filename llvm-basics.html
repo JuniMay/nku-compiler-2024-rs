@@ -1,0 +1,659 @@
+<!doctype html>
+<html class="no-js" lang="zh-CN" data-content_root="./">
+  <head><meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="索引" href="genindex.html" /><link rel="search" title="搜索" href="search.html" /><link rel="next" title="汇编编程" href="asm-basics.html" /><link rel="prev" title="Rust 编程基础" href="rust-basics.html" />
+
+    <!-- Generated with Sphinx 8.2.3 and Furo 2025.07.19 -->
+        <title>了解编译器及 LLVM IR 编程 - 编译系统原理 文档</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=acfd86a5" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=25af2a20" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo-extensions.css?v=8dab3a3b" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f2f2f2;
+  --color-code-foreground: #1e1e1e;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #2b2b2b;
+  --color-code-foreground: #f8f8f2;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #2b2b2b;
+  --color-code-foreground: #f8f8f2;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc">
+<label class="overlay sidebar-overlay" for="__navigation">
+  <div class="visually-hidden">Hide navigation sidebar</div>
+</label>
+<label class="overlay toc-overlay" for="__toc">
+  <div class="visually-hidden">Hide table of contents sidebar</div>
+</label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <div class="visually-hidden">Toggle site navigation sidebar</div>
+        <i class="icon"><svg><use href="#svg-menu"></use></svg></i>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="index.html"><div class="brand">编译系统原理  文档</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle">
+          <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <div class="visually-hidden">Toggle table of contents sidebar</div>
+        <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="index.html">
+  
+  <span class="sidebar-brand-text">编译系统原理  文档</span>
+  
+</a><form class="sidebar-search-container" method="get" action="search.html" role="search">
+  <input class="sidebar-search" placeholder="搜索" name="q" aria-label="搜索">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <ul class="current">
+<li class="toctree-l1 has-children"><a class="reference internal" href="intro.html">课程项目简介</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of 课程项目简介</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="env-setup.html">环境配置</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of 环境配置</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="rust-basics.html">Rust 编程基础</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><div class="visually-hidden">Toggle navigation of Rust 编程基础</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 current has-children current-page"><a class="current reference internal" href="#">了解编译器及 LLVM IR 编程</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><div class="visually-hidden">Toggle navigation of 了解编译器及 LLVM IR 编程</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="asm-basics.html">汇编编程</a><input class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><div class="visually-hidden">Toggle navigation of 汇编编程</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="parser.html">词法、语法分析器与抽象语法树</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><div class="visually-hidden">Toggle navigation of 词法、语法分析器与抽象语法树</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="irgen.html">中间代码生成</a><input class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><div class="visually-hidden">Toggle navigation of 中间代码生成</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="codegen.html">完成编译器构造</a><input class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><div class="visually-hidden">Toggle navigation of 完成编译器构造</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="optimization.html">代码优化</a><input class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><div class="visually-hidden">Toggle navigation of 代码优化</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="_sources/llvm-basics.rst.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle">
+              <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <div class="visually-hidden">Toggle table of contents sidebar</div>
+            <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="llvm-ir">
+<h1>了解编译器及 LLVM IR 编程<a class="headerlink" href="#llvm-ir" title="Link to this heading">¶</a></h1>
+<div class="toctree-wrapper compound">
+</div>
+<div class="admonition note">
+<p class="admonition-title">备注</p>
+<p>该部分与 C++ 版本的实验文档基本一致，可能未针对 Rust 进行特别修改，如果发现问题请及时联系助教。</p>
+</div>
+<section id="id1">
+<h2>实验描述<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
+<div class="admonition note">
+<p class="admonition-title">备注</p>
+<p>如果本文档实验描述、要求与雨课堂的实验要求不一致，请以雨课堂的要求为准。</p>
+<p>如果你发现本文档有任何问题，请及时联系助教。</p>
+</div>
+<div class="admonition attention">
+<p class="admonition-title">注意</p>
+<p>请注意，预备工作这次实验需要完成了解编译器、熟悉 LLVM IR 以及编写汇编程序三个部分。本节文档包括了解编译器和熟悉
+LLVM IR 两个部分，关于汇编编程的有关内容，请参考 <a class="reference internal" href="asm-basics.html"><span class="doc">汇编编程</span></a> 。</p>
+<p>在开始实验前首先确定上机作业两人分组，报告助教备案，之后不应改变。</p>
+</div>
+<ol class="arabic simple">
+<li><p>以 GCC（或 LLVM/Clang 等你常用的、熟悉的编译工具）为研究对象，更深入地探究语言处理系统的完整工作过程：预处理器做了什么？编译器做了什么（包括更细致的编译器各阶段的功能） ？汇编器做了什么？链接器做了什么？</p></li>
+<li><p>熟悉 LLVM IR 中间语言，对你要实现的 SysY 编译器各语言特性，编写 LLVM IR 程序小例子，用 LLVM/Clang 编译成目标程序、执行验证。</p></li>
+<li><p>设计几个 SysY 程序，编写等价的 ARM/RISC-V 汇编程序，用汇编器生成可执行程序，调试通过、能正常运行得到正确结果。关于汇编编程的有关内容，请参考下一节 <a class="reference internal" href="asm-basics.html"><span class="doc">汇编编程</span></a> 。</p></li>
+</ol>
+<section id="id2">
+<h3>方法<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
+<p>以一个简单的 C（C++）源程序为例（你也可以用 Rust，但是请先基于 C/C++ 进行探索），调整编译器的程序选项获得 <strong>各阶段的输出</strong> ，
+研究它们与源程序的关系，以此撰写调研报告。二进制文件或许需要利用某些系统工具理解，如 <code class="docutils literal notranslate"><span class="pre">objdump</span></code> 、 <code class="docutils literal notranslate"><span class="pre">nm</span></code>。进一步地，
+可以调整你认为关键的 <strong>编译参数</strong> （如优化参数、链接选项参数），比较目标程序的大小、运行性能等。你的源程序可以包含尽可能丰富的语言特性
+（如函数、全局变量、常量、各类宏、头文件...），以更全面探索每一个阶段编译器进行的工作。</p>
+<div class="admonition note">
+<p class="admonition-title">备注</p>
+<p>对不同的源程序做多个但只是重复相同工作不会给更高分数。</p>
+</div>
+</section>
+<section id="id3">
+<h3>实验要求<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<p>撰写调研报告（符合科技论文写作规范，包含完整结构：题目、摘要、关键字、引言、你的工作和结果的具体介绍、结论、参考文献，文字、图、表符合格式规范，建议使用 latex 撰写）。</p>
+<div class="admonition note">
+<p class="admonition-title">备注</p>
+<p>可基于 <a class="reference external" href="https://www.overleaf.com/read/hnsjbjyknbdj">此模板</a> ，该模板所在网站是一个很流行的 latex 文档协同编辑网站，copy 此 project 即可成为自己的项目，在其上编辑即可，更多 latex 参考资料见 <a class="reference external" href="https://liam.page/2014/09/08/latex-introduction/">LaTeX 入门</a> ， <a class="reference external" href="https://blog.csdn.net/garfielder007/article/details/51646604">LaTeX 命令与符号汇总</a> 和 <a class="reference external" href="https://yundongxiaoyang.top/wiki/latex-equation/">LaTeX 数学公式等符号书写</a> 。</p>
+</div>
+<ul class="simple">
+<li><p><strong>分工</strong> 小题一两人独立完成，小题二、三两人各负责一个小题。</p></li>
+<li><p><strong>报告撰写</strong> 整体框架两人共同构建；小题1根据各自完成情况独立撰写；小题2、3根据分工分别撰写自己所负责的小题；其他部分共同撰写；在报告开始描述清楚两人分工。</p></li>
+<li><p><strong>报告独立提交</strong> 报告内容 = 共同撰写部分 + 独立撰写的小题 1 实验结果 + 分别撰写的小题 2 和小题 3 实验结果。</p></li>
+</ul>
+<p><strong>期望不要当作“命题作文”，要更多地发挥主观能动性，将其当做实验进行更多探索。</strong> 例如：</p>
+<ul class="simple">
+<li><p>细微修改程序，观察各阶段输出的变化，从而更清楚地了解编译器的工作；</p></li>
+<li><p>调整编译器的程序选项，例如加入调试选项、优化选项等，观察输出变化、了解编译器；</p></li>
+<li><p>尝试更深入的内容，例如令编译器做自动并行化，观察输出变化、了解编译器。</p></li>
+<li><p>与预习作业 1 中的优化问题相结合等等。</p></li>
+</ul>
+</section>
+<section id="id7">
+<h3>基础样例程序<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
+<p>阶乘：</p>
+<div class="highlight-c notranslate"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;stdio.h&quot;</span>
+<span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span>
+<span class="p">{</span>
+<span class="w">   </span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">,</span><span class="w"> </span><span class="n">f</span><span class="p">;</span>
+<span class="w">   </span><span class="n">scanf</span><span class="p">(</span><span class="s">&quot;%d&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">n</span><span class="p">);</span>
+<span class="w">   </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span><span class="p">;</span>
+<span class="w">   </span><span class="n">f</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">   </span><span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="n">i</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="n">n</span><span class="p">)</span>
+<span class="w">   </span><span class="p">{</span>
+<span class="w">      </span><span class="n">f</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">f</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">i</span><span class="p">;</span>
+<span class="w">      </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">   </span><span class="p">}</span>
+<span class="w">   </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;%d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">f</span><span class="p">);</span>
+<span class="w">   </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>斐波那契数列：</p>
+<div class="highlight-c notranslate"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;stdio.h&quot;</span>
+<span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span>
+<span class="p">{</span>
+<span class="w">   </span><span class="kt">int</span><span class="w"> </span><span class="n">a</span><span class="p">,</span><span class="w"> </span><span class="n">b</span><span class="p">,</span><span class="w"> </span><span class="n">i</span><span class="p">,</span><span class="w"> </span><span class="n">t</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">;</span>
+<span class="w">   </span><span class="n">a</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="w">   </span><span class="n">b</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">   </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">   </span><span class="n">scanf</span><span class="p">(</span><span class="s">&quot;%d&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">n</span><span class="p">);</span>
+<span class="w">   </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;%d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">a</span><span class="p">);</span>
+<span class="w">   </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;%d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">b</span><span class="p">);</span>
+<span class="w">   </span><span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">n</span><span class="p">)</span>
+<span class="w">   </span><span class="p">{</span>
+<span class="w">      </span><span class="n">t</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">b</span><span class="p">;</span>
+<span class="w">      </span><span class="n">b</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">b</span><span class="p">;</span>
+<span class="w">      </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;%d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">b</span><span class="p">);</span>
+<span class="w">      </span><span class="n">a</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">t</span><span class="p">;</span>
+<span class="w">      </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">   </span><span class="p">}</span>
+<span class="w">   </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="id8">
+<h2>参考流程<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
+<div class="admonition note">
+<p class="admonition-title">备注</p>
+<p>以下内容仅供参考，更多的细节希望同学们亲自动手体验，详细了解各阶段的作用。</p>
+</div>
+<p>以一个 C 程序为例，整体的流程如图所示：</p>
+<a class="reference internal image-reference" href="_images/01.jpg"><img alt="_images/01.jpg" class="align-center" src="_images/01.jpg" style="width: 336.0px; height: 448.0px;" />
+</a>
+<p>简单来说，不同阶段的作用如下：</p>
+<ul class="simple">
+<li><p><strong>预处理器</strong> 处理源代码中以 <code class="docutils literal notranslate"><span class="pre">#</span></code> 开始的预编译指令，例如展开所有宏定义、插入 <code class="docutils literal notranslate"><span class="pre">#include</span></code> 指向的文件等，以获得经过预处理的源程序。</p></li>
+<li><p><strong>编译器</strong> 将预处理器处理过的源程序文件翻译成为标准的 <strong>汇编语言</strong> 以供计算机阅读。</p></li>
+<li><p><strong>汇编器</strong> 将汇编语言指令翻译成 <strong>机器语言</strong> 指令，并将汇编语言程序打包成可重定位目标程序。</p></li>
+<li><p><strong>链接器</strong> 将可重定位的机器代码和相应的一些目标文件以及库文件链接在一起，形成真正能在机器上运行的目标机器代码。</p></li>
+</ul>
+<p>一个 C 程序 hello.c，经历上述 4 个编译阶段最终生成可执行程序：</p>
+<img alt="_images/03.jpg" class="align-center" src="_images/03.jpg" />
+<p>下面将详细介绍每个阶段的实验方法（源程序用 <code class="docutils literal notranslate"><span class="pre">main.c</span></code> 表示）。</p>
+<section id="id9">
+<h3>预处理器<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h3>
+<p>预处理阶段会处理预编译指令，包括绝大多数的 <code class="docutils literal notranslate"><span class="pre">#</span></code> 开头的指令，如 <code class="docutils literal notranslate"><span class="pre">#include</span></code> 、 <code class="docutils literal notranslate"><span class="pre">#define</span></code> 、 <code class="docutils literal notranslate"><span class="pre">#if</span></code> 等等，对 <code class="docutils literal notranslate"><span class="pre">#include</span></code> 指令会替换对应的头文件，对 <code class="docutils literal notranslate"><span class="pre">#define</span></code> 的宏命令会直接替换相应内容，同时会删除注释，添加行号和文件名标识。</p>
+<p>对于 gcc，通过添加参数 <code class="docutils literal notranslate"><span class="pre">-E</span></code> 令 gcc 只进行预处理过程，参数 <code class="docutils literal notranslate"><span class="pre">-o</span></code> 改变 gcc 输出文件名，因此通过命令得到预处理后文件：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>gcc<span class="w"> </span>main.c<span class="w"> </span>-E<span class="w"> </span>-o<span class="w"> </span>main.i
+</pre></div>
+</div>
+<p>观察预处理文件，可以发现文件长度远大于源文件，这就是将代码中的头文件进行了替代导致的结果。另外，实际上预处理过程是 gcc 调用了另一个程序（C Pre-Processor 调用时简写作 cpp）完成的过程，有兴趣的同学可以自行尝试。</p>
+</section>
+<section id="id10">
+<h3>编译器<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h3>
+<p>编译过程是我们整门课程着重讲述的过程，具体来说分为六步，详细解释可以查看课程的预习 PPT，简单来说分别为：</p>
+<p><strong>词法分析</strong>：将源程序转换为单词序列。对于 LLVM，你可以通过以下命令获得 token 序列：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>clang<span class="w"> </span>-E<span class="w"> </span>-Xclang<span class="w"> </span>-dump-tokens<span class="w"> </span>main.c
+</pre></div>
+</div>
+<p><strong>语法分析</strong>：将词法分析生成的词法单元来构建抽象语法树（Abstract Syntax Tree，即 AST）。对于 gcc，你可以通过 <code class="docutils literal notranslate"><span class="pre">-fdump-tree-original-raw</span></code> flag 获得文本格式的 AST 输出。LLVM 可以通过如下命令获得相应的 AST：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>clang<span class="w"> </span>-E<span class="w"> </span>-Xclang<span class="w"> </span>-ast-dump<span class="w"> </span>main.c
+</pre></div>
+</div>
+<p><strong>语义分析</strong>：使用语法树和符号表中信息来检查源程序是否与语言定义语义一致，进行类型检查等。</p>
+<p><strong>中间代码生成</strong>：完成上述步骤后，很多编译器会生成一个明确的低级或类机器语言的中间表示。</p>
+<p>你可以通过 <code class="docutils literal notranslate"><span class="pre">-fdump-tree-all-graph</span></code> 和 <code class="docutils literal notranslate"><span class="pre">-fdump-rtl-all-graph</span></code> 两个 gcc flag 获得中间代码生成的多阶段的输出。生成的 <code class="docutils literal notranslate"><span class="pre">.dot</span></code> 文件可以被 graphviz 可视化，VSCode 中直接有相应插件。</p>
+<p>你可以看到控制流图（CFG），以及各阶段处理中（比如优化、向 IR 转换）CFG 的变化。你可以额外使用 <code class="docutils literal notranslate"><span class="pre">-Ox</span></code> 、 <code class="docutils literal notranslate"><span class="pre">-fno-*</span></code> 等 flag 控制编译行为，使输出文件更可读、了解其优化行为。</p>
+<p>LLVM 可以通过下面的命令生成 LLVM IR：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>clang<span class="w"> </span>-S<span class="w"> </span>-emit-llvm<span class="w"> </span>main.c
+</pre></div>
+</div>
+<p><strong>代码优化</strong>：进行与机器无关的代码优化步骤改进中间代码，生成更好的目标代码。</p>
+<p>在第一周的预习作业中，很多同学对编译器如何进行代码优化感到疑问，在这个步骤中你可以通过 LLVM 现有的优化 pass 进行代码优化探索。</p>
+<p>在 LLVM 官网对所有 pass 的分类 <a class="footnote-reference brackets" href="#f1" id="id11" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a> 中，共分为三种：Analysis Passes、Transform Passes 和 Utility Passes。Analysis Passes 用于分析或计算某些信息，以便给其他 pass 使用，如计算支配边界、控制流图的数据流分析等；Transform Passes 都会通过某种方式对中间代码形式的程序做某种变化，如死代码删除，常量传播等。</p>
+<p>LLVM 可以通过下面的命令生成每个 pass 后生成的 LLVM IR，以观察差别：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>llc<span class="w"> </span>-print-before-all<span class="w"> </span>-print-after-all<span class="w"> </span>main.ll<span class="w"> </span>&gt;<span class="w"> </span>main.log<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span>
+<span class="c1"># 因为输出的内容过长，在命令行中无法完整显示，这时必须要对输出进行重定向</span>
+<span class="c1"># 0、1、2 是三个文件描述符，分别表示标准输入 (stdin)、标准输出 (stdout)、标准错误 (stderr)</span>
+<span class="c1"># 因此 2&gt;&amp;1 的具体含义就不难理解，你也可以试试去掉重定向描述，看看实际效果</span>
+</pre></div>
+</div>
+<p>同样，你也可以通过下面的命令指定使用某个 pass 以生成 LLVM IR，以特别观察某个 pass 的差别：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>opt<span class="w"> </span>-&lt;module<span class="w"> </span>name&gt;<span class="w"> </span>&lt;test.bc&gt;<span class="w"> </span>/dev/null
+</pre></div>
+</div>
+<p>所有的 <code class="docutils literal notranslate"><span class="pre">module</span> <span class="pre">name</span></code> 对应的命令行参数也可以在 <a class="footnote-reference brackets" href="#f1" id="id12" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a> 查到。</p>
+<aside class="footnote-list brackets">
+<aside class="footnote brackets" id="f1" role="doc-footnote">
+<span class="label"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></span>
+<span class="backrefs">(<a role="doc-backlink" href="#id11">1</a>,<a role="doc-backlink" href="#id12">2</a>)</span>
+<p><a class="reference external" href="https://llvm.org/docs/Passes.html">https://llvm.org/docs/Passes.html</a></p>
+</aside>
+</aside>
+</section>
+</section>
+<section id="id13">
+<h2>LLVM IR 编程<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h2>
+<div class="admonition note">
+<p class="admonition-title">备注</p>
+<p>现代编译器的编译流程是非常复杂的，虽然很多语言都选择 LLVM 作为代码生成的框架，但是不同的编译器也会添加自己的高层 IR，例如：</p>
+<ul class="simple">
+<li><p>Rust <a class="reference external" href="https://rustc-dev-guide.rust-lang.org/hir.html">HIR</a> &amp; <a class="reference external" href="https://rustc-dev-guide.rust-lang.org/mir/index.html">MIR</a></p></li>
+<li><p><a class="reference external" href="https://github.com/swiftlang/swift/blob/main/docs/SIL.rst">Swift Intermediate Language</a></p></li>
+<li><p><a class="reference external" href="https://llvm.github.io/clangir/">ClangIR</a></p></li>
+</ul>
+<p>高层次的 IR 可以建模更多的语言特性，同时也可以更好地进行优化。但是这些 IR 也会增加编译器的复杂度，就课程实验来说，我们只需要关注 LLVM IR 即可。</p>
+</div>
+<section id="id14">
+<h3>LLVM IR 概述<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h3>
+<p>LLVM IR（Intermediate Representation）是由代码生成器自顶向下遍历逐步翻译语法树形成的，你可以将任意语言的源代码编译成LLVM IR，
+然后由 LLVM 后端对 LLVM IR 进行优化并编译为相应平台的二进制程序。LLVM IR 具有类型化、可扩展性和强表现力的特点。LLVM IR 是相对于 CPU
+指令集更为高级、但相对于源程序更为低级的代码中间表示的一种语言。从上述介绍中可以看出LLVM后端支持相当多的平台，我们无须担心操作系统等平台的问题，
+而且我们只需将代码编译成 LLVM IR，就可以由优化水平较高的LLVM后端来进行优化。此外，LLVM IR 本身更贴近汇编语言，指令集相对底层，能灵活地进行低级操作。</p>
+<img alt="_images/02.jpg" class="align-center" src="_images/02.jpg" />
+<p>LLVM IR代码存在三种表示形式：在内存中的表示（BasicBlock、Instruction 等 C++ 实现的类）、二进制代码形式（用于编译器加载）、
+可读的汇编语言表示形式。除了上面提到的 <code class="docutils literal notranslate"><span class="pre">clang</span> <span class="pre">-S</span> <span class="pre">-emit-llvm</span> <span class="pre">main.c</span></code>，你也可以通过 <code class="docutils literal notranslate"><span class="pre">clang</span> <span class="pre">-c</span> <span class="pre">-emit-llvm</span> <span class="pre">main.c</span> <span class="pre">-o</span> <span class="pre">mian.bc</span></code>
+生成 bitcode 形式的 LLVM IR 文件。</p>
+</section>
+<section id="id15">
+<h3>实验案例<a class="headerlink" href="#id15" title="Link to this heading">¶</a></h3>
+<p>下面以一个基础样例程序（示例给的阶乘程序）为例对 LLVM IR 特性进行简单介绍。</p>
+<p>首先你需要在命令行中输入 <code class="docutils literal notranslate"><span class="pre">clang</span> <span class="pre">-emit-llvm</span> <span class="pre">-S</span> <span class="pre">main.c</span> <span class="pre">-o</span> <span class="pre">main.ll</span></code>，打开同目录下的 <code class="docutils literal notranslate"><span class="pre">main.ll</span></code>
+文件，你可以得到以下内容（本指导书已删除无用语句，加入 LLVM IR 相关注释及其与 SysY 语言特性的对应关系）</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>; 所有的全局变量都以 @ 为前缀，后面的 global 关键字表明了它是一个全局变量
+; SysY 语言中注释的规范与 C 语言一致
+; 函数定义以 `define` 开头，i32 标明了函数的返回类型，其中 `main`是函数的名字，`@` 是其前缀
+; FuncDef ::= FuncType IDENT &quot;(&quot; [FuncFParams] &quot;)&quot; Block; FuncDef 表示函数定义，FuncType 指明了函数的返回类型，FuncParam是函数定义的形参列表
+define i32 @main() #0 {
+   ; 以 % 开头的符号表示虚拟寄存器，你可以把它当作一个临时变量（与全局变量相区分），或称之为临时寄存器
+   %1 = alloca i32, align 4
+
+   ; 为 %1 分配空间，其大小与一个 i32 类型的大小相同。%1 类型即为 i32*，align 4 可以理解为对齐方式为 4 个字节
+   %2 = alloca i32, align 4
+   %3 = alloca i32, align 4
+   %4 = alloca i32, align 4
+
+   ; 将 0（i32）存入 %1（i32*）
+   store i32 0, i32* %1, align 4
+
+   ; 调用函数 @scanf ，i32 表示函数的返回值类型
+   %5 = call i32 (i8*, ...) @__isoc99_scanf(i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.str, i64 0, i64 0), i32* %3)
+
+   store i32 2, i32* %2, align 4
+   store i32 1, i32* %4, align 4
+
+   ; 这里的 br 是无条件分支，label 可以理解为一个代码标签，指代下面那个代码块
+   br label %6
+
+6:                                                ; preds = %10, %0
+   %7 = load i32, i32* %2, align 4
+   %8 = load i32, i32* %3, align 4
+
+   ; icmp 会根据不同的比较规则（这里是 sle，小于等于）比较两个操作数 %7 和 %8，i32 是操作数类型
+   %9 = icmp sle i32 %7, %8
+
+   ; 这里的 br 是有条件分支，它根据i1和两个label的值，用于将控制流传输到当前函数中的不同基本块。
+   ; i1 类型的变量 %cmp 的值如果为真，那么执行 label%10，否则执行 label%16
+   br i1 %9, label %10, label %16
+
+10:                                               ; preds = %6
+   %11 = load i32, i32* %4, align 4
+   %12 = load i32, i32* %2, align 4
+   %13 = mul nsw i32 %11, %12
+   store i32 %13, i32* %4, align 4
+   %14 = load i32, i32* %2, align 4
+   %15 = add nsw i32 %14, 1
+   store i32 %15, i32* %2, align 4
+   br label %6, !llvm.loop !10
+
+16:                                               ; preds = %6
+   %17 = load i32, i32* %4, align 4
+   %18 = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @.str.1, i64 0, i64 0), i32 %17)
+   ret i32 0
+}
+
+;函数声明
+declare dso_local i32 @__isoc99_scanf(i8*, ...)
+
+declare dso_local i32 @printf(i8*, ...)
+</pre></div>
+</div>
+<p>根据上述.ll 文件，我们对 LLVM IR 及 SysY 特性做以下总结：</p>
+<ol class="arabic">
+<li><p>LLVM IR 的基本单位称为 <code class="docutils literal notranslate"><span class="pre">module</span></code> （只要是单文件编译就只涉及单 <code class="docutils literal notranslate"><span class="pre">module</span></code> ），对应 SysY 中的 <code class="docutils literal notranslate"><span class="pre">CompUnit</span></code> ——  <code class="docutils literal notranslate"><span class="pre">CompUnit</span> <span class="pre">::=</span> <span class="pre">[CompUnit]</span> <span class="pre">(Decl</span> <span class="pre">|</span> <span class="pre">FuncDef)</span> <span class="pre">``</span> <span class="pre">，一个</span> <span class="pre">``CompUnit</span></code> 中有且仅有一个 <code class="docutils literal notranslate"><span class="pre">main</span></code> 函数定义，是程序的入口。</p></li>
+<li><p>一个 <code class="docutils literal notranslate"><span class="pre">module</span></code> 中可以包含多个顶层实体，如 <code class="docutils literal notranslate"><span class="pre">function</span></code> 和 <code class="docutils literal notranslate"><span class="pre">global</span> <span class="pre">variable</span></code> ， <code class="docutils literal notranslate"><span class="pre">CompUnit</span></code> 的顶层变量/常量声明语句（对应 <code class="docutils literal notranslate"><span class="pre">Decl</span></code> ），函数定义（对应 <code class="docutils literal notranslate"><span class="pre">FuncDef</span></code> ）都不可以重复定义同名标识符（ <code class="docutils literal notranslate"><span class="pre">IDENT</span></code> ），即便标识符的类型不同也不允许。</p></li>
+<li><p>一个 <code class="docutils literal notranslate"><span class="pre">function</span> <span class="pre">define</span></code> 中至少有一个 <code class="docutils literal notranslate"><span class="pre">basicblock</span></code> 。 <code class="docutils literal notranslate"><span class="pre">basicblock</span></code> 对应 SysY 中的 <code class="docutils literal notranslate"><span class="pre">Block</span></code> 语句块，语句块内声明的变量的生存期在该语句块内。 <code class="docutils literal notranslate"><span class="pre">Block</span></code> 表示为</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>Block ::= “{” BlockItem “}”;
+BlockItem ::= Decl | Stmt;
+</pre></div>
+</div>
+</li>
+<li><p>每个 <code class="docutils literal notranslate"><span class="pre">basicblock</span></code> 中有若干 <code class="docutils literal notranslate"><span class="pre">instruction</span></code>，且都以 <code class="docutils literal notranslate"><span class="pre">terminator</span> <span class="pre">instruction</span></code> 结尾。SysY 中语句表示为</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>Stmt ::= LVal “=” Exp “;”
+| [Exp] “;”
+| Block
+| “if” “(” Exp “)” Stmt [“else” Stmt]
+| “while” “(” Exp “)” Stmt
+| “break” “;”
+| “continue” “;”
+| “return” [Exp] “;”;
+</pre></div>
+</div>
+</li>
+<li><p>LLVM IR 中注释以 <code class="docutils literal notranslate"><span class="pre">;</span></code> 开头，而 SysY 中与 C 语言一致。</p></li>
+<li><p>LLVM IR 是静态类型的，即每个值的类型在编写时是确定的。</p></li>
+<li><p>LLVM IR 中全局变量和函数都以 <code class="docutils literal notranslate"><span class="pre">&#64;</span></code> 开头，且会在类型（如 <code class="docutils literal notranslate"><span class="pre">i32</span></code>）之前用 <code class="docutils literal notranslate"><span class="pre">global</span></code> 标明，局部变量以 <code class="docutils literal notranslate"><span class="pre">%</span></code> 开头，其作用域是单个函数，临时寄存器（上文中的 <code class="docutils literal notranslate"><span class="pre">%1</span></code> 等）以升序阿拉伯数字命名。</p></li>
+<li><p>函数定义的语法可以总结为： <code class="docutils literal notranslate"><span class="pre">define</span> <span class="pre">+</span> <span class="pre">返回值</span> <span class="pre">(i32)</span> <span class="pre">+</span> <span class="pre">函数名</span> <span class="pre">(&#64;main)</span> <span class="pre">+</span> <span class="pre">参数列表</span> <span class="pre">((i32</span> <span class="pre">%a,</span> <span class="pre">i32</span> <span class="pre">%b))</span> <span class="pre">+</span> <span class="pre">函数体</span> <span class="pre">(ret</span> <span class="pre">i32</span> <span class="pre">0)</span></code> ，函数声明你可以在 <code class="docutils literal notranslate"><span class="pre">main.ll</span></code> 的最后看到，即用 <code class="docutils literal notranslate"><span class="pre">declare</span></code> 替换 <code class="docutils literal notranslate"><span class="pre">define</span></code>。SysY 中函数定义表示为</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>FuncDef ::= FuncType IDENT &quot;(&quot; [FuncFParams] &quot;)&quot; Block。
+</pre></div>
+</div>
+</li>
+<li><p>终结指令一定位于一个基本块的末尾，如 <code class="docutils literal notranslate"><span class="pre">ret</span></code> 指令会令程序控制流返回到函数调用者， <code class="docutils literal notranslate"><span class="pre">br</span></code> 指令会根据后续标识符的结果进行下一个基本块的跳转， <code class="docutils literal notranslate"><span class="pre">br</span></code> 指令包含无条件 <code class="docutils literal notranslate"><span class="pre">br</span> <span class="pre">+</span> <span class="pre">label</span></code> 和有条件 <code class="docutils literal notranslate"><span class="pre">br</span> <span class="pre">+</span> <span class="pre">标志符</span> <span class="pre">+</span> <span class="pre">truelabel</span> <span class="pre">+</span> <span class="pre">falselabel</span></code> 两种。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">i32</span></code> 这个变量类型实际上就指 32 bit 长的 integer，类似的还有 <code class="docutils literal notranslate"><span class="pre">void</span></code>、 <code class="docutils literal notranslate"><span class="pre">label</span></code>、 <code class="docutils literal notranslate"><span class="pre">array</span></code>、 <code class="docutils literal notranslate"><span class="pre">pointer</span></code> 等。</p></li>
+<li><p>绝大多数指令的含义就是其字面意思， <code class="docutils literal notranslate"><span class="pre">load</span></code> 从内存读值， <code class="docutils literal notranslate"><span class="pre">store</span></code> 向内存写值， <code class="docutils literal notranslate"><span class="pre">add</span></code> 相加参数， <code class="docutils literal notranslate"><span class="pre">alloca</span></code> 分配内存并返回地址等。</p></li>
+</ol>
+<p>关于 LLVM IR 可以从 <a class="reference external" href="https://llvm.org/docs/LangRef.html">官方文档</a> 进行更多了解。有关 SysY 语言更多内容可以参考 <a class="reference external" href="https://gitlab.eduxiji.net/csc1/nscscc/compiler2023/-/blob/master/SysY2022%E8%AF%AD%E8%A8%80%E5%AE%9A%E4%B9%89-V1.pdf">SysY语言定义</a> 和 <a class="reference external" href="https://gitlab.eduxiji.net/csc1/nscscc/compiler2023/-/blob/master/SysY2022%E8%BF%90%E8%A1%8C%E6%97%B6%E5%BA%93-V1.pdf">SysY 运行时库</a>。</p>
+<div class="admonition tip">
+<p class="admonition-title">小技巧</p>
+<p><a class="reference external" href="https://godbolt.org">Compiler Explorer</a> 是一个非常好的在线编译器，你可以在上面输入代码，查看不同编译器的输出，其中也包括 LLVM IR 。例如 <a class="reference external" href="https://godbolt.org/z/aPb4KvxxM">这里</a> 就是简单阶乘程序的 LLVM IR 输出。它也支持直接编译到汇编代码，你可以自行查阅相关资料探索。</p>
+</div>
+</section>
+</section>
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="asm-basics.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">汇编编程</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="rust-basics.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">Rust 编程基础</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2024, Junyi Mei, Dawei Guo
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">了解编译器及 LLVM IR 编程</a><ul>
+<li><a class="reference internal" href="#id1">实验描述</a><ul>
+<li><a class="reference internal" href="#id2">方法</a></li>
+<li><a class="reference internal" href="#id3">实验要求</a></li>
+<li><a class="reference internal" href="#id7">基础样例程序</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id8">参考流程</a><ul>
+<li><a class="reference internal" href="#id9">预处理器</a></li>
+<li><a class="reference internal" href="#id10">编译器</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id13">LLVM IR 编程</a><ul>
+<li><a class="reference internal" href="#id14">LLVM IR 概述</a></li>
+<li><a class="reference internal" href="#id15">实验案例</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="_static/documentation_options.js?v=7d86a446"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/scripts/furo.js?v=46bd48cc"></script>
+    <script src="_static/translations.js?v=beaddf03"></script>
+    </body>
+</html>
